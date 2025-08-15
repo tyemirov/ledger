@@ -1,19 +1,20 @@
+// cmd/credit/main.go
 package main
 
 import (
-	"context"
 	"log"
 	"net"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
 	"github.com/MarkoPoloResearchLab/ledger/internal/credit"
 	"github.com/MarkoPoloResearchLab/ledger/internal/grpcserver"
-	"github.com/MarkoPoloResearchLab/ledger/internal/store/pgstore"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
 	"google.golang.org/grpc"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 const (
@@ -23,50 +24,47 @@ const (
 	defaultGRPCListenAddress  = ":7000"
 )
 
-// main starts the gRPC credit service.
 func main() {
-	databaseURL := envOrDefault(environmentKeyDatabaseURL, defaultDatabaseURL)
+	dsn := envOrDefault(environmentKeyDatabaseURL, defaultDatabaseURL)
 	listenAddress := envOrDefault(environmentKeyListenAddr, defaultGRPCListenAddress)
 
-	requestContext := context.Background()
-	connectionPool, poolError := pgxpool.New(requestContext, databaseURL)
-	if poolError != nil {
-		log.Fatalf("database pool init: %v", poolError)
+	// Open GORM
+	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("gorm open: %v", err)
 	}
-	defer connectionPool.Close()
+	// Optional: ensure underlying pool closes on exit
+	sqlDB, err := gdb.DB()
+	if err != nil {
+		log.Fatalf("gorm db(): %v", err)
+	}
+	defer sqlDB.Close()
 
-	store := pgstore.New(connectionPool)
+	// AutoMigrate for tables only (we keep your enum & indexes from migrations.sql)
+	if err := gdb.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}); err != nil {
+		log.Fatalf("automigrate: %v", err)
+	}
+
+	store := gormstore.New(gdb)
 	nowUnixSeconds := func() int64 { return time.Now().UTC().Unix() }
 	creditService := credit.NewService(store, nowUnixSeconds)
 
-	listener, listenError := net.Listen("tcp", listenAddress)
-	if listenError != nil {
-		log.Fatalf("listen: %v", listenError)
+	l, err := net.Listen("tcp", listenAddress)
+	if err != nil {
+		log.Fatalf("listen: %v", err)
 	}
 	grpcServer := grpc.NewServer()
 	creditv1.RegisterCreditServiceServer(grpcServer, grpcserver.NewCreditServiceServer(creditService))
 
 	log.Printf("listening on %s", listenAddress)
-	if serveError := grpcServer.Serve(listener); serveError != nil {
+	if serveError := grpcServer.Serve(l); serveError != nil {
 		log.Fatalf("serve: %v", serveError)
 	}
 }
 
-func envOrDefault(key string, fallback string) string {
-	value, ok := os.LookupEnv(key)
-	if !ok || value == "" {
-		return fallback
+func envOrDefault(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		return v
 	}
-	return value
-}
-
-func mustAtoi(value string, fallback int) int {
-	if value == "" {
-		return fallback
-	}
-	parsed, parseError := strconv.Atoi(value)
-	if parseError != nil {
-		return fallback
-	}
-	return parsed
+	return def
 }
