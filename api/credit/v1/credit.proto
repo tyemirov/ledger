@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package credit.v1;
+
+option go_package = "github.com/MarkoPoloResearchLab/ledger/api/credit/v1;creditv1";
+
+message Empty {}
+
+message Amount {
+  int64 amount_cents = 1;
+}
+
+message BalanceRequest {
+  string user_id = 1;
+}
+
+message BalanceResponse {
+  int64 total_cents = 1;
+  int64 available_cents = 2;
+}
+
+message GrantRequest {
+  string user_id = 1;
+  int64 amount_cents = 2;
+  string idempotency_key = 3;
+  int64 expires_at_unix_utc = 4;
+  string metadata_json = 5;
+}
+
+message ReserveRequest {
+  string user_id = 1;
+  int64 amount_cents = 2;
+  string reservation_id = 3;
+  string idempotency_key = 4;
+  string metadata_json = 5;
+}
+
+message CaptureRequest {
+  string user_id = 1;
+  string reservation_id = 2;
+  string idempotency_key = 3;
+  int64 amount_cents = 4;
+  string metadata_json = 5;
+}
+
+message ReleaseRequest {
+  string user_id = 1;
+  string reservation_id = 2;
+  string idempotency_key = 3;
+  string metadata_json = 4;
+}
+
+message SpendRequest {
+  string user_id = 1;
+  int64 amount_cents = 2;
+  string idempotency_key = 3;
+  string metadata_json = 4;
+}
+
+message Entry {
+  string entry_id = 1;
+  string account_id = 2;
+  string type = 3;
+  int64 amount_cents = 4;
+  string reservation_id = 5;
+  string idempotency_key = 6;
+  int64 expires_at_unix_utc = 7;
+  string metadata_json = 8;
+  int64 created_unix_utc = 9;
+}
+
+message ListEntriesRequest {
+  string user_id = 1;
+  int64 before_unix_utc = 2;
+  int32 limit = 3;
+}
+
+message ListEntriesResponse {
+  repeated Entry entries = 1;
+}
+
+service CreditService {
+  rpc GetBalance(BalanceRequest) returns (BalanceResponse);
+  rpc Grant(GrantRequest) returns (Empty);
+  rpc Reserve(ReserveRequest) returns (Empty);
+  rpc Capture(CaptureRequest) returns (Empty);
+  rpc Release(ReleaseRequest) returns (Empty);
+  rpc Spend(SpendRequest) returns (Empty);
+  rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse);
+}
+
