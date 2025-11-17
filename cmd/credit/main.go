@@ -41,7 +41,7 @@ func main() {
 	defer sqlDB.Close()
 
 	// AutoMigrate for tables only (we keep your enum & indexes from migrations.sql)
-	if err := gdb.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}); err != nil {
+	if err := gdb.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}, &gormstore.Reservation{}); err != nil {
 		log.Fatalf("automigrate: %v", err)
 	}
 

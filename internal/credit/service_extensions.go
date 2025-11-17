@@ -18,7 +18,7 @@ func (service *Service) Spend(requestContext context.Context, userID UserID, amo
 		if holdsError != nil {
 			return holdsError
 		}
-		available := total + activeHolds
+		available := total - activeHolds
 		if available < amount {
 			return ErrInsufficientFunds
 		}

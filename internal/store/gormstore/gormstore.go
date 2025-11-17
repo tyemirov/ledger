@@ -13,7 +13,10 @@ import (
 )
 
 // Name of your unique index/constraint in db/migrations.sql
-const constraintAccountIdempotencyKey = "ledger_entries_account_id_idempotency_key_key"
+const (
+	constraintAccountIdempotencyKey = "ledger_entries_account_id_idempotency_key_key"
+	constraintReservationPrimary    = "reservations_pkey"
+)
 
 type Store struct {
 	db *gorm.DB
@@ -85,31 +88,68 @@ func (s *Store) SumTotal(ctx context.Context, accountID string, atUnixUTC int64)
 		Model(&LedgerEntry{}).
 		Select("coalesce(sum(amount_cents),0) as total").
 		Where("account_id = ?", accountID).
+		Where("type not in ('hold','reverse_hold')").
 		Where("(expires_at is null or expires_at > ?)", at).
 		Scan(&sum).Error
 	return credit.AmountCents(sum.Total), err
 }
 
-func (s *Store) SumActiveHolds(ctx context.Context, accountID string, atUnixUTC int64) (credit.AmountCents, error) {
-	at := time.Unix(atUnixUTC, 0).UTC()
+func (s *Store) SumActiveHolds(ctx context.Context, accountID string, _ int64) (credit.AmountCents, error) {
 	var sum sqlSum
 	err := s.db.WithContext(ctx).
-		Model(&LedgerEntry{}).
+		Model(&Reservation{}).
 		Select("coalesce(sum(amount_cents),0) as total").
-		Where("account_id = ?", accountID).
-		Where(`type = 'hold'`).
-		Where("(expires_at is null or expires_at > ?)", at).
+		Where("account_id = ? AND status = ?", accountID, string(credit.ReservationStatusActive)).
 		Scan(&sum).Error
 	return credit.AmountCents(sum.Total), err
 }
 
-func (s *Store) ReservationExists(ctx context.Context, accountID string, reservationID string) (bool, error) {
-	var count int64
+func (s *Store) CreateReservation(ctx context.Context, reservation credit.Reservation) error {
+	model := Reservation{
+		AccountID:     reservation.AccountID,
+		ReservationID: reservation.ReservationID,
+		AmountCents:   int64(reservation.AmountCents),
+		Status:        string(reservation.Status),
+	}
+	err := s.db.WithContext(ctx).Create(&model).Error
+	if isReservationConflict(err) {
+		return credit.ErrReservationExists
+	}
+	return err
+}
+
+func (s *Store) GetReservation(ctx context.Context, accountID string, reservationID string) (credit.Reservation, error) {
+	var model Reservation
 	err := s.db.WithContext(ctx).
-		Model(&LedgerEntry{}).
-		Where("account_id = ? AND type = 'hold' AND reservation_id = ?", accountID, reservationID).
-		Count(&count).Error
-	return count > 0, err
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("account_id = ? AND reservation_id = ?", accountID, reservationID).
+		Take(&model).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return credit.Reservation{}, credit.ErrUnknownReservation
+		}
+		return credit.Reservation{}, err
+	}
+	return credit.Reservation{
+		AccountID:     model.AccountID,
+		ReservationID: model.ReservationID,
+		AmountCents:   credit.AmountCents(model.AmountCents),
+		Status:        credit.ReservationStatus(model.Status),
+	}, nil
+}
+
+func (s *Store) UpdateReservationStatus(ctx context.Context, accountID string, reservationID string, from, to credit.ReservationStatus) error {
+	res := s.db.WithContext(ctx).
+		Model(&Reservation{}).
+		Where("account_id = ? AND reservation_id = ? AND status = ?", accountID, reservationID, string(from)).
+		Update("status", string(to))
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return credit.ErrReservationClosed
+	}
+	return nil
 }
 
 func (s *Store) ListEntries(ctx context.Context, accountID string, beforeUnixUTC int64, limit int) ([]credit.Entry, error) {
@@ -173,4 +213,9 @@ func timeOrZero(p *time.Time) int64 {
 func isIdempotencyConflict(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == constraintAccountIdempotencyKey
+}
+
+func isReservationConflict(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == constraintReservationPrimary
 }

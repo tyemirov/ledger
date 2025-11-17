@@ -30,6 +30,23 @@ type MetadataJSON struct {
 	value string
 }
 
+// ReservationStatus defines reservation lifecycle.
+type ReservationStatus string
+
+const (
+	ReservationStatusActive   ReservationStatus = "active"
+	ReservationStatusCaptured ReservationStatus = "captured"
+	ReservationStatusReleased ReservationStatus = "released"
+)
+
+// Reservation represents a stored reservation record.
+type Reservation struct {
+	AccountID     string
+	ReservationID string
+	AmountCents   AmountCents
+	Status        ReservationStatus
+}
+
 // NewUserID validates and normalizes a user id.
 func NewUserID(raw string) (UserID, error) {
 	trimmed := strings.TrimSpace(raw)
@@ -134,6 +151,8 @@ type Store interface {
 	InsertEntry(ctx context.Context, entry Entry) error
 	SumTotal(ctx context.Context, accountID string, atUnixUTC int64) (AmountCents, error)
 	SumActiveHolds(ctx context.Context, accountID string, atUnixUTC int64) (AmountCents, error)
-	ReservationExists(ctx context.Context, accountID string, reservationID string) (bool, error)
+	CreateReservation(ctx context.Context, reservation Reservation) error
+	GetReservation(ctx context.Context, accountID string, reservationID string) (Reservation, error)
+	UpdateReservationStatus(ctx context.Context, accountID string, reservationID string, from, to ReservationStatus) error
 	ListEntries(ctx context.Context, accountID string, beforeUnixUTC int64, limit int) ([]Entry, error)
 }
