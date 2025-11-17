@@ -32,6 +32,32 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
 ## Maintenance (400–499)
 
 - [ ] [LG-400] Review @POLICY.md and verify what code areas need improvements and refactoring. Prepare a detailed plan of refactoring. Check for bugs, missing tests, poor coding practices, uplication and slop. Ensure strong encapsulation and following the principles og @AGENTS.md, @AGENTS.GO.md and policies of @POLICY.md
+    - 2024-11-25 audit summary:
+        - Domain logic violates POLICY invariants: operations accept raw primitives without smart constructors or edge validation (`internal/credit/types.go`, `internal/grpcserver/server.go`), timestamps default to zero in `NewService`, and `ListEntries`/`Balance` create accounts on read.
+        - Reservation flows are incorrect: holds are never reversed (capture/release only check existence and write zero entries), `reservation_id` is not unique in `db/migrations.sql`, and limits/defaults for listing are unbounded, allowing stale holds to permanently lock funds.
+        - Operational drift: duplicate stores (gorm vs pgx) with the binary pinned to GORM + AutoMigrate (`cmd/credit/main.go`), no tests of any kind (`go test ./...` reports “[no test files]”), Docker lacks the mandated `.env.creditsvc`, and the distroless runtime runs as non-root (`Dockerfile`).
+        - Error handling/logging gaps: no contextual wrapping, gRPC leaks raw error strings, zap/Viper/Cobra are absent, metadata/JSON/idempotency fields are never validated, and limits/metadata can break SQL.
+    - Refactoring plan:
+        - Introduce domain constructors/value objects (UserID, ReservationID, IdempotencyKey, Money) and enforce validation in the gRPC edge before calling the service.
+        - Redesign holds/reservations: persist reservation state (amount + status), ensure `(account_id,reservation_id)` uniqueness, compute active holds from reservation status, and emit proper capture/release ledger entries that unlock funds.
+        - Collapse on a single pgx-based store, drop runtime AutoMigrate, and plumb config via Cobra+Viper with zap logging and contextual error wrapping.
+        - Add integration tests covering grant/reserve/capture/release/spend/list plus store-specific tests, enforce sane pagination defaults, and add the mandated Docker `.env` + root user.
+- [ ] [LG-401] Enforce POLICY invariants at the domain + gRPC edge.
+    - Create smart constructors for `UserID`, `ReservationID`, `IdempotencyKey`, positive `AmountCents`, and JSON metadata in `internal/credit`.
+    - Update `internal/grpcserver` handlers to validate requests (including pagination limits) and map validation failures to `codes.InvalidArgument`.
+    - Remove zero-value fallbacks (e.g., `NewService` clock defaulting to 0) and ensure the core never sees invalid primitives.
+- [ ] [LG-402] Repair reservation/hold accounting.
+    - Introduce a reservations table (or equivalent) with `(account_id,reservation_id)` uniqueness and stored amount/status.
+    - Rework `Reserve`, `Capture`, and `Release` so they update reservation status, reverse holds on release, and prevent double capture; update `SumActiveHolds` to ignore closed reservations.
+    - Extend `db/migrations.sql` and stores to reflect the new schema and invariants.
+- [ ] [LG-403] Consolidate persistence + runtime wiring.
+    - Remove the runtime GORM dependency, standardize on the pgx store, and expose configuration via Cobra/Viper with env/flag parity.
+    - Add structured logging with zap and wrap errors with operation + subject codes before surfacing them to gRPC.
+    - Delete AutoMigrate from `cmd/credit`, ensure migrations remain SQL-first, and verify startup gracefully handles dependency errors.
+- [ ] [LG-404] Testing, CI, and container compliance.
+    - Author black-box integration tests covering grant/reserve/capture/release/spend/list flows plus store-specific tests for pagination and idempotency.
+    - Wire `make test`, `make lint`, and `make ci` (or equivalent) to run gofmt/go vet/staticcheck/ineffassign + coverage enforcement per POLICY.
+    - Align Docker assets with AGENTS.DOCKER: add `.env.creditsvc`, reference it from docker-compose, ensure containers run as root, and document the workflow.
 
 ## Planning 
 do not work on the issues below, not ready
