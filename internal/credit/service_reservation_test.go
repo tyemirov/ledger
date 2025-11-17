@@ -66,20 +66,57 @@ func TestCaptureMovesReservationToCaptured(t *testing.T) {
 	}
 }
 
+func TestCaptureUsesDistinctIdempotencyKeys(t *testing.T) {
+	t.Parallel()
+	store := newStubStore(AmountCents(120))
+	service := mustNewService(t, store)
+	userID := mustUserID(t, "user-456")
+	reservationID := mustReservationID(t, "res-10")
+	idempotencyKey := mustIdempotencyKey(t, "idem-10")
+	metadata := mustMetadata(t, "{}")
+	amount := mustAmount(t, 30)
+
+	if err := service.Reserve(context.Background(), userID, amount, reservationID, idempotencyKey, metadata); err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if err := service.Capture(context.Background(), userID, reservationID, idempotencyKey, amount, metadata); err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+
+	if got := len(store.entries); got != 3 {
+		t.Fatalf("expected 3 ledger entries (grant not required), got %d", got)
+	}
+
+	keys := make(map[string]struct{}, len(store.entries))
+	for _, entry := range store.entries {
+		keys[entry.IdempotencyKey] = struct{}{}
+	}
+	if len(keys) != len(store.entries) {
+		t.Fatalf("expected unique idempotency keys, got %v", keys)
+	}
+
+	reverse := store.entries[1]
+	spend := store.entries[2]
+	if reverse.IdempotencyKey == spend.IdempotencyKey {
+		t.Fatalf("expected distinct keys, got reverse=%s spend=%s", reverse.IdempotencyKey, spend.IdempotencyKey)
+	}
+}
+
 func TestReleaseUnlocksReservation(t *testing.T) {
 	t.Parallel()
 	store := newStubStore(AmountCents(150))
 	service := mustNewService(t, store)
 	userID := mustUserID(t, "user-789")
 	resID := mustReservationID(t, "res-77")
-	idem := mustIdempotencyKey(t, "idem-77")
+	holdIdempotencyKey := mustIdempotencyKey(t, "idem-77")
+	releaseIdempotencyKey := mustIdempotencyKey(t, "idem-77-release")
 	meta := mustMetadata(t, "{}")
 	amount := mustAmount(t, 50)
 
-	if err := service.Reserve(context.Background(), userID, amount, resID, idem, meta); err != nil {
+	if err := service.Reserve(context.Background(), userID, amount, resID, holdIdempotencyKey, meta); err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
-	if err := service.Release(context.Background(), userID, resID, idem, meta); err != nil {
+	if err := service.Release(context.Background(), userID, resID, releaseIdempotencyKey, meta); err != nil {
 		t.Fatalf("release: %v", err)
 	}
 	if got := len(store.entries); got != 2 {
@@ -102,6 +139,7 @@ type stubStore struct {
 	total        AmountCents
 	reservations map[string]Reservation
 	entries      []Entry
+	idempotency  map[string]struct{}
 }
 
 func newStubStore(initialTotal AmountCents) *stubStore {
@@ -109,6 +147,7 @@ func newStubStore(initialTotal AmountCents) *stubStore {
 		accountID:    "acct-1",
 		total:        initialTotal,
 		reservations: make(map[string]Reservation),
+		idempotency:  make(map[string]struct{}),
 	}
 }
 
@@ -121,6 +160,10 @@ func (s *stubStore) GetOrCreateAccountID(ctx context.Context, userID string) (st
 }
 
 func (s *stubStore) InsertEntry(ctx context.Context, entry Entry) error {
+	if _, exists := s.idempotency[entry.IdempotencyKey]; exists {
+		return ErrDuplicateIdempotencyKey
+	}
+	s.idempotency[entry.IdempotencyKey] = struct{}{}
 	s.entries = append(s.entries, entry)
 	switch entry.Type {
 	case EntryGrant, EntrySpend:

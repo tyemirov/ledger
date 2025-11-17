@@ -101,7 +101,7 @@ func (s *Service) Reserve(ctx context.Context, userID UserID, amount AmountCents
 	})
 }
 
-// Capture spends against a reservation (basic existence check).
+// Capture finalizes a reservation by reversing the hold and spending the funds with distinct idempotency keys.
 func (s *Service) Capture(ctx context.Context, userID UserID, reservationID ReservationID, idem IdempotencyKey, amount AmountCents, metadata MetadataJSON) error {
 	return s.store.WithTx(ctx, func(ctx context.Context, txStore Store) error {
 		accountID, err := txStore.GetOrCreateAccountID(ctx, userID.String())
@@ -122,23 +122,25 @@ func (s *Service) Capture(ctx context.Context, userID UserID, reservationID Rese
 			return err
 		}
 		now := s.nowFn()
+		reverseIdempotencyKey := fmt.Sprintf("%s:reverse", idem.String())
 		if err := txStore.InsertEntry(ctx, Entry{
 			AccountID:      accountID,
 			Type:           EntryReverseHold,
 			AmountCents:    reservation.AmountCents,
 			ReservationID:  reservationID.String(),
-			IdempotencyKey: idem.String(),
+			IdempotencyKey: reverseIdempotencyKey,
 			MetadataJSON:   metadata.String(),
 			CreatedUnixUTC: now,
 		}); err != nil {
 			return err
 		}
+		spendIdempotencyKey := fmt.Sprintf("%s:spend", idem.String())
 		return txStore.InsertEntry(ctx, Entry{
 			AccountID:      accountID,
 			Type:           EntrySpend,
 			AmountCents:    -amount,
 			ReservationID:  reservationID.String(),
-			IdempotencyKey: idem.String(),
+			IdempotencyKey: spendIdempotencyKey,
 			MetadataJSON:   metadata.String(),
 			CreatedUnixUTC: now,
 		})
