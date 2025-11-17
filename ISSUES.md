@@ -62,8 +62,8 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
     - Wire `make test`, `make lint`, and `make ci` (or equivalent) to run gofmt/go vet/staticcheck/ineffassign + coverage enforcement per POLICY.
     - Align Docker assets with AGENTS.DOCKER: add `.env.creditsvc`, reference it from docker-compose, ensure containers run as root, and document the workflow.
     - 2024-11-25: Added Makefile targets (`fmt`, `lint`, `test`, `ci`) that run gofmt/vet/staticcheck/ineffassign with an 80% coverage gate on the internal domain package, expanded the service tests to cover balance/grant/spend/list flows, introduced `.env.creditsvc` with docker-compose env_file wiring, switched the runtime image to rootful Debian, and documented the tooling workflow in README.
-
-- [ ] [LG-405] Switch to sqlite from postgres. Prepare the code that allows to pass the DB URIL sufficient for the GORM to either use a postgres or sqlite driver. ensure that the sqlite driver doesnt require GCO
+- [x] [LG-405] Switch to sqlite from postgres. Prepare the code that allows to pass the DB URIL sufficient for the GORM to either use a postgres or sqlite driver. ensure that the sqlite driver doesnt require GCO
+    - 2024-11-25: Reintroduced the GORM store with reservation support, added a CGO-free SQLite driver alongside the Postgres driver, taught `creditd` to parse the `DATABASE_URL` and pick the right driver (defaulting to SQLite with AutoMigrate), simplified Docker to a single service storing data in an `.env.creditsvc`-defined SQLite path, and updated README/documentation accordingly.
 
 ## Planning 
 do not work on the issues below, not ready
