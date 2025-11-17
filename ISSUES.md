@@ -12,7 +12,7 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
     - Rely on mpr-ui for the backend. Use a header and a footer
     - Rely on TAuth for authentication. Usge TAuth. Mimic the demo
     - Have a simple case of 
-    transaction button that takes 2 units of virtual currency
+    transaction button that takes 5 units of virtual currency
     1. enough funds -- transaction succeed
     2. not enough funds -- transaction fails
     3. enough funds after which there is 0 units of virtual currency left
