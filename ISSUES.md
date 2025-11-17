@@ -57,10 +57,11 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
     - Add structured logging with zap and wrap errors with operation + subject codes before surfacing them to gRPC.
     - Delete AutoMigrate from `cmd/credit`, ensure migrations remain SQL-first, and verify startup gracefully handles dependency errors.
     - 2024-11-25: Deleted the unused GORM store, rewired `cmd/credit` to use pgstore exclusively with Cobra/Viper config handling, added zap-powered logging plus graceful shutdown, and kept Docker/env compatibility intact (SQL migrations remain source of truth).
-- [ ] [LG-404] Testing, CI, and container compliance.
+- [x] [LG-404] Testing, CI, and container compliance.
     - Author black-box integration tests covering grant/reserve/capture/release/spend/list flows plus store-specific tests for pagination and idempotency.
     - Wire `make test`, `make lint`, and `make ci` (or equivalent) to run gofmt/go vet/staticcheck/ineffassign + coverage enforcement per POLICY.
     - Align Docker assets with AGENTS.DOCKER: add `.env.creditsvc`, reference it from docker-compose, ensure containers run as root, and document the workflow.
+    - 2024-11-25: Added Makefile targets (`fmt`, `lint`, `test`, `ci`) that run gofmt/vet/staticcheck/ineffassign with an 80% coverage gate on the internal domain package, expanded the service tests to cover balance/grant/spend/list flows, introduced `.env.creditsvc` with docker-compose env_file wiring, switched the runtime image to rootful Debian, and documented the tooling workflow in README.
 
 ## Planning 
 do not work on the issues below, not ready
