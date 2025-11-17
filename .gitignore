@@ -3,3 +3,4 @@ tools/
 
 PLAN.md
 coverage.out
+*.db

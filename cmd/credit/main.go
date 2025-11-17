@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -13,12 +15,14 @@ import (
 	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
 	"github.com/MarkoPoloResearchLab/ledger/internal/credit"
 	"github.com/MarkoPoloResearchLab/ledger/internal/grpcserver"
-	"github.com/MarkoPoloResearchLab/ledger/internal/store/pgstore"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
+	"github.com/glebarez/sqlite"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 const (
@@ -26,7 +30,7 @@ const (
 	flagListenAddr        = "listen-addr"
 	configKeyDatabaseURL  = "database_url"
 	configKeyListenAddr   = "listen_addr"
-	defaultDatabaseURL    = "postgres://postgres:postgres@localhost:5432/credit?sslmode=disable"
+	defaultDatabaseURL    = "sqlite:///tmp/ledger.db"
 	defaultGRPCListenAddr = ":7000"
 )
 
@@ -108,13 +112,17 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 	}
 	defer func() { _ = logger.Sync() }()
 
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	gormDB, cleanup, driver, err := openDatabase(ctx, cfg.DatabaseURL)
 	if err != nil {
-		return fmt.Errorf("pgx pool: %w", err)
+		return fmt.Errorf("database open: %w", err)
 	}
-	defer pool.Close()
+	defer cleanup()
 
-	store := pgstore.New(pool)
+	if err := prepareSchema(gormDB, driver); err != nil {
+		return err
+	}
+
+	store := gormstore.New(gormDB)
 	clock := func() int64 { return time.Now().UTC().Unix() }
 	creditService, err := credit.NewService(store, clock)
 	if err != nil {
@@ -149,4 +157,85 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 		}
 		return serveErr
 	}
+}
+
+func openDatabase(ctx context.Context, dsn string) (*gorm.DB, func() error, string, error) {
+	driver, sqlitePath, err := resolveDriver(dsn)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	var (
+		db  *gorm.DB
+		cfg *gorm.Config
+	)
+	cfg = &gorm.Config{}
+	switch driver {
+	case "postgres":
+		db, err = gorm.Open(postgres.Open(dsn), cfg)
+	case "sqlite":
+		db, err = gorm.Open(sqlite.Open(sqlitePath), cfg)
+	default:
+		return nil, nil, "", fmt.Errorf("unsupported database scheme %q", driver)
+	}
+	if err != nil {
+		return nil, nil, "", err
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, nil, "", err
+	}
+	cleanup := func() error { return sqlDB.Close() }
+	return db.WithContext(ctx), cleanup, driver, nil
+}
+
+func resolveDriver(dsn string) (string, string, error) {
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		return "postgres", "", nil
+	}
+	if strings.HasPrefix(dsn, "sqlite://") {
+		u, err := url.Parse(dsn)
+		if err != nil {
+			return "", "", fmt.Errorf("parse sqlite url: %w", err)
+		}
+		path := u.Path
+		if path == "" {
+			path = u.Host
+		}
+		if path == "" || path == "/" {
+			path = "ledger.db"
+		}
+		sqlitePath, err := normalizeSQLitePath(path)
+		return "sqlite", sqlitePath, err
+	}
+	// Treat everything else as a direct sqlite path.
+	sqlitePath, err := normalizeSQLitePath(dsn)
+	return "sqlite", sqlitePath, err
+}
+
+func normalizeSQLitePath(path string) (string, error) {
+	if path == ":memory:" {
+		return path, nil
+	}
+	if strings.HasPrefix(path, "/") {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return "", err
+		}
+		return path, nil
+	}
+	abs := filepath.Join(".", path)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return "", err
+	}
+	return abs, nil
+}
+
+func prepareSchema(db *gorm.DB, driver string) error {
+	if driver != "sqlite" {
+		return nil
+	}
+	if err := db.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}, &gormstore.Reservation{}); err != nil {
+		return fmt.Errorf("auto migrate: %w", err)
+	}
+	return nil
 }

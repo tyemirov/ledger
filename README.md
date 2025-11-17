@@ -40,7 +40,7 @@ It is intentionally **application-agnostic** — you decide when and why credits
 ## Requirements
 
 * Go 1.21+
-* PostgreSQL 13+
+* SQLite (default file-based runtime) or PostgreSQL 13+ if you supply a Postgres `DATABASE_URL`
 * `protoc` with Go plugins (`protoc-gen-go`, `protoc-gen-go-grpc`)
 
 ---
@@ -60,11 +60,12 @@ Install dependencies:
 go mod tidy
 ```
 
-Run migrations:
+When targeting PostgreSQL, run the SQL migrations:
 
 ```bash
 psql -h localhost -U postgres -d credit -f db/migrations.sql
 ```
+(SQLite creates its schema automatically on startup.)
 
 Generate gRPC code (if you modify `.proto` files):
 
@@ -80,7 +81,7 @@ Environment variables:
 
 | Variable           | Default                                                              | Description                  |
 | ------------------ | -------------------------------------------------------------------- | ---------------------------- |
-| `DATABASE_URL`     | `postgres://postgres:postgres@localhost:5432/credit?sslmode=disable` | PostgreSQL connection string |
+| `DATABASE_URL`     | `sqlite:///tmp/ledger.db`                                             | Database connection string (supports `postgres://...` or `sqlite:///path.db`) |
 | `GRPC_LISTEN_ADDR` | `:7000`                                                              | gRPC server listen address   |
 
 ---
@@ -196,6 +197,12 @@ make ci    # runs fmt + lint + test
 ```
 
 Docker Compose reads configuration from `.env.creditsvc`, so the container runtime matches the CLI flag/environment setup.
+
+---
+
+## Database Selection
+
+The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite:///...`). To use PostgreSQL instead, set `DATABASE_URL` to a Postgres DSN (for example `postgres://...`) and run the SQL migrations in `db/migrations.sql`. The CLI automatically chooses the correct GORM driver based on the URL scheme.
 
 ---
 
