@@ -184,6 +184,21 @@ grpcurl -plaintext -d '{
 
 ---
 
+## Development
+
+Use the provided `Makefile` targets for local tooling:
+
+```bash
+make fmt   # verifies gofmt formatting
+make lint  # runs go vet, staticcheck, and ineffassign
+make test  # executes go test with >=80% coverage enforcement for internal packages
+make ci    # runs fmt + lint + test
+```
+
+Docker Compose reads configuration from `.env.creditsvc`, so the container runtime matches the CLI flag/environment setup.
+
+---
+
 ## Notes
 
 * **Amounts** are stored as integer cents to avoid floating point errors.
@@ -196,4 +211,3 @@ grpcurl -plaintext -d '{
 ## License
 
 MIT — See `LICENSE` file.
-
