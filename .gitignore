@@ -2,3 +2,4 @@ tools/
 .env
 
 PLAN.md
+coverage.out
