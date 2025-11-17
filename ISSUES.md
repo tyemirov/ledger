@@ -47,10 +47,11 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
     - Update `internal/grpcserver` handlers to validate requests (including pagination limits) and map validation failures to `codes.InvalidArgument`.
     - Remove zero-value fallbacks (e.g., `NewService` clock defaulting to 0) and ensure the core never sees invalid primitives.
     - 2024-11-25: Added domain constructors + validation, rewired the service and gRPC edge to consume them with InvalidArgument mappings, enforced sane list limits, updated the CLI wiring, and introduced unit tests for the new smart constructors.
-- [ ] [LG-402] Repair reservation/hold accounting.
+- [x] [LG-402] Repair reservation/hold accounting.
     - Introduce a reservations table (or equivalent) with `(account_id,reservation_id)` uniqueness and stored amount/status.
     - Rework `Reserve`, `Capture`, and `Release` so they update reservation status, reverse holds on release, and prevent double capture; update `SumActiveHolds` to ignore closed reservations.
     - Extend `db/migrations.sql` and stores to reflect the new schema and invariants.
+    - 2024-11-25: Added the `reservations` enum+table, updated both pgx and GORM stores plus CLI migrations, reworked the service to enforce single capture/release with reverse-hold entries and availability math fixes, added gRPC error mappings, and introduced unit tests covering reserve/capture/release flows.
 - [ ] [LG-403] Consolidate persistence + runtime wiring.
     - Remove the runtime GORM dependency, standardize on the pgx store, and expose configuration via Cobra/Viper with env/flag parity.
     - Add structured logging with zap and wrap errors with operation + subject codes before surfacing them to gRPC.

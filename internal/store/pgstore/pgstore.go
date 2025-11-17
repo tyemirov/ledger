@@ -13,6 +13,7 @@ import (
 const (
 	// Matches Postgres' auto-generated name for: UNIQUE(account_id, idempotency_key)
 	constraintAccountIdempotencyKey = "ledger_entries_account_id_idempotency_key_key"
+	constraintReservationPrimary    = "reservations_pkey"
 
 	sqlInsertOrGetAccount = `
 		insert into accounts(user_id) values($1)
@@ -37,18 +38,30 @@ const (
 	sqlSumTotal = `
 		select coalesce(sum(amount_cents),0) from ledger_entries
 		where account_id = $1 and (expires_at is null or expires_at > to_timestamp($2))
+		and type <> 'hold' and type <> 'reverse_hold'
 	`
 
 	sqlSumActiveHolds = `
-		select coalesce(sum(amount_cents),0) from ledger_entries
-		where account_id = $1 and type = 'hold' and (expires_at is null or expires_at > to_timestamp($2))
+		select coalesce(sum(amount_cents),0) from reservations
+		where account_id = $1 and status = 'active'
 	`
 
-	sqlReservationExists = `
-		select exists(
-			select 1 from ledger_entries
-			where account_id = $1 and type = 'hold' and reservation_id = $2
-		)
+	sqlInsertReservation = `
+		insert into reservations(account_id, reservation_id, amount_cents, status)
+		values ($1, $2, $3, $4)
+	`
+
+	sqlSelectReservation = `
+		select account_id::text, reservation_id, amount_cents, status::text
+		from reservations
+		where account_id = $1 and reservation_id = $2
+		for update
+	`
+
+	sqlUpdateReservationStatus = `
+		update reservations
+		set status = $4, updated_at = now()
+		where account_id = $1 and reservation_id = $2 and status = $3
 	`
 
 	sqlListEntriesBefore = `
@@ -119,16 +132,57 @@ func (s *Store) SumTotal(ctx context.Context, accountID string, atUnixUTC int64)
 	return credit.AmountCents(sum), err
 }
 
-func (s *Store) SumActiveHolds(ctx context.Context, accountID string, atUnixUTC int64) (credit.AmountCents, error) {
+func (s *Store) SumActiveHolds(ctx context.Context, accountID string, _ int64) (credit.AmountCents, error) {
 	var sum int64
-	err := s.pool.QueryRow(ctx, sqlSumActiveHolds, accountID, atUnixUTC).Scan(&sum)
+	err := s.pool.QueryRow(ctx, sqlSumActiveHolds, accountID).Scan(&sum)
 	return credit.AmountCents(sum), err
 }
 
-func (s *Store) ReservationExists(ctx context.Context, accountID, reservationID string) (bool, error) {
-	var exists bool
-	err := s.pool.QueryRow(ctx, sqlReservationExists, accountID, reservationID).Scan(&exists)
-	return exists, err
+func (s *Store) CreateReservation(ctx context.Context, reservation credit.Reservation) error {
+	_, err := s.pool.Exec(ctx, sqlInsertReservation,
+		reservation.AccountID,
+		reservation.ReservationID,
+		int64(reservation.AmountCents),
+		string(reservation.Status),
+	)
+	if isReservationConflict(err) {
+		return credit.ErrReservationExists
+	}
+	return err
+}
+
+func (s *Store) GetReservation(ctx context.Context, accountID string, reservationID string) (credit.Reservation, error) {
+	var (
+		record credit.Reservation
+		status string
+		amount int64
+	)
+	err := s.pool.QueryRow(ctx, sqlSelectReservation, accountID, reservationID).Scan(
+		&record.AccountID,
+		&record.ReservationID,
+		&amount,
+		&status,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return credit.Reservation{}, credit.ErrUnknownReservation
+		}
+		return credit.Reservation{}, err
+	}
+	record.AmountCents = credit.AmountCents(amount)
+	record.Status = credit.ReservationStatus(status)
+	return record, nil
+}
+
+func (s *Store) UpdateReservationStatus(ctx context.Context, accountID string, reservationID string, from, to credit.ReservationStatus) error {
+	tag, err := s.pool.Exec(ctx, sqlUpdateReservationStatus, accountID, reservationID, string(from), string(to))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return credit.ErrReservationClosed
+	}
+	return nil
 }
 
 func (s *Store) ListEntries(ctx context.Context, accountID string, beforeUnixUTC int64, limit int) ([]credit.Entry, error) {
@@ -170,16 +224,57 @@ func (t *TxStore) SumTotal(ctx context.Context, accountID string, atUnixUTC int6
 	return credit.AmountCents(sum), err
 }
 
-func (t *TxStore) SumActiveHolds(ctx context.Context, accountID string, atUnixUTC int64) (credit.AmountCents, error) {
+func (t *TxStore) SumActiveHolds(ctx context.Context, accountID string, _ int64) (credit.AmountCents, error) {
 	var sum int64
-	err := t.tx.QueryRow(ctx, sqlSumActiveHolds, accountID, atUnixUTC).Scan(&sum)
+	err := t.tx.QueryRow(ctx, sqlSumActiveHolds, accountID).Scan(&sum)
 	return credit.AmountCents(sum), err
 }
 
-func (t *TxStore) ReservationExists(ctx context.Context, accountID, reservationID string) (bool, error) {
-	var exists bool
-	err := t.tx.QueryRow(ctx, sqlReservationExists, accountID, reservationID).Scan(&exists)
-	return exists, err
+func (t *TxStore) CreateReservation(ctx context.Context, reservation credit.Reservation) error {
+	_, err := t.tx.Exec(ctx, sqlInsertReservation,
+		reservation.AccountID,
+		reservation.ReservationID,
+		int64(reservation.AmountCents),
+		string(reservation.Status),
+	)
+	if isReservationConflict(err) {
+		return credit.ErrReservationExists
+	}
+	return err
+}
+
+func (t *TxStore) GetReservation(ctx context.Context, accountID string, reservationID string) (credit.Reservation, error) {
+	var (
+		record credit.Reservation
+		status string
+		amount int64
+	)
+	err := t.tx.QueryRow(ctx, sqlSelectReservation, accountID, reservationID).Scan(
+		&record.AccountID,
+		&record.ReservationID,
+		&amount,
+		&status,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return credit.Reservation{}, credit.ErrUnknownReservation
+		}
+		return credit.Reservation{}, err
+	}
+	record.AmountCents = credit.AmountCents(amount)
+	record.Status = credit.ReservationStatus(status)
+	return record, nil
+}
+
+func (t *TxStore) UpdateReservationStatus(ctx context.Context, accountID string, reservationID string, from, to credit.ReservationStatus) error {
+	tag, err := t.tx.Exec(ctx, sqlUpdateReservationStatus, accountID, reservationID, string(from), string(to))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return credit.ErrReservationClosed
+	}
+	return nil
 }
 
 func (t *TxStore) ListEntries(ctx context.Context, accountID string, beforeUnixUTC int64, limit int) ([]credit.Entry, error) {
@@ -222,6 +317,14 @@ func isIdempotencyConflict(err error) bool {
 		if pgErr.Code == "23505" && pgErr.ConstraintName == constraintAccountIdempotencyKey {
 			return true
 		}
+	}
+	return false
+}
+
+func isReservationConflict(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505" && pgErr.ConstraintName == constraintReservationPrimary
 	}
 	return false
 }

@@ -31,3 +31,15 @@ type LedgerEntry struct {
 
 // Unique (account_id, idempotency_key)
 func (LedgerEntry) TableName() string { return "ledger_entries" }
+
+// Table: reservations
+type Reservation struct {
+	AccountID     string    `gorm:"type:uuid;primaryKey"`
+	ReservationID string    `gorm:"primaryKey"`
+	AmountCents   int64     `gorm:"not null"`
+	Status        string    `gorm:"type:reservation_status;not null"`
+	CreatedAt     time.Time `gorm:"not null;default:now()"`
+	UpdatedAt     time.Time `gorm:"not null;default:now()"`
+}
+
+func (Reservation) TableName() string { return "reservations" }
