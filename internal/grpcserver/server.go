@@ -3,6 +3,8 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
 	"github.com/MarkoPoloResearchLab/ledger/internal/credit"
@@ -14,6 +16,15 @@ const (
 	errorInsufficientFunds       = "insufficient_funds"
 	errorUnknownReservation      = "unknown_reservation"
 	errorDuplicateIdempotencyKey = "duplicate_idempotency_key"
+	errorInvalidUserID           = "invalid_user_id"
+	errorInvalidReservationID    = "invalid_reservation_id"
+	errorInvalidIdempotencyKey   = "invalid_idempotency_key"
+	errorInvalidAmount           = "invalid_amount_cents"
+	errorInvalidMetadata         = "invalid_metadata_json"
+	errorInvalidListLimit        = "invalid_list_limit"
+
+	defaultListEntriesLimit = 50
+	maxListEntriesLimit     = 200
 )
 
 // CreditServiceServer exposes the credit ledger over gRPC.
@@ -28,7 +39,11 @@ func NewCreditServiceServer(creditService *credit.Service) *CreditServiceServer 
 }
 
 func (service *CreditServiceServer) GetBalance(ctx context.Context, request *creditv1.BalanceRequest) (*creditv1.BalanceResponse, error) {
-	balance, operationError := service.creditService.Balance(ctx, request.GetUserId())
+	userID, err := credit.NewUserID(request.GetUserId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	balance, operationError := service.creditService.Balance(ctx, userID)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
@@ -39,7 +54,23 @@ func (service *CreditServiceServer) GetBalance(ctx context.Context, request *cre
 }
 
 func (service *CreditServiceServer) Grant(ctx context.Context, request *creditv1.GrantRequest) (*creditv1.Empty, error) {
-	operationError := service.creditService.Grant(ctx, request.GetUserId(), credit.AmountCents(request.GetAmountCents()), request.GetIdempotencyKey(), request.GetExpiresAtUnixUtc(), request.GetMetadataJson())
+	userID, err := credit.NewUserID(request.GetUserId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	amount, err := credit.NewAmountCents(request.GetAmountCents())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	idem, err := credit.NewIdempotencyKey(request.GetIdempotencyKey())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	metadata, err := credit.NewMetadataJSON(request.GetMetadataJson())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	operationError := service.creditService.Grant(ctx, userID, amount, idem, request.GetExpiresAtUnixUtc(), metadata)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
@@ -47,7 +78,27 @@ func (service *CreditServiceServer) Grant(ctx context.Context, request *creditv1
 }
 
 func (service *CreditServiceServer) Reserve(ctx context.Context, request *creditv1.ReserveRequest) (*creditv1.Empty, error) {
-	operationError := service.creditService.Reserve(ctx, request.GetUserId(), credit.AmountCents(request.GetAmountCents()), request.GetReservationId(), request.GetIdempotencyKey(), request.GetMetadataJson())
+	userID, err := credit.NewUserID(request.GetUserId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	amount, err := credit.NewAmountCents(request.GetAmountCents())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	reservationID, err := credit.NewReservationID(request.GetReservationId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	idem, err := credit.NewIdempotencyKey(request.GetIdempotencyKey())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	metadata, err := credit.NewMetadataJSON(request.GetMetadataJson())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	operationError := service.creditService.Reserve(ctx, userID, amount, reservationID, idem, metadata)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
@@ -55,7 +106,27 @@ func (service *CreditServiceServer) Reserve(ctx context.Context, request *credit
 }
 
 func (service *CreditServiceServer) Capture(ctx context.Context, request *creditv1.CaptureRequest) (*creditv1.Empty, error) {
-	operationError := service.creditService.Capture(ctx, request.GetUserId(), request.GetReservationId(), request.GetIdempotencyKey(), credit.AmountCents(request.GetAmountCents()), request.GetMetadataJson())
+	userID, err := credit.NewUserID(request.GetUserId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	reservationID, err := credit.NewReservationID(request.GetReservationId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	idem, err := credit.NewIdempotencyKey(request.GetIdempotencyKey())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	amount, err := credit.NewAmountCents(request.GetAmountCents())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	metadata, err := credit.NewMetadataJSON(request.GetMetadataJson())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	operationError := service.creditService.Capture(ctx, userID, reservationID, idem, amount, metadata)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
@@ -63,7 +134,23 @@ func (service *CreditServiceServer) Capture(ctx context.Context, request *credit
 }
 
 func (service *CreditServiceServer) Release(ctx context.Context, request *creditv1.ReleaseRequest) (*creditv1.Empty, error) {
-	operationError := service.creditService.Release(ctx, request.GetUserId(), request.GetReservationId(), request.GetIdempotencyKey(), request.GetMetadataJson())
+	userID, err := credit.NewUserID(request.GetUserId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	reservationID, err := credit.NewReservationID(request.GetReservationId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	idem, err := credit.NewIdempotencyKey(request.GetIdempotencyKey())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	metadata, err := credit.NewMetadataJSON(request.GetMetadataJson())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	operationError := service.creditService.Release(ctx, userID, reservationID, idem, metadata)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
@@ -71,7 +158,23 @@ func (service *CreditServiceServer) Release(ctx context.Context, request *credit
 }
 
 func (service *CreditServiceServer) Spend(ctx context.Context, request *creditv1.SpendRequest) (*creditv1.Empty, error) {
-	operationError := service.creditService.Spend(ctx, request.GetUserId(), credit.AmountCents(request.GetAmountCents()), request.GetIdempotencyKey(), request.GetMetadataJson())
+	userID, err := credit.NewUserID(request.GetUserId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	amount, err := credit.NewAmountCents(request.GetAmountCents())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	idem, err := credit.NewIdempotencyKey(request.GetIdempotencyKey())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	metadata, err := credit.NewMetadataJSON(request.GetMetadataJson())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	operationError := service.creditService.Spend(ctx, userID, amount, idem, metadata)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
@@ -79,7 +182,19 @@ func (service *CreditServiceServer) Spend(ctx context.Context, request *creditv1
 }
 
 func (service *CreditServiceServer) ListEntries(ctx context.Context, request *creditv1.ListEntriesRequest) (*creditv1.ListEntriesResponse, error) {
-	entries, operationError := service.creditService.ListEntries(ctx, request.GetUserId(), request.GetBeforeUnixUtc(), int(request.GetLimit()))
+	userID, err := credit.NewUserID(request.GetUserId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	limit, err := normalizeListLimit(request.GetLimit())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, errorInvalidListLimit)
+	}
+	before := request.GetBeforeUnixUtc()
+	if before == 0 {
+		before = time.Now().UTC().Unix()
+	}
+	entries, operationError := service.creditService.ListEntries(ctx, userID, before, int(limit))
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
@@ -100,7 +215,32 @@ func (service *CreditServiceServer) ListEntries(ctx context.Context, request *cr
 	return response, nil
 }
 
+func normalizeListLimit(limit int32) (int32, error) {
+	if limit <= 0 {
+		return defaultListEntriesLimit, nil
+	}
+	if limit > maxListEntriesLimit {
+		return 0, fmt.Errorf("limit exceeds maximum: %d > %d", limit, maxListEntriesLimit)
+	}
+	return limit, nil
+}
+
 func mapToGRPCError(source error) error {
+	if errors.Is(source, credit.ErrInvalidUserID) {
+		return status.Error(codes.InvalidArgument, errorInvalidUserID)
+	}
+	if errors.Is(source, credit.ErrInvalidReservationID) {
+		return status.Error(codes.InvalidArgument, errorInvalidReservationID)
+	}
+	if errors.Is(source, credit.ErrInvalidIdempotencyKey) {
+		return status.Error(codes.InvalidArgument, errorInvalidIdempotencyKey)
+	}
+	if errors.Is(source, credit.ErrInvalidAmountCents) {
+		return status.Error(codes.InvalidArgument, errorInvalidAmount)
+	}
+	if errors.Is(source, credit.ErrInvalidMetadataJSON) {
+		return status.Error(codes.InvalidArgument, errorInvalidMetadata)
+	}
 	if errors.Is(source, credit.ErrInsufficientFunds) {
 		return status.Error(codes.FailedPrecondition, errorInsufficientFunds)
 	}
