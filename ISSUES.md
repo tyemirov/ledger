@@ -8,7 +8,7 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
 
 ## Features (100-199)
 
-- [ ] [LG-100] Prepare a demo of a web app which uses ledger backend for transactions. A deliverable is a plan of execution.
+- [x] [LG-100] Prepare a demo of a web app which uses ledger backend for transactions. A deliverable is a plan of execution.
     - Rely on mpr-ui for the backend. Use a header and a footer. Use mpr-ui declarative syntax
     - Rely on TAuth for authentication. Usge TAuth. Mimic the demo
     - Have a simple case of 
@@ -24,8 +24,27 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
     a web service, ghhtp, that serves the stand alone front end
 
     Find dependencies under tools folder and read their documentation and code to understand the integration. be specific in the produced plan on the intehration path forward
+    - 2025-11-17: Authored `docs/lg-100-demo-plan.md`, outlining the multi-service architecture (TAuth + demo HTTP API + creditd + ghttp) plus the UI/backend tasks, endpoints, and testing strategy required for LG-101.
 
-- [ ] [LG-101] Implement the plan of building a demo app delivered in LG-100
+- [ ] [LG-101] Build the demo transaction API service described in `docs/lg-100-demo-plan.md`.
+    - Implement `cmd/demoapi` + `internal/demoapi` with Cobra/Viper config, zap logging, and TAuth session validation (see “Demo Transaction API (new)” section).
+    - Wire a shared gRPC client (`creditv1`) with timeouts to call `Grant`, `Spend`, `GetBalance`, and `ListEntries`; map ledger errors to HTTP JSON responses.
+    - Expose the documented HTTP surface (`/api/session`, `/api/bootstrap`, `/api/wallet`, `/api/transactions`, `/api/purchases`) with idempotency and metadata handling as outlined in the plan.
+
+- [ ] [LG-102] Ship the declarative front-end bundle under `demo/ui` per `docs/lg-100-demo-plan.md`.
+    - Author `index.html`, `app.js`, and styles that load `mpr-ui` components, TAuth `auth-client.js`, and GIS in the required order.
+    - Implement the wallet summary, 5-coin transaction button, purchase form, and ledger timeline so the three mandatory scenarios (success, insufficient funds, zero balance) are observable.
+    - Use `initAuthClient` callbacks to call `/api/bootstrap`, `/api/wallet`, `/api/transactions`, and `/api/purchases`, updating the DOM per the plan.
+
+- [ ] [LG-103] Provide hosting/orchestration and local tooling for the demo stack (`docs/lg-100-demo-plan.md` “Hosting with ghttp” + “Local Orchestration / Compose”).
+    - Serve the static UI via `ghttp` (document `ghttp --directory demo/ui 8000`) and ensure env vars align with TAuth CORS guidance.
+    - Add `docker-compose.demo.yml` (and optional `scripts/demo-up.sh`) that runs creditd, TAuth, the new demo API, and ghttp with shared secrets/volumes.
+    - Supply `.env.demoapi.example` (and reference `.env.tauth`) so contributors can start the stack without guesswork.
+
+- [ ] [LG-104] Add integration tests, CI wiring, and documentation from the “Implementation Breakdown” + “Validation & Monitoring Strategy” sections of `docs/lg-100-demo-plan.md`.
+    - Author Go integration tests for the demo API (httptest + bufconn) that cover bootstrap, successful spends, insufficient funds, and zero-balance behavior.
+    - Extend `make test`/`make ci` to include the new packages and ensure coverage gates remain satisfied; add optional Playwright smoke tests if time permits.
+    - Document the manual demo script plus monitoring/log expectations in README or `docs/demo.md`, referencing how to verify each scenario end-to-end.
 
 ## Improvements (200–299)
 
