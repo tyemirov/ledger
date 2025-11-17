@@ -1,6 +1,9 @@
 package credit
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // Service contains the domain logic over a Store.
 type Service struct {
@@ -9,16 +12,19 @@ type Service struct {
 }
 
 // NewService wires a Service.
-func NewService(store Store, now func() int64) *Service {
-	if now == nil {
-		now = func() int64 { return 0 }
+func NewService(store Store, now func() int64) (*Service, error) {
+	if store == nil {
+		return nil, fmt.Errorf("%w: store dependency is nil", ErrInvalidServiceConfig)
 	}
-	return &Service{store: store, nowFn: now}
+	if now == nil {
+		return nil, fmt.Errorf("%w: clock dependency is nil", ErrInvalidServiceConfig)
+	}
+	return &Service{store: store, nowFn: now}, nil
 }
 
 // Balance returns total and available (total + active holds, holds are negative).
-func (s *Service) Balance(ctx context.Context, userID string) (Balance, error) {
-	accountID, err := s.store.GetOrCreateAccountID(ctx, userID)
+func (s *Service) Balance(ctx context.Context, userID UserID) (Balance, error) {
+	accountID, err := s.store.GetOrCreateAccountID(ctx, userID.String())
 	if err != nil {
 		return Balance{}, err
 	}
@@ -38,9 +44,9 @@ func (s *Service) Balance(ctx context.Context, userID string) (Balance, error) {
 }
 
 // Grant appends a positive grant (optionally expiring).
-func (s *Service) Grant(ctx context.Context, userID string, amount AmountCents, idem string, expiresAtUnixUTC int64, metadataJSON string) error {
+func (s *Service) Grant(ctx context.Context, userID UserID, amount AmountCents, idem IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON) error {
 	return s.store.WithTx(ctx, func(ctx context.Context, txStore Store) error {
-		accountID, err := txStore.GetOrCreateAccountID(ctx, userID)
+		accountID, err := txStore.GetOrCreateAccountID(ctx, userID.String())
 		if err != nil {
 			return err
 		}
@@ -48,18 +54,18 @@ func (s *Service) Grant(ctx context.Context, userID string, amount AmountCents, 
 			AccountID:        accountID,
 			Type:             EntryGrant,
 			AmountCents:      amount,
-			IdempotencyKey:   idem,
+			IdempotencyKey:   idem.String(),
 			ExpiresAtUnixUTC: expiresAtUnixUTC,
-			MetadataJSON:     metadataJSON,
+			MetadataJSON:     metadata.String(),
 			CreatedUnixUTC:   s.nowFn(),
 		})
 	})
 }
 
 // Reserve appends a negative hold if sufficient available balance.
-func (s *Service) Reserve(ctx context.Context, userID string, amount AmountCents, reservationID, idem, metadataJSON string) error {
+func (s *Service) Reserve(ctx context.Context, userID UserID, amount AmountCents, reservationID ReservationID, idem IdempotencyKey, metadata MetadataJSON) error {
 	return s.store.WithTx(ctx, func(ctx context.Context, txStore Store) error {
-		accountID, err := txStore.GetOrCreateAccountID(ctx, userID)
+		accountID, err := txStore.GetOrCreateAccountID(ctx, userID.String())
 		if err != nil {
 			return err
 		}
@@ -79,22 +85,22 @@ func (s *Service) Reserve(ctx context.Context, userID string, amount AmountCents
 			AccountID:      accountID,
 			Type:           EntryHold,
 			AmountCents:    -amount,
-			ReservationID:  reservationID,
-			IdempotencyKey: idem,
-			MetadataJSON:   metadataJSON,
+			ReservationID:  reservationID.String(),
+			IdempotencyKey: idem.String(),
+			MetadataJSON:   metadata.String(),
 			CreatedUnixUTC: now,
 		})
 	})
 }
 
 // Capture spends against a reservation (basic existence check).
-func (s *Service) Capture(ctx context.Context, userID, reservationID, idem string, amount AmountCents, metadataJSON string) error {
+func (s *Service) Capture(ctx context.Context, userID UserID, reservationID ReservationID, idem IdempotencyKey, amount AmountCents, metadata MetadataJSON) error {
 	return s.store.WithTx(ctx, func(ctx context.Context, txStore Store) error {
-		accountID, err := txStore.GetOrCreateAccountID(ctx, userID)
+		accountID, err := txStore.GetOrCreateAccountID(ctx, userID.String())
 		if err != nil {
 			return err
 		}
-		ok, err := txStore.ReservationExists(ctx, accountID, reservationID)
+		ok, err := txStore.ReservationExists(ctx, accountID, reservationID.String())
 		if err != nil {
 			return err
 		}
@@ -105,9 +111,9 @@ func (s *Service) Capture(ctx context.Context, userID, reservationID, idem strin
 			AccountID:      accountID,
 			Type:           EntrySpend,
 			AmountCents:    -amount,
-			ReservationID:  reservationID,
-			IdempotencyKey: idem,
-			MetadataJSON:   metadataJSON,
+			ReservationID:  reservationID.String(),
+			IdempotencyKey: idem.String(),
+			MetadataJSON:   metadata.String(),
 			CreatedUnixUTC: s.nowFn(),
 		})
 	})
@@ -115,13 +121,13 @@ func (s *Service) Capture(ctx context.Context, userID, reservationID, idem strin
 
 // Release cancels a reservation by writing a reverse-hold entry.
 // (This simple version doesn’t compute the exact held amount — adjust as needed.)
-func (s *Service) Release(ctx context.Context, userID, reservationID, idem, metadataJSON string) error {
+func (s *Service) Release(ctx context.Context, userID UserID, reservationID ReservationID, idem IdempotencyKey, metadata MetadataJSON) error {
 	return s.store.WithTx(ctx, func(ctx context.Context, txStore Store) error {
-		accountID, err := txStore.GetOrCreateAccountID(ctx, userID)
+		accountID, err := txStore.GetOrCreateAccountID(ctx, userID.String())
 		if err != nil {
 			return err
 		}
-		ok, err := txStore.ReservationExists(ctx, accountID, reservationID)
+		ok, err := txStore.ReservationExists(ctx, accountID, reservationID.String())
 		if err != nil {
 			return err
 		}
@@ -134,9 +140,9 @@ func (s *Service) Release(ctx context.Context, userID, reservationID, idem, meta
 			AccountID:      accountID,
 			Type:           EntryReverseHold,
 			AmountCents:    0,
-			ReservationID:  reservationID,
-			IdempotencyKey: idem,
-			MetadataJSON:   metadataJSON,
+			ReservationID:  reservationID.String(),
+			IdempotencyKey: idem.String(),
+			MetadataJSON:   metadata.String(),
 			CreatedUnixUTC: s.nowFn(),
 		})
 	})

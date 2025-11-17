@@ -47,7 +47,10 @@ func main() {
 
 	store := gormstore.New(gdb)
 	nowUnixSeconds := func() int64 { return time.Now().UTC().Unix() }
-	creditService := credit.NewService(store, nowUnixSeconds)
+	creditService, err := credit.NewService(store, nowUnixSeconds)
+	if err != nil {
+		log.Fatalf("credit service init: %v", err)
+	}
 
 	l, err := net.Listen("tcp", listenAddress)
 	if err != nil {

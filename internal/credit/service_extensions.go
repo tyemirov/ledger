@@ -3,9 +3,9 @@ package credit
 import "context"
 
 // Spend debits the user's available balance immediately (no hold).
-func (service *Service) Spend(requestContext context.Context, userID string, amount AmountCents, idempotencyKey string, metadataJSON string) error {
+func (service *Service) Spend(requestContext context.Context, userID UserID, amount AmountCents, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
 	return service.store.WithTx(requestContext, func(ctx context.Context, transactionStore Store) error {
-		accountID, accountError := transactionStore.GetOrCreateAccountID(ctx, userID)
+		accountID, accountError := transactionStore.GetOrCreateAccountID(ctx, userID.String())
 		if accountError != nil {
 			return accountError
 		}
@@ -26,16 +26,16 @@ func (service *Service) Spend(requestContext context.Context, userID string, amo
 			AccountID:      accountID,
 			Type:           EntrySpend,
 			AmountCents:    -amount,
-			IdempotencyKey: idempotencyKey,
-			MetadataJSON:   metadataJSON,
+			IdempotencyKey: idempotencyKey.String(),
+			MetadataJSON:   metadata.String(),
 			CreatedUnixUTC: nowUnix,
 		})
 	})
 }
 
 // ListEntries lists ledger entries for a user before a cutoff time.
-func (service *Service) ListEntries(requestContext context.Context, userID string, beforeUnixUTC int64, limit int) ([]Entry, error) {
-	accountID, accountError := service.store.GetOrCreateAccountID(requestContext, userID)
+func (service *Service) ListEntries(requestContext context.Context, userID UserID, beforeUnixUTC int64, limit int) ([]Entry, error) {
+	accountID, accountError := service.store.GetOrCreateAccountID(requestContext, userID.String())
 	if accountError != nil {
 		return nil, accountError
 	}
