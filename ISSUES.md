@@ -52,10 +52,11 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
     - Rework `Reserve`, `Capture`, and `Release` so they update reservation status, reverse holds on release, and prevent double capture; update `SumActiveHolds` to ignore closed reservations.
     - Extend `db/migrations.sql` and stores to reflect the new schema and invariants.
     - 2024-11-25: Added the `reservations` enum+table, updated both pgx and GORM stores plus CLI migrations, reworked the service to enforce single capture/release with reverse-hold entries and availability math fixes, added gRPC error mappings, and introduced unit tests covering reserve/capture/release flows.
-- [ ] [LG-403] Consolidate persistence + runtime wiring.
+- [x] [LG-403] Consolidate persistence + runtime wiring.
     - Remove the runtime GORM dependency, standardize on the pgx store, and expose configuration via Cobra/Viper with env/flag parity.
     - Add structured logging with zap and wrap errors with operation + subject codes before surfacing them to gRPC.
     - Delete AutoMigrate from `cmd/credit`, ensure migrations remain SQL-first, and verify startup gracefully handles dependency errors.
+    - 2024-11-25: Deleted the unused GORM store, rewired `cmd/credit` to use pgstore exclusively with Cobra/Viper config handling, added zap-powered logging plus graceful shutdown, and kept Docker/env compatibility intact (SQL migrations remain source of truth).
 - [ ] [LG-404] Testing, CI, and container compliance.
     - Author black-box integration tests covering grant/reserve/capture/release/spend/list flows plus store-specific tests for pagination and idempotency.
     - Wire `make test`, `make lint`, and `make ci` (or equivalent) to run gofmt/go vet/staticcheck/ineffassign + coverage enforcement per POLICY.
