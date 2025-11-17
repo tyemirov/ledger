@@ -22,6 +22,8 @@ const (
 	errorInvalidAmount           = "invalid_amount_cents"
 	errorInvalidMetadata         = "invalid_metadata_json"
 	errorInvalidListLimit        = "invalid_list_limit"
+	errorReservationExists       = "reservation_exists"
+	errorReservationClosed       = "reservation_closed"
 
 	defaultListEntriesLimit = 50
 	maxListEntriesLimit     = 200
@@ -249,6 +251,12 @@ func mapToGRPCError(source error) error {
 	}
 	if errors.Is(source, credit.ErrDuplicateIdempotencyKey) {
 		return status.Error(codes.AlreadyExists, errorDuplicateIdempotencyKey)
+	}
+	if errors.Is(source, credit.ErrReservationExists) {
+		return status.Error(codes.AlreadyExists, errorReservationExists)
+	}
+	if errors.Is(source, credit.ErrReservationClosed) {
+		return status.Error(codes.FailedPrecondition, errorReservationClosed)
 	}
 	return status.Error(codes.Internal, source.Error())
 }

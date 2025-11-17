@@ -22,7 +22,7 @@ func NewService(store Store, now func() int64) (*Service, error) {
 	return &Service{store: store, nowFn: now}, nil
 }
 
-// Balance returns total and available (total + active holds, holds are negative).
+// Balance returns total and available (total minus active holds).
 func (s *Service) Balance(ctx context.Context, userID UserID) (Balance, error) {
 	accountID, err := s.store.GetOrCreateAccountID(ctx, userID.String())
 	if err != nil {
@@ -39,7 +39,7 @@ func (s *Service) Balance(ctx context.Context, userID UserID) (Balance, error) {
 	}
 	return Balance{
 		TotalCents:     total,
-		AvailableCents: total + holds, // holds are negative
+		AvailableCents: total - holds,
 	}, nil
 }
 
@@ -78,8 +78,16 @@ func (s *Service) Reserve(ctx context.Context, userID UserID, amount AmountCents
 		if err != nil {
 			return err
 		}
-		if total+holds < amount {
+		if total-holds < amount {
 			return ErrInsufficientFunds
+		}
+		if err := txStore.CreateReservation(ctx, Reservation{
+			AccountID:     accountID,
+			ReservationID: reservationID.String(),
+			AmountCents:   amount,
+			Status:        ReservationStatusActive,
+		}); err != nil {
+			return err
 		}
 		return txStore.InsertEntry(ctx, Entry{
 			AccountID:      accountID,
@@ -100,12 +108,30 @@ func (s *Service) Capture(ctx context.Context, userID UserID, reservationID Rese
 		if err != nil {
 			return err
 		}
-		ok, err := txStore.ReservationExists(ctx, accountID, reservationID.String())
+		reservation, err := txStore.GetReservation(ctx, accountID, reservationID.String())
 		if err != nil {
 			return err
 		}
-		if !ok {
-			return ErrUnknownReservation
+		if reservation.Status != ReservationStatusActive {
+			return ErrReservationClosed
+		}
+		if reservation.AmountCents != amount {
+			return fmt.Errorf("%w: capture amount mismatch", ErrInvalidAmountCents)
+		}
+		if err := txStore.UpdateReservationStatus(ctx, accountID, reservationID.String(), ReservationStatusActive, ReservationStatusCaptured); err != nil {
+			return err
+		}
+		now := s.nowFn()
+		if err := txStore.InsertEntry(ctx, Entry{
+			AccountID:      accountID,
+			Type:           EntryReverseHold,
+			AmountCents:    reservation.AmountCents,
+			ReservationID:  reservationID.String(),
+			IdempotencyKey: idem.String(),
+			MetadataJSON:   metadata.String(),
+			CreatedUnixUTC: now,
+		}); err != nil {
+			return err
 		}
 		return txStore.InsertEntry(ctx, Entry{
 			AccountID:      accountID,
@@ -114,7 +140,7 @@ func (s *Service) Capture(ctx context.Context, userID UserID, reservationID Rese
 			ReservationID:  reservationID.String(),
 			IdempotencyKey: idem.String(),
 			MetadataJSON:   metadata.String(),
-			CreatedUnixUTC: s.nowFn(),
+			CreatedUnixUTC: now,
 		})
 	})
 }
@@ -127,19 +153,20 @@ func (s *Service) Release(ctx context.Context, userID UserID, reservationID Rese
 		if err != nil {
 			return err
 		}
-		ok, err := txStore.ReservationExists(ctx, accountID, reservationID.String())
+		reservation, err := txStore.GetReservation(ctx, accountID, reservationID.String())
 		if err != nil {
 			return err
 		}
-		if !ok {
-			return ErrUnknownReservation
+		if reservation.Status != ReservationStatusActive {
+			return ErrReservationClosed
 		}
-		// Write a zero-amount marker to keep the API flow working.
-		// You can upgrade this to add back the held amount if you later store per-reservation sums.
+		if err := txStore.UpdateReservationStatus(ctx, accountID, reservationID.String(), ReservationStatusActive, ReservationStatusReleased); err != nil {
+			return err
+		}
 		return txStore.InsertEntry(ctx, Entry{
 			AccountID:      accountID,
 			Type:           EntryReverseHold,
-			AmountCents:    0,
+			AmountCents:    reservation.AmountCents,
 			ReservationID:  reservationID.String(),
 			IdempotencyKey: idem.String(),
 			MetadataJSON:   metadata.String(),
