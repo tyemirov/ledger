@@ -25,6 +25,8 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
 
     Find dependencies under tools folder and read their documentation and code to understand the integration. be specific in the produced plan on the intehration path forward
 
+- [ ] [LG-101] Implement the plan of building a demo app delivered in LG-100
+
 ## Improvements (200–299)
 
 ## BugFixes (300–399)
