@@ -1,214 +1,214 @@
-package demoapi
+package demoapi_test
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
+	creditv1 "github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
 	"github.com/MarkoPoloResearchLab/ledger/internal/credit"
+	"github.com/MarkoPoloResearchLab/ledger/internal/demoapi"
 	"github.com/MarkoPoloResearchLab/ledger/internal/grpcserver"
 	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
 	"github.com/glebarez/sqlite"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/tyemirov/tauth/pkg/sessionvalidator"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/test/bufconn"
 	"gorm.io/gorm"
 )
 
-const bufconnSize = 1 << 20
+const (
+	healthPath              = "/healthz"
+	bootstrapPath           = "/api/bootstrap"
+	walletPath              = "/api/wallet"
+	transactionsPath        = "/api/transactions"
+	purchasesPath           = "/api/purchases"
+	contentTypeHeader       = "Content-Type"
+	contentTypeJSON         = "application/json"
+	metadataSourceKey       = "source"
+	metadataSourceValue     = "integration_test"
+	metadataCoinsKey        = "coins"
+	spendStatusSuccess      = "success"
+	spendStatusInsufficient = "insufficient_funds"
+	sessionIssuer           = "tauth"
+	sessionUserID           = "demo-user"
+	sessionUserEmail        = "demo@example.com"
+	sessionUserDisplayName  = "Demo User"
+	sessionUserAvatarURL    = "https://example.com/avatar.png"
+)
 
-func TestDemoAPITransactionsAndPurchases(t *testing.T) {
-	ledgerClient, cleanup := startLedgerClient(t)
-	defer cleanup()
+type integrationState struct {
+	walletSnapshot walletEnvelope
+}
 
-	cfg := Config{
-		ListenAddr:        ":0",
-		LedgerAddress:     "bufnet",
+func TestRun_WalletFlowIntegration(t *testing.T) {
+	ledgerAddress, ledgerCleanup := startLedgerServer(t)
+	defer ledgerCleanup()
+
+	listenAddress := allocateListenAddress(t)
+	configuration := demoapi.Config{
+		ListenAddr:        listenAddress,
+		LedgerAddress:     ledgerAddress,
 		LedgerInsecure:    true,
 		LedgerTimeout:     2 * time.Second,
 		AllowedOrigins:    []string{"http://localhost:8000"},
 		SessionSigningKey: "secret-key",
-		SessionIssuer:     "tauth",
+		SessionIssuer:     sessionIssuer,
 		SessionCookieName: "app_session",
 		TAuthBaseURL:      "http://localhost:8080",
 	}
 
-	handler := &httpHandler{
-		logger:       zap.NewNop(),
-		ledgerClient: ledgerClient,
-		cfg:          cfg,
-	}
+	runContext, cancelRun := context.WithCancel(context.Background())
+	defer cancelRun()
 
-	validator, err := sessionvalidator.New(sessionvalidator.Config{
-		SigningKey: []byte(cfg.SessionSigningKey),
-		Issuer:     cfg.SessionIssuer,
-		CookieName: cfg.SessionCookieName,
-	})
-	if err != nil {
-		t.Fatalf("validator init failed: %v", err)
-	}
+	runErrors := make(chan error, 1)
+	go func() { runErrors <- demoapi.Run(runContext, configuration) }()
 
-	router := setupRouter(cfg, handler, validator)
-	server := httptest.NewServer(router)
-	t.Cleanup(server.Close)
+	waitForServerHealthy(t, configuration.ListenAddr)
 
-	cookie := buildSessionCookie(t, cfg)
+	sessionCookie := buildSessionCookie(t, configuration)
+	httpClient := &http.Client{Timeout: 2 * time.Second}
+	baseURL := fmt.Sprintf("http://%s", configuration.ListenAddr)
 
-	// Bootstrap wallet (20 coins)
-	walletEnvelope := execRequest(t, server, http.MethodPost, "/api/bootstrap", cookie, nil)
-	if walletEnvelope.Wallet.Balance.TotalCoins != 20 {
-		t.Fatalf("expected 20 coins after bootstrap, got %d", walletEnvelope.Wallet.Balance.TotalCoins)
-	}
-
-	// Spend coins four times successfully (brings balance to zero)
-	for i := 0; i < 4; i++ {
-		txEnvelope := execTransactionRequest(t, server, cookie)
-		if txEnvelope.Status != "success" {
-			t.Fatalf("expected success status, got %s", txEnvelope.Status)
-		}
-	}
-
-	// Fifth attempt should be rejected with insufficient funds
-	insufficient := execTransactionRequest(t, server, cookie)
-	if insufficient.Status != "insufficient_funds" {
-		t.Fatalf("expected insufficient funds status, got %s", insufficient.Status)
-	}
-
-	// Purchase 10 coins
-	purchasePayload := map[string]any{"coins": 10, "metadata": map[string]any{"source": "test"}}
-	walletAfterPurchase := execRequest(t, server, http.MethodPost, "/api/purchases", cookie, purchasePayload)
-	if walletAfterPurchase.Wallet.Balance.AvailableCoins != 10 {
-		t.Fatalf("expected 10 coins after purchase, got %d", walletAfterPurchase.Wallet.Balance.AvailableCoins)
-	}
-
-	// Fetch wallet to ensure entries exist
-	walletFinal := execRequest(t, server, http.MethodGet, "/api/wallet", cookie, nil)
-	if len(walletFinal.Wallet.Entries) == 0 {
-		t.Fatalf("expected ledger entries to be populated")
-	}
-}
-
-func execTransactionRequest(t *testing.T, server *httptest.Server, cookie *http.Cookie) transactionEnvelope {
-	payload := map[string]any{"metadata": map[string]any{"source": "test", "coins": TransactionAmountCents() / CoinValueCents()}}
-	body := bytes.NewBuffer(mustJSONMarshal(t, payload))
-	req, err := http.NewRequest(http.MethodPost, server.URL+"/api/transactions", body)
-	if err != nil {
-		t.Fatalf("request init failed: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(cookie)
-	resp, err := server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("unexpected status code: %d", resp.StatusCode)
-	}
-	var envelope transactionEnvelope
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	return envelope
-}
-
-func execRequest(t *testing.T, server *httptest.Server, method, path string, cookie *http.Cookie, payload map[string]any) walletEnvelope {
-	var body *bytes.Reader
-	if payload != nil {
-		body = bytes.NewReader(mustJSONMarshal(t, payload))
-	} else {
-		body = bytes.NewReader(nil)
-	}
-	req, err := http.NewRequest(method, server.URL+path, body)
-	if err != nil {
-		t.Fatalf("request init failed: %v", err)
-	}
-	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	req.AddCookie(cookie)
-	resp, err := server.Client().Do(req)
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("unexpected status code: %d", resp.StatusCode)
-	}
-	var envelope walletEnvelope
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	return envelope
-}
-
-func startLedgerClient(t *testing.T) (creditv1.CreditServiceClient, func()) {
-	t.Helper()
-	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/ledger.db"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("sqlite open failed: %v", err)
-	}
-	if err := db.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}, &gormstore.Reservation{}); err != nil {
-		t.Fatalf("automigrate failed: %v", err)
-	}
-	store := gormstore.New(db)
-	clock := func() int64 { return time.Now().UTC().Unix() }
-	service, err := credit.NewService(store, clock)
-	if err != nil {
-		t.Fatalf("credit service init failed: %v", err)
-	}
-
-	listener := bufconn.Listen(bufconnSize)
-	grpcServer := grpc.NewServer()
-	creditv1.RegisterCreditServiceServer(grpcServer, grpcserver.NewCreditServiceServer(service))
-
-	go func() {
-		if serveErr := grpcServer.Serve(listener); serveErr != nil {
-			t.Logf("gRPC server error: %v", serveErr)
-		}
-	}()
-
-	dialer := func(ctx context.Context, _ string) (net.Conn, error) {
-		return listener.Dial()
-	}
-	conn, err := grpc.DialContext(context.Background(), "bufnet", grpc.WithContextDialer(dialer), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatalf("gRPC dial failed: %v", err)
-	}
-
-	cleanup := func() {
-		grpcServer.Stop()
-		_ = conn.Close()
-	}
-	return creditv1.NewCreditServiceClient(conn), cleanup
-}
-
-func buildSessionCookie(t *testing.T, cfg Config) *http.Cookie {
-	claims := &sessionvalidator.Claims{
-		UserID:          "demo-user",
-		UserEmail:       "demo@example.com",
-		UserDisplayName: "Demo",
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    cfg.SessionIssuer,
-			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	state := &integrationState{}
+	testCases := []struct {
+		name   string
+		action func(*testing.T, *http.Client, string, *http.Cookie, *integrationState)
+	}{
+		{
+			name: "bootstrap wallet",
+			action: func(t *testing.T, client *http.Client, apiBaseURL string, cookie *http.Cookie, state *integrationState) {
+				walletEnvelope := executeWalletRequest(t, client, apiBaseURL, http.MethodPost, bootstrapPath, cookie, nil)
+				expectedCoins := demoapi.BootstrapAmountCents() / demoapi.CoinValueCents()
+				if walletEnvelope.Wallet.Balance.TotalCoins != expectedCoins {
+					t.Fatalf("expected %d coins after bootstrap, received %d", expectedCoins, walletEnvelope.Wallet.Balance.TotalCoins)
+				}
+				state.walletSnapshot = walletEnvelope
+			},
+		},
+		{
+			name: "spend coins until insufficient funds",
+			action: func(t *testing.T, client *http.Client, apiBaseURL string, cookie *http.Cookie, state *integrationState) {
+				for attemptIndex := 0; attemptIndex < 4; attemptIndex++ {
+					transactionEnvelope := executeTransactionRequest(t, client, apiBaseURL, cookie)
+					if transactionEnvelope.Status != spendStatusSuccess {
+						t.Fatalf("expected success status, received %s", transactionEnvelope.Status)
+					}
+					state.walletSnapshot.Wallet = transactionEnvelope.Wallet
+				}
+				insufficientEnvelope := executeTransactionRequest(t, client, apiBaseURL, cookie)
+				if insufficientEnvelope.Status != spendStatusInsufficient {
+					t.Fatalf("expected insufficient funds status, received %s", insufficientEnvelope.Status)
+				}
+				state.walletSnapshot.Wallet = insufficientEnvelope.Wallet
+			},
+		},
+		{
+			name: "purchase coins to restore balance",
+			action: func(t *testing.T, client *http.Client, apiBaseURL string, cookie *http.Cookie, state *integrationState) {
+				purchasePayload := map[string]any{
+					metadataCoinsKey: int64(10),
+					"metadata": map[string]any{
+						metadataSourceKey: metadataSourceValue,
+						metadataCoinsKey:  int64(10),
+					},
+				}
+				walletEnvelope := executeWalletRequest(t, client, apiBaseURL, http.MethodPost, purchasesPath, cookie, purchasePayload)
+				expectedCoins := int64(10)
+				if walletEnvelope.Wallet.Balance.AvailableCoins != expectedCoins {
+					t.Fatalf("expected %d coins after purchase, received %d", expectedCoins, walletEnvelope.Wallet.Balance.AvailableCoins)
+				}
+				state.walletSnapshot = walletEnvelope
+			},
+		},
+		{
+			name: "wallet endpoint returns history",
+			action: func(t *testing.T, client *http.Client, apiBaseURL string, cookie *http.Cookie, state *integrationState) {
+				walletEnvelope := executeWalletRequest(t, client, apiBaseURL, http.MethodGet, walletPath, cookie, nil)
+				if len(walletEnvelope.Wallet.Entries) == 0 {
+					t.Fatalf("expected wallet entries to be populated")
+				}
+				if walletEnvelope.Wallet.Balance.AvailableCoins != state.walletSnapshot.Wallet.Balance.AvailableCoins {
+					t.Fatalf("expected available coins to remain at %d, received %d", state.walletSnapshot.Wallet.Balance.AvailableCoins, walletEnvelope.Wallet.Balance.AvailableCoins)
+				}
+			},
 		},
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := token.SignedString([]byte(cfg.SessionSigningKey))
-	if err != nil {
-		t.Fatalf("token signing failed: %v", err)
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			testCase.action(t, httpClient, baseURL, sessionCookie, state)
+		})
 	}
-	return &http.Cookie{Name: cfg.SessionCookieName, Value: signed}
+
+	cancelRun()
+	if err := <-runErrors; err != nil {
+		t.Fatalf("demoapi run returned error: %v", err)
+	}
+}
+
+func executeTransactionRequest(t *testing.T, client *http.Client, apiBaseURL string, cookie *http.Cookie) transactionEnvelope {
+	transactionMetadata := map[string]any{
+		metadataSourceKey: metadataSourceValue,
+		metadataCoinsKey:  demoapi.TransactionAmountCents() / demoapi.CoinValueCents(),
+	}
+	payload := map[string]any{"metadata": transactionMetadata}
+	body := bytes.NewBuffer(mustJSONMarshal(t, payload))
+	request, err := http.NewRequest(http.MethodPost, apiBaseURL+transactionsPath, body)
+	if err != nil {
+		t.Fatalf("transaction request init failed: %v", err)
+	}
+	request.Header.Set(contentTypeHeader, contentTypeJSON)
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("transaction request failed: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected status code for transaction: %d", response.StatusCode)
+	}
+	var envelope transactionEnvelope
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		t.Fatalf("transaction response decode failed: %v", err)
+	}
+	return envelope
+}
+
+func executeWalletRequest(t *testing.T, client *http.Client, apiBaseURL string, method string, path string, cookie *http.Cookie, payload map[string]any) walletEnvelope {
+	var requestBody *bytes.Reader
+	if payload != nil {
+		requestBody = bytes.NewReader(mustJSONMarshal(t, payload))
+	} else {
+		requestBody = bytes.NewReader(nil)
+	}
+	request, err := http.NewRequest(method, apiBaseURL+path, requestBody)
+	if err != nil {
+		t.Fatalf("request init failed for %s: %v", path, err)
+	}
+	if payload != nil {
+		request.Header.Set(contentTypeHeader, contentTypeJSON)
+	}
+	request.AddCookie(cookie)
+
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("request failed for %s: %v", path, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected status code for %s: %d", path, response.StatusCode)
+	}
+	var envelope walletEnvelope
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		t.Fatalf("response decode failed for %s: %v", path, err)
+	}
+	return envelope
 }
 
 func mustJSONMarshal(t *testing.T, payload map[string]any) []byte {
@@ -220,6 +220,94 @@ func mustJSONMarshal(t *testing.T, payload map[string]any) []byte {
 	return raw
 }
 
+func waitForServerHealthy(t *testing.T, listenAddress string) {
+	t.Helper()
+	healthURL := fmt.Sprintf("http://%s%s", listenAddress, healthPath)
+	httpClient := &http.Client{Timeout: 500 * time.Millisecond}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		response, err := httpClient.Get(healthURL)
+		if err == nil && response.StatusCode == http.StatusOK {
+			response.Body.Close()
+			return
+		}
+		if response != nil {
+			response.Body.Close()
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("server did not become healthy at %s", healthURL)
+}
+
+func buildSessionCookie(t *testing.T, configuration demoapi.Config) *http.Cookie {
+	claims := &sessionvalidator.Claims{
+		UserID:          sessionUserID,
+		UserEmail:       sessionUserEmail,
+		UserDisplayName: sessionUserDisplayName,
+		UserAvatarURL:   sessionUserAvatarURL,
+		UserRoles:       []string{"member"},
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    configuration.SessionIssuer,
+			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signedToken, err := token.SignedString([]byte(configuration.SessionSigningKey))
+	if err != nil {
+		t.Fatalf("token signing failed: %v", err)
+	}
+	return &http.Cookie{Name: configuration.SessionCookieName, Value: signedToken}
+}
+
+func startLedgerServer(t *testing.T) (string, func()) {
+	t.Helper()
+
+	database, err := gorm.Open(sqlite.Open(t.TempDir()+"/ledger.db"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("sqlite open failed: %v", err)
+	}
+	if err := database.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}, &gormstore.Reservation{}); err != nil {
+		t.Fatalf("automigrate failed: %v", err)
+	}
+	store := gormstore.New(database)
+	currentTime := func() int64 { return time.Now().UTC().Unix() }
+	service, err := credit.NewService(store, currentTime)
+	if err != nil {
+		t.Fatalf("credit service init failed: %v", err)
+	}
+
+	grpcServer := grpc.NewServer()
+	creditv1.RegisterCreditServiceServer(grpcServer, grpcserver.NewCreditServiceServer(service))
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("ledger listener init failed: %v", err)
+	}
+	go func() {
+		if serveErr := grpcServer.Serve(listener); serveErr != nil {
+			t.Logf("gRPC server error: %v", serveErr)
+		}
+	}()
+
+	cleanup := func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	}
+	return listener.Addr().String(), cleanup
+}
+
+func allocateListenAddress(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen address allocation failed: %v", err)
+	}
+	address := listener.Addr().String()
+	_ = listener.Close()
+	return address
+}
+
 type walletEnvelope struct {
 	Wallet walletResponse `json:"wallet"`
 }
@@ -227,4 +315,27 @@ type walletEnvelope struct {
 type transactionEnvelope struct {
 	Status string         `json:"status"`
 	Wallet walletResponse `json:"wallet"`
+}
+
+type walletResponse struct {
+	Balance balancePayload `json:"balance"`
+	Entries []entryPayload `json:"entries"`
+}
+
+type balancePayload struct {
+	TotalCents     int64 `json:"total_cents"`
+	AvailableCents int64 `json:"available_cents"`
+	TotalCoins     int64 `json:"total_coins"`
+	AvailableCoins int64 `json:"available_coins"`
+}
+
+type entryPayload struct {
+	EntryID        string          `json:"entry_id"`
+	Type           string          `json:"type"`
+	AmountCents    int64           `json:"amount_cents"`
+	AmountCoins    int64           `json:"amount_coins"`
+	ReservationID  string          `json:"reservation_id"`
+	IdempotencyKey string          `json:"idempotency_key"`
+	Metadata       json.RawMessage `json:"metadata"`
+	CreatedUnixUTC int64           `json:"created_unix_utc"`
 }
