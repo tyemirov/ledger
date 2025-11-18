@@ -57,7 +57,7 @@ The repository ships `docker-compose.demo.yml` plus env templates so you can run
    cp demo/.env.tauth.example demo/.env.tauth
    ```
    Edit both files so `DEMOAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID.
-2. Start the stack:
+2. Start the stack (creditd is published on host port `7700` by default to avoid macOS Control Center occupying `7000`; adjust `docker-compose.demo.yml` if another port works better):
    ```bash
    docker compose -f docker-compose.demo.yml up --build
    ```

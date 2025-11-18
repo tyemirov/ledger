@@ -10,7 +10,7 @@ services:
     volumes:
       - ledger_data:/data
     ports:
-      - "7000:7000"
+      - "7700:7000"
 
   tauth:
     image: ghcr.io/tyemirov/tauth:latest
