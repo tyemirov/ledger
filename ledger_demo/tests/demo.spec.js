@@ -1,25 +1,6 @@
 const { test, expect } = require('@playwright/test');
-const { setupDemoStubs, demoOrigin } = require('./stub-server');
-
-const demoUrl = `${demoOrigin}/index.html`;
-
-async function login(page) {
-  await page.getByTestId('google-signin').click();
-  await page.evaluate(() => {
-    console.log('auth state before login', window.__playwrightAuth, document.body.dataset.authState);
-    if (window.__playwrightAuth && typeof window.__playwrightAuth.login === 'function') {
-      window.__playwrightAuth.login({
-        user_id: 'google:test-user',
-        user_email: 'demo@example.com',
-        display: 'Demo User',
-        avatar_url: '',
-        roles: ['user'],
-      });
-    }
-    console.log('auth state after login', document.body.dataset.authState);
-  });
-  await expect(page.locator('[data-auth-message]')).toBeHidden();
-}
+const { setupDemoStubs } = require('./stub-server');
+const { demoUrl, login } = require('./helpers');
 
 test.beforeEach(async ({ page }) => {
   page.on('console', (message) => {

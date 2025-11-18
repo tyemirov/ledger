@@ -56,6 +56,8 @@ function init() {
   }
   document.addEventListener("mpr-ui:auth:unauthenticated", handleUnauthenticatedEvent);
 
+  void restoreExistingSession();
+
   if (typeof runtimeWindow.initAuthClient === "function") {
     runtimeWindow.initAuthClient({
       baseUrl: AUTH_BASE_URL,
@@ -99,6 +101,24 @@ function handleSignOut() {
 function handleUnauthenticatedEvent(event) {
   event.preventDefault();
   handleSignOut();
+}
+
+async function restoreExistingSession() {
+  try {
+    const session = await apiFetch('/session');
+    if (session && session.user_id) {
+      await handleAuthenticated({
+        display: session.display,
+        user_email: session.email,
+        avatar_url: session.avatar_url,
+        roles: session.roles,
+      });
+    }
+  } catch (error) {
+    if (!String(error && error.message).includes('401')) {
+      console.error('session restore failed', error);
+    }
+  }
 }
 
 async function refreshWallet() {

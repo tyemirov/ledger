@@ -32,6 +32,12 @@ const authClientStub = `(() => {
       if (typeof state.onUnauthenticated === 'function') {
         state.onUnauthenticated();
       }
+      if (typeof window.fetch === 'function') {
+        fetch('/__playwright__/auth/logout', {
+          method: 'POST',
+          credentials: 'same-origin',
+        }).catch(() => {});
+      }
     }
   };
   window.__playwrightAuth = {
@@ -67,6 +73,14 @@ function createGoogleStubScript(profile) {
         if (latestConfig && typeof latestConfig.callback === 'function') {
           latestConfig.callback({ credential: 'playwright-credential' });
         }
+        if (typeof window.fetch === 'function') {
+          fetch('/__playwright__/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(${JSON.stringify(profile)}),
+          }).catch(() => {});
+        }
       });
       container.innerHTML = '';
       container.appendChild(button);
@@ -95,6 +109,17 @@ function ledgerWalletPayload(state) {
   };
 }
 
+function normalizeSessionProfile(profile) {
+  return {
+    user_id: profile.user_id,
+    email: profile.user_email,
+    display: profile.display,
+    avatar_url: profile.avatar_url,
+    roles: Array.isArray(profile.roles) ? profile.roles : [],
+    expires: Math.floor(Date.now() / 1000) + 3600,
+  };
+}
+
 function contentTypeFor(filePath) {
   if (filePath.endsWith('.html')) {
     return 'text/html; charset=utf-8';
@@ -109,7 +134,7 @@ function contentTypeFor(filePath) {
 }
 
 async function serveDemoUi(page) {
-  const uiRoot = path.resolve(__dirname, '../../ledger_demo/frontend/ui');
+  const uiRoot = path.resolve(__dirname, '../frontend/ui');
   const htmlPath = path.join(uiRoot, 'index.html');
   await page.route(`${demoOrigin}/**`, async (route) => {
     const url = new URL(route.request().url());
@@ -172,8 +197,27 @@ async function setupDemoStubs(page) {
     entries: [],
     transactionResponses: ['success', 'insufficient_funds'],
   };
+  const sessionState = {
+    profile: null,
+  };
 
   await serveDemoUi(page);
+
+  await page.route(`${demoOrigin}/__playwright__/auth/login`, async (route) => {
+    const request = route.request();
+    if (request.method().toUpperCase() === 'OPTIONS') {
+      await route.fulfill({ status: 204, body: '' });
+      return;
+    }
+    const body = JSON.parse((request.postData() || '{}'));
+    sessionState.profile = normalizeSessionProfile(body);
+    await route.fulfill({ status: 204, body: '' });
+  });
+
+  await page.route(`${demoOrigin}/__playwright__/auth/logout`, async (route) => {
+    sessionState.profile = null;
+    await route.fulfill({ status: 204, body: '' });
+  });
 
   await page.route('http://localhost:8080/demo/config.js', (route) => {
     route.fulfill({
@@ -198,6 +242,28 @@ async function setupDemoStubs(page) {
       status: 200,
       contentType: 'application/javascript',
       body: createGoogleStubScript(profile),
+    });
+  });
+
+  await page.route('http://localhost:9090/api/session', async (route) => {
+    if (isPreflight(route)) {
+      await handlePreflight(route);
+      return;
+    }
+    if (!sessionState.profile) {
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        headers: corsHeaders,
+        body: JSON.stringify({ error: 'unauthenticated' }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: corsHeaders,
+      body: JSON.stringify(sessionState.profile),
     });
   });
 
