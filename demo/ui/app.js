@@ -16,20 +16,21 @@ const PURCHASE_OPTIONS = [5, 10, 20];
 const runtimeWindow = window;
 
 const elements = {
-  walletPanel: document.querySelector('[data-wallet]'),
-  transactionsPanel: document.querySelector('[data-transactions]'),
-  purchasePanel: document.querySelector('[data-purchase]'),
-  historyPanel: document.querySelector('[data-history]'),
-  authMessage: document.querySelector('[data-auth-message]'),
-  availableCoins: document.querySelector('[data-available-coins]'),
-  totalCoins: document.querySelector('[data-total-coins]'),
-  availableCents: document.querySelector('[data-available-cents]'),
-  totalCents: document.querySelector('[data-total-cents]'),
-  transactionButton: document.querySelector('[data-transact]'),
-  transactionStatus: document.querySelector('[data-transaction-status]'),
-  entryList: document.querySelector('[data-entry-list]'),
-  purchaseForm: document.querySelector('[data-purchase-form]'),
-  statusBanner: document.querySelector('[data-status-banner]'),
+  header: document.querySelector("#demo-header"),
+  walletPanel: document.querySelector("[data-wallet]"),
+  transactionsPanel: document.querySelector("[data-transactions]"),
+  purchasePanel: document.querySelector("[data-purchase]"),
+  historyPanel: document.querySelector("[data-history]"),
+  authMessage: document.querySelector("[data-auth-message]"),
+  availableCoins: document.querySelector("[data-available-coins]"),
+  totalCoins: document.querySelector("[data-total-coins]"),
+  availableCents: document.querySelector("[data-available-cents]"),
+  totalCents: document.querySelector("[data-total-cents]"),
+  transactionButton: document.querySelector("[data-transact]"),
+  transactionStatus: document.querySelector("[data-transaction-status]"),
+  entryList: document.querySelector("[data-entry-list]"),
+  purchaseForm: document.querySelector("[data-purchase-form]"),
+  statusBanner: document.querySelector("[data-status-banner]"),
 };
 
 const state = {
@@ -37,14 +38,37 @@ const state = {
   busy: false,
 };
 
+function hydrateHeaderClientId() {
+  if (!elements.header) {
+    return;
+  }
+  if (
+    runtimeWindow.__TAUTH_DEMO_CONFIG &&
+    runtimeWindow.__TAUTH_DEMO_CONFIG.googleClientId
+  ) {
+    elements.header.setAttribute(
+      "site-id",
+      runtimeWindow.__TAUTH_DEMO_CONFIG.googleClientId,
+    );
+    return;
+  }
+  const fallbackId = elements.header.getAttribute("data-site-id");
+  if (fallbackId) {
+    elements.header.setAttribute("site-id", fallbackId);
+  }
+}
 function init() {
+  hydrateHeaderClientId();
   if (elements.transactionButton) {
-    elements.transactionButton.addEventListener('click', handleTransactionClick);
+    elements.transactionButton.addEventListener("click", handleTransactionClick);
   }
   if (elements.purchaseForm) {
-    elements.purchaseForm.addEventListener('submit', handlePurchaseSubmit);
+    elements.purchaseForm.addEventListener("submit", handlePurchaseSubmit);
   }
-  document.addEventListener('mpr-ui:auth:unauthenticated', handleUnauthenticatedEvent);
+  document.addEventListener(
+    "mpr-ui:auth:unauthenticated",
+    handleUnauthenticatedEvent,
+  );
 
   if (typeof runtimeWindow.initAuthClient === "function") {
     runtimeWindow.initAuthClient({
@@ -53,7 +77,7 @@ function init() {
       onUnauthenticated: handleSignOut,
     });
   } else {
-    console.warn('auth-client not loaded');
+    console.warn("auth-client not loaded");
   }
 }
 
