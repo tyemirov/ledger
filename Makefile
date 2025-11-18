@@ -20,6 +20,8 @@ test:
 	go test ./...
 	go test ./internal/credit -coverprofile=coverage.out -covermode=count
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 80.0) { print "coverage below 80%"; exit 1 } }'
+	npm ci
+	npm run test:ui
 
 ci: fmt lint test
 

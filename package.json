@@ -1,0 +1,11 @@
+{
+  "name": "ledger-demo-ui",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test:ui": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}
