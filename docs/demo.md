@@ -4,7 +4,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
 
 ## Components
 
-1. **creditd** (`cmd/credit`) – append-only ledger exposed via gRPC on `:7000`.
+1. **creditd** (`cmd/credit`) – append-only ledger exposed via gRPC on `:7000` (Compose publishes it on host port `7700` so macOS Control Center can keep `7000` free).
 2. **TAuth** (`tools/TAuth`) – Google Sign-In + JWT session issuer on `:8080`.
 3. **demoapi** (`cmd/demoapi`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
 4. **ghttp** (`ghcr.io/temirov/ghttp`) – static server for `demo/ui` on `:8000`.
@@ -36,7 +36,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
    DEMOAPI_LEDGER_TIMEOUT=3s \
    DEMOAPI_ALLOWED_ORIGINS=http://localhost:8000 \
    DEMOAPI_JWT_SIGNING_KEY="secret" \
-   DEMOAPI_JWT_ISSUER=tauth \
+   DEMOAPI_JWT_ISSUER=mprlab-auth \
    DEMOAPI_JWT_COOKIE_NAME=app_session \
    DEMOAPI_TAUTH_BASE_URL=http://localhost:8080 \
    go run ./cmd/demoapi
@@ -57,11 +57,11 @@ The repository ships `docker-compose.demo.yml` plus env templates so you can run
    cp demo/.env.tauth.example demo/.env.tauth
    ```
    Edit both files so `DEMOAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID.
-2. Start the stack:
+2. Start the stack (creditd publishes on host port `7700`; edit `docker-compose.demo.yml` if you need a different port):
    ```bash
    docker compose -f docker-compose.demo.yml up --build
    ```
-3. Visit `http://localhost:8000` (ghttp), `http://localhost:9090/api/wallet` (demoapi), and `http://localhost:8080` (TAuth) to confirm connectivity.
+3. Visit `http://localhost:8000` (ghttp), `http://localhost:9090/api/wallet` (demoapi), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI must load `http://localhost:8080/demo/config.js` so `<mpr-header>` receives the Google OAuth Web Client ID defined in `demo/.env.tauth`; if that script fails or the env variable is empty, sign-in will not work.
 4. Stop everything with `docker compose -f docker-compose.demo.yml down`.
 
 Volumes `ledger_data` and `tauth_data` persist ledger entries plus refresh tokens. Remove them with `docker volume rm ledger_ledger_data ledger_tauth_data` if you need a fresh state.

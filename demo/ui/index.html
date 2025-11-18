@@ -32,10 +32,10 @@
   </head>
   <body data-auth-state="signed-out">
     <mpr-header
+      id="demo-header"
       brand-label="Ledger Demo"
       brand-href="#"
       nav-links='[{"label":"Scenario","href":"#scenario"}]'
-      site-id="991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com"
       base-url="http://localhost:8080"
       login-path="/auth/google"
       logout-path="/auth/logout"
@@ -125,6 +125,7 @@
       links='[{"label":"Plan","url":"https://github.com/MarkoPoloResearchLab/ledger"}]'
     ></mpr-footer>
 
+    <script defer src="http://localhost:8080/demo/config.js"></script>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

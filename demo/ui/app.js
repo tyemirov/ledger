@@ -11,25 +11,27 @@ const PURCHASE_OPTIONS = [5, 10, 20];
 
 /** @typedef {{ balance: { total_coins: number, available_coins: number, total_cents: number, available_cents: number }, entries: Array<EntryPayload> }} WalletResponse */
 /** @typedef {{ entry_id: string, type: string, amount_coins: number, amount_cents: number, created_unix_utc: number, metadata: any, reservation_id: string, idempotency_key: string }} EntryPayload */
+/** @typedef {{ googleClientId?: string }} DemoConfig */
 
-/** @type {Window & typeof globalThis & { initAuthClient?: (options: AuthClientOptions) => void }} */
+/** @type {Window & typeof globalThis & { initAuthClient?: (options: AuthClientOptions) => void, __TAUTH_DEMO_CONFIG?: DemoConfig }} */
 const runtimeWindow = window;
 
 const elements = {
-  walletPanel: document.querySelector('[data-wallet]'),
-  transactionsPanel: document.querySelector('[data-transactions]'),
-  purchasePanel: document.querySelector('[data-purchase]'),
-  historyPanel: document.querySelector('[data-history]'),
-  authMessage: document.querySelector('[data-auth-message]'),
-  availableCoins: document.querySelector('[data-available-coins]'),
-  totalCoins: document.querySelector('[data-total-coins]'),
-  availableCents: document.querySelector('[data-available-cents]'),
-  totalCents: document.querySelector('[data-total-cents]'),
-  transactionButton: document.querySelector('[data-transact]'),
-  transactionStatus: document.querySelector('[data-transaction-status]'),
-  entryList: document.querySelector('[data-entry-list]'),
-  purchaseForm: document.querySelector('[data-purchase-form]'),
-  statusBanner: document.querySelector('[data-status-banner]'),
+  header: document.querySelector("#demo-header"),
+  walletPanel: document.querySelector("[data-wallet]"),
+  transactionsPanel: document.querySelector("[data-transactions]"),
+  purchasePanel: document.querySelector("[data-purchase]"),
+  historyPanel: document.querySelector("[data-history]"),
+  authMessage: document.querySelector("[data-auth-message]"),
+  availableCoins: document.querySelector("[data-available-coins]"),
+  totalCoins: document.querySelector("[data-total-coins]"),
+  availableCents: document.querySelector("[data-available-cents]"),
+  totalCents: document.querySelector("[data-total-cents]"),
+  transactionButton: document.querySelector("[data-transact]"),
+  transactionStatus: document.querySelector("[data-transaction-status]"),
+  entryList: document.querySelector("[data-entry-list]"),
+  purchaseForm: document.querySelector("[data-purchase-form]"),
+  statusBanner: document.querySelector("[data-status-banner]"),
 };
 
 const state = {
@@ -37,14 +39,41 @@ const state = {
   busy: false,
 };
 
+function requireGoogleClientId() {
+  const config = runtimeWindow.__TAUTH_DEMO_CONFIG;
+  const clientId =
+    config && typeof config.googleClientId === "string"
+      ? config.googleClientId.trim()
+      : "";
+  if (!clientId) {
+    throw new Error("window.__TAUTH_DEMO_CONFIG.googleClientId is missing");
+  }
+  return clientId;
+}
+
+function configureHeaderClientId() {
+  if (!elements.header) {
+    throw new Error("demo header element missing");
+  }
+  const clientId = requireGoogleClientId();
+  elements.header.setAttribute("site-id", clientId);
+}
+
 function init() {
+  try {
+    configureHeaderClientId();
+  } catch (error) {
+    console.error(error);
+    showBanner("Google client ID missing; update demo/.env.tauth and restart.", "error");
+    return;
+  }
   if (elements.transactionButton) {
-    elements.transactionButton.addEventListener('click', handleTransactionClick);
+    elements.transactionButton.addEventListener("click", handleTransactionClick);
   }
   if (elements.purchaseForm) {
-    elements.purchaseForm.addEventListener('submit', handlePurchaseSubmit);
+    elements.purchaseForm.addEventListener("submit", handlePurchaseSubmit);
   }
-  document.addEventListener('mpr-ui:auth:unauthenticated', handleUnauthenticatedEvent);
+  document.addEventListener("mpr-ui:auth:unauthenticated", handleUnauthenticatedEvent);
 
   if (typeof runtimeWindow.initAuthClient === "function") {
     runtimeWindow.initAuthClient({
@@ -53,7 +82,8 @@ function init() {
       onUnauthenticated: handleSignOut,
     });
   } else {
-    console.warn('auth-client not loaded');
+    console.warn("auth-client not loaded");
+    showBanner("TAuth auth-client missing from http://localhost:8080/static/auth-client.js", "error");
   }
 }
 

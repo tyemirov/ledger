@@ -210,6 +210,9 @@ The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite://
 
 Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the new HTTP façade (`cmd/demoapi`), creditd, and the static UI (`demo/ui`) via `docker-compose.demo.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows.
 
+- `docker-compose.demo.yml` maps the ledger container’s `:7000` port to `:7700` on the host to avoid macOS Control Center conflicts—adjust the compose file if your host needs a different port.
+- `demo/ui/index.html` loads `http://localhost:8080/demo/config.js`, so the `<mpr-header>` always uses the Google OAuth Web Client ID defined in `demo/.env.tauth`. There is no hardcoded fallback; update the env file and restart the stack whenever you rotate credentials.
+
 ---
 
 ## Notes
