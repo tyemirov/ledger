@@ -1,9 +1,12 @@
 // @ts-check
+import { createWalletClient } from './wallet-api.js';
 
 const API_BASE_URL = "http://localhost:9090/api";
 const AUTH_BASE_URL = "http://localhost:8080";
 const TRANSACTION_COINS = 5;
 const PURCHASE_OPTIONS = [5, 10, 20];
+
+const walletClient = createWalletClient({ baseUrl: API_BASE_URL });
 
 /**
  * @typedef {{ baseUrl: string, onAuthenticated: (profile: any) => void, onUnauthenticated: () => void }} AuthClientOptions
@@ -79,11 +82,13 @@ if (document.readyState === "loading") {
 /**
  * @param {any} profile
  */
-async function handleAuthenticated(profile) {
+async function handleAuthenticated(profile, options = { bootstrap: true }) {
   setAuthState('ready');
   showBanner(`Signed in as ${profile?.display || 'user'}`, 'success');
   try {
-    await apiFetch('/bootstrap', { method: 'POST' });
+    if (options.bootstrap !== false) {
+      await walletClient.bootstrap({ source: 'ui' });
+    }
     await refreshWallet();
   } catch (error) {
     showBanner('Bootstrap failed. Check the API logs.', 'error');
@@ -105,14 +110,14 @@ function handleUnauthenticatedEvent(event) {
 
 async function restoreExistingSession() {
   try {
-    const session = await apiFetch('/session');
+    const session = await walletClient.fetchSession();
     if (session && session.user_id) {
       await handleAuthenticated({
         display: session.display,
         user_email: session.email,
         avatar_url: session.avatar_url,
         roles: session.roles,
-      });
+      }, { bootstrap: false });
     }
   } catch (error) {
     if (!String(error && error.message).includes('401')) {
@@ -123,7 +128,7 @@ async function restoreExistingSession() {
 
 async function refreshWallet() {
   try {
-    const response = await apiFetch('/wallet');
+    const response = await walletClient.getWallet();
     renderWallet(response.wallet);
   } catch (error) {
     console.error(error);
@@ -141,10 +146,7 @@ async function handleTransactionClick() {
     elements.transactionButton.disabled = true;
   }
   try {
-    const response = await apiFetch('/transactions', {
-      method: 'POST',
-      body: JSON.stringify({ metadata: { source: 'ui', coins: TRANSACTION_COINS } }),
-    });
+    const response = await walletClient.spend({ source: 'ui', coins: TRANSACTION_COINS });
     renderWallet(response.wallet);
     if (response.status === 'insufficient_funds') {
       updateTransactionStatus('Insufficient funds. Purchase more coins to continue.', 'error');
@@ -180,10 +182,7 @@ async function handlePurchaseSubmit(event) {
     elements.transactionButton.disabled = true;
   }
   try {
-    const response = await apiFetch('/purchases', {
-      method: 'POST',
-      body: JSON.stringify({ coins: selected, metadata: { source: 'ui', coins: selected } }),
-    });
+    const response = await walletClient.purchase(selected, { source: 'ui', coins: selected });
     renderWallet(response.wallet);
     updateTransactionStatus(`Added ${selected} coins.`, 'success');
   } catch (error) {
@@ -305,27 +304,4 @@ function togglePanels(visible) {
   if (elements.authMessage) {
     elements.authMessage.hidden = visible;
   }
-}
-
-/**
- * @param {string} path
- * @param {RequestInit} [options]
- */
-async function apiFetch(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
-  }
-  const contentType = response.headers.get('content-type') || '';
-  if (!contentType.includes('application/json')) {
-    return {};
-  }
-  return response.json();
 }
