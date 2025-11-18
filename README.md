@@ -206,6 +206,12 @@ The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite://
 
 ---
 
+## Demo Application
+
+Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the new HTTP façade (`cmd/demoapi`), creditd, and the static UI (`demo/ui`) via `docker-compose.demo.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows.
+
+---
+
 ## Notes
 
 * **Amounts** are stored as integer cents to avoid floating point errors.
