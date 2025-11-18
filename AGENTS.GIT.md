@@ -21,6 +21,7 @@ Git and GitHub conventions for this repository. Use these rules whenever you cre
 
 - Each issue typically concludes with a single commit capturing the tests and implementation for that issue. If additional fixes are needed, append new commits—do not amend or reorder history.
 - Never use `git push --force`, `git rebase`, or `git cherry-pick`. History is append-only.
+- Do not use `git revert` to rewrite history; address mistakes by authoring a new forward commit.
 - If a mistake occurs, fix it with a new commit on top of the existing branch.
 - Commit messages must be descriptive (e.g., “Fix GN-58 editor preview duplication”) so reviewers understand the change at a glance.
 - Do not commit or push changes unless the relevant tests, linters, and formatters have been run and are passing on the current branch, as required by `AGENTS.md` and the process guidance in `NOTES.md` (blocked work must be explicitly documented in `ISSUES.md`).
