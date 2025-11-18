@@ -39,29 +39,30 @@ const state = {
   busy: false,
 };
 
-function requireGoogleClientId() {
-  const config = runtimeWindow.__TAUTH_DEMO_CONFIG;
-  const clientId =
-    config && typeof config.googleClientId === "string"
-      ? config.googleClientId.trim()
-      : "";
-  if (!clientId) {
-    throw new Error("window.__TAUTH_DEMO_CONFIG.googleClientId is missing");
-  }
-  return clientId;
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function configureHeaderClientId() {
+async function waitForGoogleClientId(timeoutMs = 2000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const config = runtimeWindow.__TAUTH_DEMO_CONFIG;
+    if (config && typeof config.googleClientId === "string" && config.googleClientId.trim()) {
+      return config.googleClientId.trim();
+    }
+    await wait(50);
+  }
+  throw new Error("window.__TAUTH_DEMO_CONFIG.googleClientId missing after waiting");
+}
+
+async function init() {
   if (!elements.header) {
-    throw new Error("demo header element missing");
+    showBanner("Header element missing; cannot initialize demo.", "error");
+    return;
   }
-  const clientId = requireGoogleClientId();
-  elements.header.setAttribute("site-id", clientId);
-}
-
-function init() {
   try {
-    configureHeaderClientId();
+    const clientId = await waitForGoogleClientId();
+    elements.header.setAttribute("site-id", clientId);
   } catch (error) {
     console.error(error);
     showBanner("Google client ID missing; update demo/.env.tauth and restart.", "error");
@@ -87,7 +88,12 @@ function init() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener("DOMContentLoaded", () => {
+  init().catch((error) => {
+    console.error(error);
+    showBanner("Initialization failed. Check console logs.", "error");
+  });
+});
 
 /**
  * @param {any} profile
