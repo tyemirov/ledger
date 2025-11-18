@@ -1,6 +1,10 @@
 tools/
 .env
+.env.*
 
 PLAN.md
 coverage.out
 *.db
+node_modules/
+test-results/
+*.png
