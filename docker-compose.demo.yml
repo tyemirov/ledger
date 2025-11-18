@@ -1,0 +1,52 @@
+services:
+  ledger:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ledger-creditd:latest
+    container_name: ledger-creditd
+    environment:
+      - DATABASE_URL=sqlite:///data/demo-ledger.db
+    volumes:
+      - ledger_data:/data
+    ports:
+      - "7000:7000"
+
+  tauth:
+    image: ghcr.io/tyemirov/tauth:latest
+    container_name: ledger-tauth
+    env_file:
+      - ./demo/.env.tauth
+    volumes:
+      - tauth_data:/data
+    ports:
+      - "8080:8080"
+
+  demoapi:
+    build:
+      context: .
+      dockerfile: Dockerfile.demoapi
+    image: ledger-demoapi:latest
+    container_name: ledger-demoapi
+    env_file:
+      - ./.env.demoapi
+    depends_on:
+      - ledger
+      - tauth
+    ports:
+      - "9090:9090"
+
+  ghttp:
+    image: ghcr.io/tyemirov/ghttp:latest
+    container_name: ledger-ghttp
+    command: ["--directory", "/data", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./demo/ui:/data:ro
+    depends_on:
+      - demoapi
+
+volumes:
+  ledger_data:
+  tauth_data:
