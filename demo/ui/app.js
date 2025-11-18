@@ -11,9 +11,8 @@ const PURCHASE_OPTIONS = [5, 10, 20];
 
 /** @typedef {{ balance: { total_coins: number, available_coins: number, total_cents: number, available_cents: number }, entries: Array<EntryPayload> }} WalletResponse */
 /** @typedef {{ entry_id: string, type: string, amount_coins: number, amount_cents: number, created_unix_utc: number, metadata: any, reservation_id: string, idempotency_key: string }} EntryPayload */
-/** @typedef {{ googleClientId?: string }} DemoConfig */
 
-/** @type {Window & typeof globalThis & { initAuthClient?: (options: AuthClientOptions) => void, __TAUTH_DEMO_CONFIG?: DemoConfig }} */
+/** @type {Window & typeof globalThis & { initAuthClient?: (options: AuthClientOptions) => void }} */
 const runtimeWindow = window;
 
 const elements = {
@@ -39,33 +38,14 @@ const state = {
   busy: false,
 };
 
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForGoogleClientId(timeoutMs = 2000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const config = runtimeWindow.__TAUTH_DEMO_CONFIG;
-    if (config && typeof config.googleClientId === "string" && config.googleClientId.trim()) {
-      return config.googleClientId.trim();
-    }
-    await wait(50);
-  }
-  throw new Error("window.__TAUTH_DEMO_CONFIG.googleClientId missing after waiting");
-}
-
-async function init() {
+function init() {
   if (!elements.header) {
     showBanner("Header element missing; cannot initialize demo.", "error");
     return;
   }
-  try {
-    const clientId = await waitForGoogleClientId();
-    elements.header.setAttribute("site-id", clientId);
-  } catch (error) {
-    console.error(error);
-    showBanner("Google client ID missing; update demo/.env.tauth and restart.", "error");
+  const clientId = elements.header.getAttribute("site-id");
+  if (!clientId) {
+    showBanner("Google client ID missing; check demo/.env.tauth and reload.", "error");
     return;
   }
   if (elements.transactionButton) {
@@ -88,12 +68,7 @@ async function init() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  init().catch((error) => {
-    console.error(error);
-    showBanner("Initialization failed. Check console logs.", "error");
-  });
-});
+document.addEventListener("DOMContentLoaded", init);
 
 /**
  * @param {any} profile
