@@ -14,29 +14,7 @@
       window.Alpine = Alpine;
       Alpine.start();
     </script>
-    <script defer src="http://localhost:8080/demo/config.js"></script>
-    <script defer>
-      (function applyTAuthClientId() {
-        function assignClientId() {
-          var config = window.__TAUTH_DEMO_CONFIG || {};
-          var header =
-            document.getElementById("demo-header") ||
-            document.querySelector("mpr-header");
-          var clientId =
-            config && typeof config.googleClientId === "string"
-              ? config.googleClientId.trim()
-              : "";
-          if (header && clientId) {
-            header.setAttribute("site-id", clientId);
-          }
-        }
-        if (document.readyState === "loading") {
-          document.addEventListener("DOMContentLoaded", assignClientId, { once: true });
-        } else {
-          assignClientId();
-        }
-      })();
-    </script>
+    <script src="http://localhost:8080/demo/config.js"></script>
     <script
       defer
       src="http://localhost:8080/static/auth-client.js"
@@ -66,6 +44,23 @@
       settings="true"
       settings-label="Profile"
     ></mpr-header>
+    <script>
+      (function applyTAuthClientId() {
+        var header =
+          document.getElementById("demo-header") ||
+          document.querySelector("mpr-header");
+        var config = window.__TAUTH_DEMO_CONFIG || {};
+        var clientId =
+          config && typeof config.googleClientId === "string"
+            ? config.googleClientId.trim()
+            : "";
+        if (header && clientId) {
+          header.setAttribute("site-id", clientId);
+        } else {
+          console.error("Missing Google client ID from TAuth config.");
+        }
+      })();
+    </script>
 
     <main class="demo-layout">
       <section class="panel" data-auth-message>
