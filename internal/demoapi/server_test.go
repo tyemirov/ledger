@@ -31,11 +31,15 @@ func TestDemoAPITransactionsAndPurchases(t *testing.T) {
 	defer cleanup()
 
 	cfg := Config{
-		AllowedOrigins:    []string{"http://localhost:8000"},
+		ListenAddr:        ":0",
+		LedgerAddress:     "bufnet",
+		LedgerInsecure:    true,
 		LedgerTimeout:     2 * time.Second,
+		AllowedOrigins:    []string{"http://localhost:8000"},
 		SessionSigningKey: "secret-key",
 		SessionIssuer:     "tauth",
 		SessionCookieName: "app_session",
+		TAuthBaseURL:      "http://localhost:8080",
 	}
 
 	handler := &httpHandler{

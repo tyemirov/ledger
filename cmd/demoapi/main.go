@@ -6,7 +6,6 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/MarkoPoloResearchLab/ledger/internal/demoapi"
 	"github.com/spf13/cobra"
@@ -51,15 +50,15 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String(flagListenAddr, ":9090", "HTTP listen address")
-	cmd.Flags().String(flagLedgerAddr, "localhost:7000", "creditd gRPC address")
-	cmd.Flags().Bool(flagLedgerInsecure, true, "use insecure gRPC transport")
-	cmd.Flags().Duration(flagLedgerTimeout, 3*time.Second, "ledger RPC timeout (e.g. 3s)")
-	cmd.Flags().String(flagAllowedOrigins, "http://localhost:8000", "comma-separated list of allowed CORS origins")
-	cmd.Flags().String(flagJWTSigningKey, "", "TAuth JWT signing key")
-	cmd.Flags().String(flagJWTIssuer, "tauth", "expected JWT issuer")
-	cmd.Flags().String(flagJWTCookieName, "app_session", "JWT cookie name")
-	cmd.Flags().String(flagTAuthBaseURL, "http://localhost:8080", "base URL of TAuth (for documentation links)")
+	cmd.Flags().String(flagListenAddr, "", "HTTP listen address (required)")
+	cmd.Flags().String(flagLedgerAddr, "", "creditd gRPC address (required)")
+	cmd.Flags().Bool(flagLedgerInsecure, false, "set true when connecting to an insecure ledger endpoint (required)")
+	cmd.Flags().Duration(flagLedgerTimeout, 0, "ledger RPC timeout (e.g. 3s, required)")
+	cmd.Flags().String(flagAllowedOrigins, "", "comma-separated list of allowed CORS origins (required)")
+	cmd.Flags().String(flagJWTSigningKey, "", "TAuth JWT signing key (required)")
+	cmd.Flags().String(flagJWTIssuer, "", "expected JWT issuer (required)")
+	cmd.Flags().String(flagJWTCookieName, "", "JWT cookie name (required)")
+	cmd.Flags().String(flagTAuthBaseURL, "", "base URL of TAuth for documentation/metadata (required)")
 
 	return cmd
 }
@@ -74,6 +73,34 @@ func loadConfig(cmd *cobra.Command, cfg *demoapi.Config) error {
 		if err := v.BindPFlag(flagName, cmd.Flags().Lookup(flagName)); err != nil {
 			return err
 		}
+	}
+
+	if !v.IsSet(flagListenAddr) {
+		return fmt.Errorf("%s is required", flagListenAddr)
+	}
+	if !v.IsSet(flagLedgerAddr) {
+		return fmt.Errorf("%s is required", flagLedgerAddr)
+	}
+	if !v.IsSet(flagLedgerInsecure) {
+		return fmt.Errorf("%s is required", flagLedgerInsecure)
+	}
+	if !v.IsSet(flagLedgerTimeout) {
+		return fmt.Errorf("%s is required", flagLedgerTimeout)
+	}
+	if !v.IsSet(flagAllowedOrigins) {
+		return fmt.Errorf("%s is required", flagAllowedOrigins)
+	}
+	if !v.IsSet(flagJWTSigningKey) {
+		return fmt.Errorf("%s is required", flagJWTSigningKey)
+	}
+	if !v.IsSet(flagJWTIssuer) {
+		return fmt.Errorf("%s is required", flagJWTIssuer)
+	}
+	if !v.IsSet(flagJWTCookieName) {
+		return fmt.Errorf("%s is required", flagJWTCookieName)
+	}
+	if !v.IsSet(flagTAuthBaseURL) {
+		return fmt.Errorf("%s is required", flagTAuthBaseURL)
 	}
 
 	cfg.ListenAddr = strings.TrimSpace(v.GetString(flagListenAddr))

@@ -7,17 +7,12 @@ import (
 )
 
 const (
-	defaultListenAddr          = ":9090"
-	defaultLedgerAddr          = "localhost:7000"
-	defaultAllowedOrigin       = "http://localhost:8000"
-	defaultSessionIssuer       = "tauth"
-	defaultSessionCookie       = "app_session"
-	coinValueCents       int64 = 100
-	transactionCoins     int64 = 5
-	bootstrapCoins       int64 = 20
-	minPurchaseCoins     int64 = 5
-	purchaseStep         int64 = 5
-	walletHistoryLimit         = 10
+	coinValueCents     int64 = 100
+	transactionCoins   int64 = 5
+	bootstrapCoins     int64 = 20
+	minPurchaseCoins   int64 = 5
+	purchaseStep       int64 = 5
+	walletHistoryLimit       = 10
 )
 
 // Config aggregates runtime settings for the demo API.
@@ -35,22 +30,17 @@ type Config struct {
 
 // Validate ensures the configuration contains sane values.
 func (cfg *Config) Validate() error {
-	cfg.ListenAddr = defaultIfEmpty(cfg.ListenAddr, defaultListenAddr)
-	cfg.LedgerAddress = defaultIfEmpty(cfg.LedgerAddress, defaultLedgerAddr)
-	if cfg.LedgerTimeout <= 0 {
-		cfg.LedgerTimeout = 3 * time.Second
-	}
-	if len(cfg.AllowedOrigins) == 0 {
-		cfg.AllowedOrigins = []string{defaultAllowedOrigin}
-	}
-	cfg.SessionIssuer = defaultIfEmpty(cfg.SessionIssuer, defaultSessionIssuer)
-	cfg.SessionCookieName = defaultIfEmpty(cfg.SessionCookieName, defaultSessionCookie)
-	cfg.TAuthBaseURL = defaultIfEmpty(cfg.TAuthBaseURL, "http://localhost:8080")
 	if strings.TrimSpace(cfg.ListenAddr) == "" {
 		return fmt.Errorf("listen addr is required")
 	}
 	if strings.TrimSpace(cfg.LedgerAddress) == "" {
 		return fmt.Errorf("ledger address is required")
+	}
+	if cfg.LedgerTimeout <= 0 {
+		return fmt.Errorf("ledger timeout must be greater than zero")
+	}
+	if len(cfg.AllowedOrigins) == 0 {
+		return fmt.Errorf("at least one allowed origin is required")
 	}
 	if len(cfg.SessionSigningKey) == 0 {
 		return fmt.Errorf("jwt signing key is required")
@@ -61,14 +51,10 @@ func (cfg *Config) Validate() error {
 	if strings.TrimSpace(cfg.SessionCookieName) == "" {
 		return fmt.Errorf("jwt cookie name is required")
 	}
-	return nil
-}
-
-func defaultIfEmpty(value string, fallback string) string {
-	if strings.TrimSpace(value) == "" {
-		return fallback
+	if strings.TrimSpace(cfg.TAuthBaseURL) == "" {
+		return fmt.Errorf("tauth base url is required")
 	}
-	return value
+	return nil
 }
 
 // ParseAllowedOrigins splits comma-delimited origins into a slice.
