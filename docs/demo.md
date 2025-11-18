@@ -36,7 +36,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
    DEMOAPI_LEDGER_TIMEOUT=3s \
    DEMOAPI_ALLOWED_ORIGINS=http://localhost:8000 \
    DEMOAPI_JWT_SIGNING_KEY="secret" \
-   DEMOAPI_JWT_ISSUER=mprlab-auth \
+   DEMOAPI_JWT_ISSUER=tauth \
    DEMOAPI_JWT_COOKIE_NAME=app_session \
    DEMOAPI_TAUTH_BASE_URL=http://localhost:8080 \
    go run ./cmd/demoapi
