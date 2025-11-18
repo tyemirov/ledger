@@ -1,4 +1,4 @@
-package demoapi_test
+package walletapi_test
 
 import (
 	"bytes"
@@ -12,9 +12,9 @@ import (
 
 	creditv1 "github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
 	"github.com/MarkoPoloResearchLab/ledger/internal/credit"
-	"github.com/MarkoPoloResearchLab/ledger/internal/demoapi"
 	"github.com/MarkoPoloResearchLab/ledger/internal/grpcserver"
 	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
+	"github.com/MarkoPoloResearchLab/ledger/ledger_demo/backend/internal/walletapi"
 	"github.com/glebarez/sqlite"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/tyemirov/tauth/pkg/sessionvalidator"
@@ -51,7 +51,7 @@ func TestRun_WalletFlowIntegration(t *testing.T) {
 	defer ledgerCleanup()
 
 	listenAddress := allocateListenAddress(t)
-	configuration := demoapi.Config{
+	configuration := walletapi.Config{
 		ListenAddr:        listenAddress,
 		LedgerAddress:     ledgerAddress,
 		LedgerInsecure:    true,
@@ -67,7 +67,7 @@ func TestRun_WalletFlowIntegration(t *testing.T) {
 	defer cancelRun()
 
 	runErrors := make(chan error, 1)
-	go func() { runErrors <- demoapi.Run(runContext, configuration) }()
+	go func() { runErrors <- walletapi.Run(runContext, configuration) }()
 
 	waitForServerHealthy(t, configuration.ListenAddr)
 
@@ -84,7 +84,7 @@ func TestRun_WalletFlowIntegration(t *testing.T) {
 			name: "bootstrap wallet",
 			action: func(t *testing.T, client *http.Client, apiBaseURL string, cookie *http.Cookie, state *integrationState) {
 				walletEnvelope := executeWalletRequest(t, client, apiBaseURL, http.MethodPost, bootstrapPath, cookie, nil)
-				expectedCoins := demoapi.BootstrapAmountCents() / demoapi.CoinValueCents()
+				expectedCoins := walletapi.BootstrapAmountCents() / walletapi.CoinValueCents()
 				if walletEnvelope.Wallet.Balance.TotalCoins != expectedCoins {
 					t.Fatalf("expected %d coins after bootstrap, received %d", expectedCoins, walletEnvelope.Wallet.Balance.TotalCoins)
 				}
@@ -148,14 +148,14 @@ func TestRun_WalletFlowIntegration(t *testing.T) {
 
 	cancelRun()
 	if err := <-runErrors; err != nil {
-		t.Fatalf("demoapi run returned error: %v", err)
+		t.Fatalf("walletapi run returned error: %v", err)
 	}
 }
 
 func executeTransactionRequest(t *testing.T, client *http.Client, apiBaseURL string, cookie *http.Cookie) transactionEnvelope {
 	transactionMetadata := map[string]any{
 		metadataSourceKey: metadataSourceValue,
-		metadataCoinsKey:  demoapi.TransactionAmountCents() / demoapi.CoinValueCents(),
+		metadataCoinsKey:  walletapi.TransactionAmountCents() / walletapi.CoinValueCents(),
 	}
 	payload := map[string]any{"metadata": transactionMetadata}
 	body := bytes.NewBuffer(mustJSONMarshal(t, payload))
@@ -239,7 +239,7 @@ func waitForServerHealthy(t *testing.T, listenAddress string) {
 	t.Fatalf("server did not become healthy at %s", healthURL)
 }
 
-func buildSessionCookie(t *testing.T, configuration demoapi.Config) *http.Cookie {
+func buildSessionCookie(t *testing.T, configuration walletapi.Config) *http.Cookie {
 	claims := &sessionvalidator.Claims{
 		UserID:          sessionUserID,
 		UserEmail:       sessionUserEmail,

@@ -45,7 +45,7 @@ function init() {
   }
   const clientId = elements.header.getAttribute("site-id");
   if (!clientId) {
-    showBanner("Google client ID missing; check demo/.env.tauth and reload.", "error");
+    showBanner("Google client ID missing; check ledger_demo/.env.tauth and reload.", "error");
     return;
   }
   if (elements.transactionButton) {

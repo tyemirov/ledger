@@ -1,7 +1,7 @@
 services:
   ledger:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile
     image: ledger-creditd:latest
     container_name: ledger-creditd
@@ -16,20 +16,20 @@ services:
     image: ghcr.io/tyemirov/tauth:latest
     container_name: ledger-tauth
     env_file:
-      - ./demo/.env.tauth
+      - ./.env.tauth
     volumes:
       - tauth_data:/data
     ports:
       - "8080:8080"
 
-  demoapi:
+  walletapi:
     build:
-      context: .
-      dockerfile: Dockerfile.demoapi
-    image: ledger-demoapi:latest
-    container_name: ledger-demoapi
+      context: ..
+      dockerfile: ledger_demo/backend/Dockerfile
+    image: ledger-walletapi:latest
+    container_name: ledger-walletapi
     env_file:
-      - ./.env.demoapi
+      - ./backend/.env.walletapi
     depends_on:
       - ledger
       - tauth
@@ -43,9 +43,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./demo/ui:/data:ro
+      - ./frontend/ui:/data:ro
     depends_on:
-      - demoapi
+      - walletapi
 
 volumes:
   ledger_data:

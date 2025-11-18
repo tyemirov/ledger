@@ -1,4 +1,4 @@
-package demoapi
+package walletapi
 
 import (
 	"fmt"

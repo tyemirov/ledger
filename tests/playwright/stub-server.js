@@ -109,7 +109,7 @@ function contentTypeFor(filePath) {
 }
 
 async function serveDemoUi(page) {
-  const uiRoot = path.resolve(__dirname, '../../demo/ui');
+  const uiRoot = path.resolve(__dirname, '../../ledger_demo/frontend/ui');
   const htmlPath = path.join(uiRoot, 'index.html');
   await page.route(`${demoOrigin}/**`, async (route) => {
     const url = new URL(route.request().url());

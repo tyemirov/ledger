@@ -1,4 +1,4 @@
-package demoapi
+package walletapi
 
 import (
 	"context"
@@ -67,7 +67,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("demoapi listening", zap.String("addr", cfg.ListenAddr))
+		logger.Info("walletapi listening", zap.String("addr", cfg.ListenAddr))
 		errCh <- server.ListenAndServe()
 	}()
 
