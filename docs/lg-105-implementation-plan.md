@@ -38,3 +38,10 @@ LG-105 tracks the "ledger demo" experience that lives entirely under `ledger_dem
 - Code changes covering backend, frontend, tests, and docs.
 - Playwright suite green via `make test`.
 - ISSUE [LG-105] updated/checked-off once everything merges.
+
+## Manual Validation Checklist
+1. Copy `.env.walletapi.example` and `.env.tauth.example`, fill in matching secrets, and start `docker compose -f ledger_demo/docker-compose.yml up --build`.
+2. Visit `http://localhost:8000`, click **Sign in with Google**, and confirm the 20-coin bootstrap banner plus ledger entry appear.
+3. Refresh the page; the user should remain authenticated and wallet panels stay visible.
+4. Click **Spend 5 coins** four times—three successes followed by the insufficient-funds banner; ledger history should grow after each click.
+5. Use **Buy more coins** (10) and watch the balance rise; continue spending until the zero-balance banner displays.
