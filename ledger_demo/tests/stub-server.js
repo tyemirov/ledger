@@ -195,6 +195,7 @@ async function setupDemoStubs(page) {
       available: 2000,
     },
     entries: [],
+    nextEntryId: 1,
     transactionResponses: ['success', 'insufficient_funds'],
   };
   const sessionState = {
@@ -272,6 +273,7 @@ async function setupDemoStubs(page) {
       await handlePreflight(route);
       return;
     }
+    appendEntry(state, 'grant', 20);
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -304,6 +306,7 @@ async function setupDemoStubs(page) {
     const status = state.transactionResponses.shift();
     if (status === 'success') {
       state.balance.available -= 500;
+      appendEntry(state, 'spend', -5);
     }
     route.fulfill({
       status: 200,
@@ -325,6 +328,7 @@ async function setupDemoStubs(page) {
     const coins = Number(body.coins || 0);
     state.balance.total += coins * 100;
     state.balance.available += coins * 100;
+    appendEntry(state, 'purchase', coins);
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -333,6 +337,17 @@ async function setupDemoStubs(page) {
         wallet: ledgerWalletPayload(state).wallet,
       }),
     });
+  });
+}
+
+function appendEntry(state, type, coinsDelta) {
+  state.entries.unshift({
+    entry_id: `entry-${state.nextEntryId++}`,
+    type,
+    amount_coins: coinsDelta,
+    amount_cents: coinsDelta * 100,
+    created_unix_utc: Math.floor(Date.now() / 1000),
+    metadata: { source: 'stub' },
   });
 }
 

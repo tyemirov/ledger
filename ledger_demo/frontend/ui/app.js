@@ -1,10 +1,12 @@
 // @ts-check
 import { createWalletClient } from './wallet-api.js';
-
-const API_BASE_URL = "http://localhost:9090/api";
-const AUTH_BASE_URL = "http://localhost:8080";
-const TRANSACTION_COINS = 5;
-const PURCHASE_OPTIONS = [5, 10, 20];
+import {
+  API_BASE_URL,
+  AUTH_BASE_URL,
+  TRANSACTION_COINS,
+  PURCHASE_OPTIONS,
+  STATUS_MESSAGES,
+} from './constants.js';
 
 const walletClient = createWalletClient({ baseUrl: API_BASE_URL });
 
@@ -91,7 +93,7 @@ async function handleAuthenticated(profile, options = { bootstrap: true }) {
     }
     await refreshWallet();
   } catch (error) {
-    showBanner('Bootstrap failed. Check the API logs.', 'error');
+    showBanner(STATUS_MESSAGES.bootstrapError, 'error');
     console.error(error);
   }
 }
@@ -132,7 +134,7 @@ async function refreshWallet() {
     renderWallet(response.wallet);
   } catch (error) {
     console.error(error);
-    showBanner('Unable to load wallet', 'error');
+    showBanner(STATUS_MESSAGES.loadWalletError, 'error');
   }
 }
 
@@ -141,7 +143,7 @@ async function handleTransactionClick() {
     return;
   }
   state.busy = true;
-  updateTransactionStatus('Processing…', 'info');
+  updateTransactionStatus(STATUS_MESSAGES.processing, 'info');
   if (elements.transactionButton) {
     elements.transactionButton.disabled = true;
   }
@@ -149,14 +151,14 @@ async function handleTransactionClick() {
     const response = await walletClient.spend({ source: 'ui', coins: TRANSACTION_COINS });
     renderWallet(response.wallet);
     if (response.status === 'insufficient_funds') {
-      updateTransactionStatus('Insufficient funds. Purchase more coins to continue.', 'error');
+      updateTransactionStatus(STATUS_MESSAGES.spendInsufficient, 'error');
     } else {
-      updateTransactionStatus('Transaction succeeded.', 'success');
+      updateTransactionStatus(STATUS_MESSAGES.spendSuccess, 'success');
     }
     checkZeroBalance();
   } catch (error) {
     console.error(error);
-    updateTransactionStatus('Unexpected error while spending coins.', 'error');
+    updateTransactionStatus(STATUS_MESSAGES.spendError, 'error');
   } finally {
     state.busy = false;
     if (elements.transactionButton) {
@@ -174,7 +176,7 @@ async function handlePurchaseSubmit(event) {
   const formData = new FormData(event.currentTarget);
   const selected = Number(formData.get('purchase'));
   if (!PURCHASE_OPTIONS.includes(selected)) {
-    updateTransactionStatus('Select a valid purchase amount.', 'error');
+    updateTransactionStatus(STATUS_MESSAGES.selectValidAmount, 'error');
     return;
   }
   state.busy = true;
@@ -184,10 +186,10 @@ async function handlePurchaseSubmit(event) {
   try {
     const response = await walletClient.purchase(selected, { source: 'ui', coins: selected });
     renderWallet(response.wallet);
-    updateTransactionStatus(`Added ${selected} coins.`, 'success');
+    updateTransactionStatus(`${STATUS_MESSAGES.purchaseSuccessPrefix} ${selected} coins.`, 'success');
   } catch (error) {
     console.error(error);
-    updateTransactionStatus('Unable to purchase coins.', 'error');
+    updateTransactionStatus(STATUS_MESSAGES.purchaseError, 'error');
   } finally {
     state.busy = false;
     if (elements.transactionButton) {
@@ -249,7 +251,7 @@ function renderEntries(entries) {
 
 function checkZeroBalance() {
   if (state.wallet && state.wallet.balance.available_coins === 0) {
-    showBanner('Balance is zero. Purchase coins to continue.', 'error');
+    showBanner(STATUS_MESSAGES.zeroBalance, 'error');
   }
 }
 

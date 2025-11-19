@@ -127,13 +127,13 @@ func (handler *httpHandler) handleSession(ctx *gin.Context) {
 		ctx.JSON(http.StatusUnauthorized, errorResponse("unauthorized", "missing session"))
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{
-		"user_id":    claims.GetUserID(),
-		"email":      claims.GetUserEmail(),
-		"display":    claims.GetUserDisplayName(),
-		"avatar_url": claims.GetUserAvatarURL(),
-		"roles":      claims.GetUserRoles(),
-		"expires":    claims.GetExpiresAt().Unix(),
+	ctx.JSON(http.StatusOK, SessionEnvelope{
+		UserID:  claims.GetUserID(),
+		Email:   claims.GetUserEmail(),
+		Display: claims.GetUserDisplayName(),
+		Avatar:  claims.GetUserAvatarURL(),
+		Roles:   claims.GetUserRoles(),
+		Expires: claims.GetExpiresAt().Unix(),
 	})
 }
 
@@ -255,10 +255,7 @@ func (handler *httpHandler) respondTransactionStatus(ctx *gin.Context, status st
 		ctx.JSON(http.StatusBadGateway, errorResponse("ledger_error", "wallet unavailable"))
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{
-		"status": status,
-		"wallet": wallet,
-	})
+	ctx.JSON(http.StatusOK, TransactionEnvelope{Status: status, Wallet: wallet})
 }
 
 func (handler *httpHandler) respondWithWallet(ctx *gin.Context, userID string) {
@@ -268,15 +265,15 @@ func (handler *httpHandler) respondWithWallet(ctx *gin.Context, userID string) {
 		ctx.JSON(http.StatusBadGateway, errorResponse("ledger_error", "wallet unavailable"))
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"wallet": wallet})
+	ctx.JSON(http.StatusOK, WalletEnvelope{Wallet: wallet})
 }
 
-func (handler *httpHandler) fetchWallet(ctx context.Context, userID string) (*walletResponse, error) {
+func (handler *httpHandler) fetchWallet(ctx context.Context, userID string) (WalletPayload, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, handler.cfg.LedgerTimeout)
 	defer cancel()
 	balanceResp, err := handler.ledgerClient.GetBalance(requestCtx, &creditv1.BalanceRequest{UserId: userID})
 	if err != nil {
-		return nil, err
+		return WalletPayload{}, err
 	}
 
 	entriesCtx, entriesCancel := context.WithTimeout(ctx, handler.cfg.LedgerTimeout)
@@ -287,13 +284,13 @@ func (handler *httpHandler) fetchWallet(ctx context.Context, userID string) (*wa
 		BeforeUnixUtc: time.Now().UTC().Add(time.Second).Unix(),
 	})
 	if err != nil {
-		return nil, err
+		return WalletPayload{}, err
 	}
 
-	entries := make([]entryPayload, 0, len(entriesResp.GetEntries()))
+	entries := make([]EntryPayload, 0, len(entriesResp.GetEntries()))
 	for _, entry := range entriesResp.GetEntries() {
 		metadataBytes := []byte(entry.GetMetadataJson())
-		entries = append(entries, entryPayload{
+		entries = append(entries, EntryPayload{
 			EntryID:        entry.GetEntryId(),
 			Type:           entry.GetType(),
 			AmountCents:    entry.GetAmountCents(),
@@ -305,8 +302,8 @@ func (handler *httpHandler) fetchWallet(ctx context.Context, userID string) (*wa
 		})
 	}
 
-	return &walletResponse{
-		Balance: balancePayload{
+	return WalletPayload{
+		Balance: WalletBalance{
 			TotalCents:     balanceResp.GetTotalCents(),
 			AvailableCents: balanceResp.GetAvailableCents(),
 			TotalCoins:     balanceResp.GetTotalCents() / CoinValueCents(),
@@ -349,13 +346,8 @@ func isGRPCInsufficientFunds(err error) bool {
 	return statusInfo.Code() == codes.FailedPrecondition && statusInfo.Message() == "insufficient_funds"
 }
 
-func errorResponse(code string, message string) gin.H {
-	return gin.H{
-		"error": gin.H{
-			"code":    code,
-			"message": message,
-		},
-	}
+func errorResponse(code string, message string) ErrorEnvelope {
+	return ErrorEnvelope{Error: ErrorPayload{Code: code, Message: message}}
 }
 
 type spendRequest struct {
@@ -365,27 +357,4 @@ type spendRequest struct {
 type purchaseRequest struct {
 	Coins    int64          `json:"coins"`
 	Metadata map[string]any `json:"metadata"`
-}
-
-type walletResponse struct {
-	Balance balancePayload `json:"balance"`
-	Entries []entryPayload `json:"entries"`
-}
-
-type balancePayload struct {
-	TotalCents     int64 `json:"total_cents"`
-	AvailableCents int64 `json:"available_cents"`
-	TotalCoins     int64 `json:"total_coins"`
-	AvailableCoins int64 `json:"available_coins"`
-}
-
-type entryPayload struct {
-	EntryID        string          `json:"entry_id"`
-	Type           string          `json:"type"`
-	AmountCents    int64           `json:"amount_cents"`
-	AmountCoins    int64           `json:"amount_coins"`
-	ReservationID  string          `json:"reservation_id"`
-	IdempotencyKey string          `json:"idempotency_key"`
-	Metadata       json.RawMessage `json:"metadata"`
-	CreatedUnixUTC int64           `json:"created_unix_utc"`
 }

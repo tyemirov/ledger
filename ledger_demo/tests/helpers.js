@@ -25,8 +25,23 @@ async function expectWalletPanelsVisible(page) {
   await expect(page.locator('[data-purchase]')).toBeVisible();
 }
 
+async function expectLedgerEntries(page, minimumCount) {
+  const items = page.locator('[data-entry-list] li');
+  const count = await items.count();
+  if (count < minimumCount) {
+    throw new Error(`expected at least ${minimumCount} ledger entries, received ${count}`);
+  }
+}
+
+async function expectSignedOut(page) {
+  await expect(page.locator('[data-auth-message]')).toBeVisible();
+  await expect(page.locator('[data-wallet]')).toBeHidden();
+}
+
 module.exports = {
   demoUrl,
   login,
   expectWalletPanelsVisible,
+  expectLedgerEntries,
+  expectSignedOut,
 };

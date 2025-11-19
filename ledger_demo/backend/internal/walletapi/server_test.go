@@ -43,7 +43,7 @@ const (
 )
 
 type integrationState struct {
-	walletSnapshot walletEnvelope
+	walletSnapshot walletapi.WalletEnvelope
 }
 
 func TestRun_WalletFlowIntegration(t *testing.T) {
@@ -152,7 +152,7 @@ func TestRun_WalletFlowIntegration(t *testing.T) {
 	}
 }
 
-func executeTransactionRequest(t *testing.T, client *http.Client, apiBaseURL string, cookie *http.Cookie) transactionEnvelope {
+func executeTransactionRequest(t *testing.T, client *http.Client, apiBaseURL string, cookie *http.Cookie) walletapi.TransactionEnvelope {
 	transactionMetadata := map[string]any{
 		metadataSourceKey: metadataSourceValue,
 		metadataCoinsKey:  walletapi.TransactionAmountCents() / walletapi.CoinValueCents(),
@@ -173,14 +173,14 @@ func executeTransactionRequest(t *testing.T, client *http.Client, apiBaseURL str
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status code for transaction: %d", response.StatusCode)
 	}
-	var envelope transactionEnvelope
+	var envelope walletapi.TransactionEnvelope
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
 		t.Fatalf("transaction response decode failed: %v", err)
 	}
 	return envelope
 }
 
-func executeWalletRequest(t *testing.T, client *http.Client, apiBaseURL string, method string, path string, cookie *http.Cookie, payload map[string]any) walletEnvelope {
+func executeWalletRequest(t *testing.T, client *http.Client, apiBaseURL string, method string, path string, cookie *http.Cookie, payload map[string]any) walletapi.WalletEnvelope {
 	var requestBody *bytes.Reader
 	if payload != nil {
 		requestBody = bytes.NewReader(mustJSONMarshal(t, payload))
@@ -204,7 +204,7 @@ func executeWalletRequest(t *testing.T, client *http.Client, apiBaseURL string, 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status code for %s: %d", path, response.StatusCode)
 	}
-	var envelope walletEnvelope
+	var envelope walletapi.WalletEnvelope
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
 		t.Fatalf("response decode failed for %s: %v", path, err)
 	}
@@ -306,36 +306,4 @@ func allocateListenAddress(t *testing.T) string {
 	address := listener.Addr().String()
 	_ = listener.Close()
 	return address
-}
-
-type walletEnvelope struct {
-	Wallet walletResponse `json:"wallet"`
-}
-
-type transactionEnvelope struct {
-	Status string         `json:"status"`
-	Wallet walletResponse `json:"wallet"`
-}
-
-type walletResponse struct {
-	Balance balancePayload `json:"balance"`
-	Entries []entryPayload `json:"entries"`
-}
-
-type balancePayload struct {
-	TotalCents     int64 `json:"total_cents"`
-	AvailableCents int64 `json:"available_cents"`
-	TotalCoins     int64 `json:"total_coins"`
-	AvailableCoins int64 `json:"available_coins"`
-}
-
-type entryPayload struct {
-	EntryID        string          `json:"entry_id"`
-	Type           string          `json:"type"`
-	AmountCents    int64           `json:"amount_cents"`
-	AmountCoins    int64           `json:"amount_coins"`
-	ReservationID  string          `json:"reservation_id"`
-	IdempotencyKey string          `json:"idempotency_key"`
-	Metadata       json.RawMessage `json:"metadata"`
-	CreatedUnixUTC int64           `json:"created_unix_utc"`
 }
