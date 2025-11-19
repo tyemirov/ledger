@@ -1,9 +1,6 @@
 services:
   ledger:
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    image: ledger-creditd:latest
+    image: ghcr.io/tyemirov/ledger:latest
     container_name: ledger-creditd
     environment:
       - DATABASE_URL=sqlite:///data/demo-ledger.db
@@ -25,7 +22,7 @@ services:
   walletapi:
     build:
       context: ..
-      dockerfile: ledger_demo/backend/Dockerfile
+      dockerfile: ./backend/Dockerfile
     image: ledger-walletapi:latest
     container_name: ledger-walletapi
     env_file:

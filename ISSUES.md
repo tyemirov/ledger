@@ -27,36 +27,41 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
     - 2025-11-17: Authored `docs/lg-100-demo-plan.md`, outlining the multi-service architecture (TAuth + demo HTTP API + creditd + ghttp) plus the UI/backend tasks, endpoints, and testing strategy required for LG-101.
 
 - [x] [LG-101] Build the demo transaction API service described in `docs/lg-100-demo-plan.md`.
-    - Added `ledger_demo/backend/cmd/walletapi` + `ledger_demo/backend/internal/walletapi` with Cobra/Viper config, zap logging, CORS, and TAuth session validation plus an insecure gRPC dialer for local development.
+    - Added `demo/backend/cmd/walletapi` + `demo/backend/internal/walletapi` with Cobra/Viper config, zap logging, CORS, and TAuth session validation plus an insecure gRPC dialer for local development.
     - Wired the ledger client for `Grant`, `Spend`, `GetBalance`, and `ListEntries` with per-request timeouts plus error mapping for duplicate idempotency and insufficient funds.
     - Exposed `/api/session`, `/api/bootstrap`, `/api/wallet`, `/api/transactions`, and `/api/purchases`, including idempotent bootstrap grants and automatic wallet responses.
 
-- [x] [LG-102] Ship the declarative front-end bundle under `ledger_demo/frontend/ui` per `docs/lg-100-demo-plan.md`.
-    - Authored `ledger_demo/frontend/ui/index.html`, `styles.css`, and `app.js` that load `mpr-ui`, TAuth’s auth-client, Alpine, and GIS in the documented order.
+- [x] [LG-102] Ship the declarative front-end bundle under `demo/frontend/ui` per `docs/lg-100-demo-plan.md`.
+    - Authored `demo/frontend/ui/index.html`, `styles.css`, and `app.js` that load `mpr-ui`, TAuth’s auth-client, Alpine, and GIS in the documented order.
     - Implemented wallet metrics, the 5-coin transaction button, purchase controls, and ledger history with toast/status banners for the three core scenarios.
     - Used the auth-client callbacks to bootstrap the wallet, fetch balances, and call the new API endpoints with credentialed fetch helpers.
 
 - [x] [LG-103] Provide hosting/orchestration and local tooling for the demo stack (`docs/lg-100-demo-plan.md` “Hosting with ghttp” + “Local Orchestration / Compose”).
-    - Added `ledger_demo/backend/Dockerfile`, `ledger_demo/backend/.env.walletapi.example`, `ledger_demo/.env.tauth.example`, and `ledger_demo/docker-compose.yml` so contributors can run creditd, TAuth, walletapi, and ghttp together.
+    - Added `demo/backend/Dockerfile`, `demo/backend/.env.walletapi.example`, `demo/.env.tauth.example`, and `demo/docker-compose.yml` so contributors can run creditd, TAuth, walletapi, and ghttp together.
     - Documented the ghttp workflow plus the compose steps (including env copies) in `docs/demo.md` and linked the section from README.
 
 - [x] [LG-104] Add integration tests, CI wiring, and documentation from the “Implementation Breakdown” + “Validation & Monitoring Strategy” sections of `docs/lg-100-demo-plan.md`.
-    - Introduced `ledger_demo/backend/internal/walletapi/server_test.go`, which spins up an in-memory ledger + HTTP stack via bufconn/httptest and asserts bootstrap, spend success, insufficient funds, and purchase scenarios.
+    - Introduced `demo/backend/internal/walletapi/server_test.go`, which spins up an in-memory ledger + HTTP stack via bufconn/httptest and asserts bootstrap, spend success, insufficient funds, and purchase scenarios.
     - Extended docs (`docs/demo.md`) with the scenario checklist and manual validation steps; ensured `make test` exercises the new package while retaining coverage gates.
 
-- [x] [LG-105] Build a fresh `ledger_demo/` package that contains both the Go HTTP façade (importing the ledger gRPC client) and the standalone front-end bundle required by `docs/lg-100-demo-plan.md`. The existing materials under `tools/` are informative only—no runtime dependencies on that tree.
-    - Create `ledger_demo/backend` with a new Go module (or sub-package) that compiles to `ledger_demo/backend/cmd/walletapi`. Reuse Cobra/Viper for config, wire the gRPC client to `credit.v1.CreditService`, and expose `/api/session`, `/api/bootstrap`, `/api/wallet`, `/api/transactions`, `/api/purchases` exactly as described in LG-101. All configuration (TAuth base URL, JWT key, ledger addr, timeout, allowed origins) must come from flags/env with no defaults; validation happens in `PreRunE` and the process fails fast if anything is missing.
-    - Author a `ledger_demo/frontend` directory housing `index.html`, `styles.css`, and `app.js`. Reference `mpr-ui` CSS/JS and GIS via CDN URLs only; load `http://localhost:8080/static/auth-client.js` at runtime just like the production stack. Use Alpine (module import) for interactivity and replicate the wallet layout described in LG-100, but ensure the page makes zero references to `tools/mpr-ui` assets.
+- [x] [LG-105] Build a fresh `demo/` package that contains both the Go HTTP façade (importing the ledger gRPC client) and the standalone front-end bundle required by `docs/lg-100-demo-plan.md`. The existing materials under `tools/` are informative only—no runtime dependencies on that tree.
+    - Create `demo/backend` with a new Go module (or sub-package) that compiles to `demo/backend/cmd/walletapi`. Reuse Cobra/Viper for config, wire the gRPC client to `credit.v1.CreditService`, and expose `/api/session`, `/api/bootstrap`, `/api/wallet`, `/api/transactions`, `/api/purchases` exactly as described in LG-101. All configuration (TAuth base URL, JWT key, ledger addr, timeout, allowed origins) must come from flags/env with no defaults; validation happens in `PreRunE` and the process fails fast if anything is missing.
+    - Author a `demo/frontend` directory housing `index.html`, `styles.css`, and `app.js`. Reference `mpr-ui` CSS/JS and GIS via CDN URLs only; load `http://localhost:8080/static/auth-client.js` at runtime just like the production stack. Use Alpine (module import) for interactivity and replicate the wallet layout described in LG-100, but ensure the page makes zero references to `tools/mpr-ui` assets.
     - Implement a front-end config bootstrapper: fetch `/demo/config.js` from TAuth before initializing `mpr-ui`, set `<mpr-header site-id>` dynamically, and refuse to load when the response is absent. All other endpoints (login/logout/nonce) must be bound via attributes instead of hardcoded constants.
-    - Build a shared `ledger_demo/frontend/walletApiClient.js` helper that wraps `fetch` to the backend service with `credentials: 'include'` and typed error handling. Methods: `fetchSession`, `bootstrapWallet`, `getWallet`, `spendCoins`, `purchaseCoins`. Each returns parsed JSON typed per LG-100 invariants (coins as integers, ledger entries with timestamps).
+    - Build a shared `demo/frontend/walletApiClient.js` helper that wraps `fetch` to the backend service with `credentials: 'include'` and typed error handling. Methods: `fetchSession`, `bootstrapWallet`, `getWallet`, `spendCoins`, `purchaseCoins`. Each returns parsed JSON typed per LG-100 invariants (coins as integers, ledger entries with timestamps).
     - Port the LG-100 flows into `app.js`: maintain Alpine stores for auth, wallet, transactions, and status banners; disable buttons while network calls are pending; display ledger history and zero-balance warnings exactly as the plan requires. No default values—if a response is missing required fields, throw and surface an unrecoverable banner.
-    - Compose a dedicated Dockerfile + docker-compose overlay under `ledger_demo/` so contributors can run `creditd`, the new wallet API, TAuth, and a static file server (ghttp) from one command. Ensure `.env` samples (e.g., `.env.walletapi`, `.env.tauth`) live inside `ledger_demo/` and are the only source of runtime configuration.
-    - Add Playwright coverage under `tests/ledger_demo/` that drives the new front end end-to-end. Write a stub server (similar to the existing root-level harness) to intercept `/demo/config.js`, `/static/auth-client.js`, GIS, and the wallet API endpoints so the four mandatory scenarios (sign-in prompt, successful spend, insufficient funds, purchase replenishment) and the zero-balance banner are asserted. Wire these tests into `make test`.
-    - Update repository docs (`README.md`, `docs/demo.md`, and `docs/lg-100-demo-plan.md` if necessary) to point to the new `ledger_demo/` workflow, including the commands for building/running the Docker stack and executing the Playwright suite.
+    - Compose a dedicated Dockerfile + docker-compose overlay under `demo/` so contributors can run `creditd`, the new wallet API, TAuth, and a static file server (ghttp) from one command. Ensure `.env` samples (e.g., `.env.walletapi`, `.env.tauth`) live inside `demo/` and are the only source of runtime configuration.
+    - Add Playwright coverage under `demo/tests/` that drives the new front end end-to-end. Write a stub server (similar to the existing root-level harness) to intercept `/demo/config.js`, `/static/auth-client.js`, GIS, and the wallet API endpoints so the four mandatory scenarios (sign-in prompt, successful spend, insufficient funds, purchase replenishment) and the zero-balance banner are asserted. Wire these tests into `make test`.
+    - Update repository docs (`README.md`, `docs/demo.md`, and `docs/lg-100-demo-plan.md` if necessary) to point to the new `demo/` workflow, including the commands for building/running the Docker stack and executing the Playwright suite.
 
 ## Improvements (200–299)
 
 ## BugFixes (300–399)
+
+- [x] [LG-300] The demo stack was renamed; all references should use the `demo/` paths.
+    - Updated documentation and scripts to drop the old name; Playwright script now points to `demo/tests`.
+    - Fixed `demo/docker-compose.yml` to reference `demo/backend/Dockerfile` and adjusted that Dockerfile to build from `./demo/backend/cmd/walletapi`.
+    - `docker compose -f demo/docker-compose.yml config` now resolves without path errors; `make test` (Go + Playwright) passes.
 
 ## Maintenance (400–499)
 

@@ -1,13 +1,13 @@
 # Demo Stack Guide
 
-This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the end-to-end wallet scenario that combines creditd (ledger), TAuth, the wallet API under `ledger_demo/backend`, and the static UI under `ledger_demo/frontend`.
+This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the end-to-end wallet scenario that combines creditd (ledger), TAuth, the wallet API under `demo/backend`, and the static UI under `demo/frontend`.
 
 ## Components
 
 1. **creditd** (`cmd/credit`) – append-only ledger exposed via gRPC on `:7000` (Compose publishes it on host port `7700` so macOS Control Center can keep `7000` free).
 2. **TAuth** (`tools/TAuth`) – Google Sign-In + JWT session issuer on `:8080`.
-3. **walletapi** (`ledger_demo/backend/cmd/walletapi`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
-4. **web** (`nginx:alpine`) – serves `ledger_demo/frontend/ui` on `:8000` and reverse-proxies `/auth/*` and `/api/*` to the backend services so cookies stay on the same origin.
+3. **walletapi** (`demo/backend/cmd/walletapi`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
+4. **web** (`nginx:alpine`) – serves `demo/frontend/ui` on `:8000` and reverse-proxies `/auth/*` and `/api/*` to the backend services so cookies stay on the same origin.
 
 ## Manual Run (Go toolchain)
 
@@ -39,31 +39,35 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
   WALLETAPI_JWT_ISSUER=tauth \
   WALLETAPI_JWT_COOKIE_NAME=app_session \
   WALLETAPI_TAUTH_BASE_URL=http://localhost:8080 \
-  go run ./ledger_demo/backend/cmd/walletapi
+  go run ./demo/backend/cmd/walletapi
   ```
 4. **Static UI + proxy** (requires Nginx or the docker-compose stack)
   ```bash
-  docker run --rm -p 8000:8000 -v $(pwd)/ledger_demo/frontend/ui:/usr/share/nginx/html -v $(pwd)/ledger_demo/nginx.conf:/etc/nginx/conf.d/default.conf nginx:1.25-alpine
+  docker run --rm -p 8000:8000 -v $(pwd)/demo/frontend/ui:/usr/share/nginx/html -v $(pwd)/demo/nginx.conf:/etc/nginx/conf.d/default.conf nginx:1.25-alpine
   ```
 5. Open `http://localhost:8000` and sign in via the header button. The UI will automatically bootstrap the wallet and call `/api/transactions` and `/api/purchases` through the proxy as you interact with the buttons.
 
 ## Docker Compose Workflow
 
-The repository ships `ledger_demo/docker-compose.yml` plus env templates so you can run the entire stack with one command.
+The repository ships `demo/docker-compose.yml` plus env templates so you can run the entire stack. Compose commands should be executed from inside the `demo/` directory (paths are relative). Build the ledger image once from the repo root before bringing up the demo stack:
+
+```bash
+docker build -t ledger-creditd .
+```
 
 1. Copy the env templates:
    ```bash
-   cd ledger_demo
+   cd demo
    cp backend/.env.walletapi.example backend/.env.walletapi
    cp .env.tauth.example .env.tauth
    ```
    Edit both files so `WALLETAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID.
-2. Start the stack (creditd publishes on host port `7700`; edit `ledger_demo/docker-compose.yml` if you need a different port):
+2. Start the stack from the `demo/` directory (creditd publishes on host port `7700`; edit `demo/docker-compose.yml` if you need a different port):
    ```bash
-   docker compose -f ledger_demo/docker-compose.yml up --build
+   docker compose up --build
    ```
-3. Visit `http://localhost:8000` (Nginx proxy), `http://localhost:9090/api/wallet` (walletapi), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `/demo/config.js` through the proxy so `<mpr-header>` receives the Google OAuth Web Client ID defined in `ledger_demo/.env.tauth`; if that script fails or the env variable is empty, sign-in will not work.
-4. Stop everything with `docker compose -f ledger_demo/docker-compose.yml down`.
+3. Visit `http://localhost:8000` (Nginx proxy), `http://localhost:9090/api/wallet` (walletapi), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `/demo/config.js` through the proxy so `<mpr-header>` receives the Google OAuth Web Client ID defined in `demo/.env.tauth`; if that script fails or the env variable is empty, sign-in will not work.
+4. Stop everything with `docker compose down`.
 
 Volumes `ledger_data` and `tauth_data` persist ledger entries plus refresh tokens. Remove them with `docker volume rm ledger_ledger_data ledger_tauth_data` if you need a fresh state.
 
@@ -83,4 +87,4 @@ Monitor logs for:
 - `creditd`: gRPC operations landing in the ledger.
 - `tauth`: nonce/login/refresh lifecycle.
 
-The UI also surfaces toast banners for auth/sign-out events so flows remain observable without tailing logs. For automated coverage, run `npm run test:ui`, which executes the Playwright suite under `ledger_demo/tests` (the same command is wired into `make test`).
+The UI also surfaces toast banners for auth/sign-out events so flows remain observable without tailing logs. For automated coverage, run `npm run test:ui`, which executes the Playwright suite under `demo/tests` (the same command is wired into `make test`).

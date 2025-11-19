@@ -14,7 +14,7 @@ import (
 	"github.com/MarkoPoloResearchLab/ledger/internal/credit"
 	"github.com/MarkoPoloResearchLab/ledger/internal/grpcserver"
 	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
-	"github.com/MarkoPoloResearchLab/ledger/ledger_demo/backend/internal/walletapi"
+	"github.com/MarkoPoloResearchLab/ledger/demo/backend/internal/walletapi"
 	"github.com/glebarez/sqlite"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/tyemirov/tauth/pkg/sessionvalidator"

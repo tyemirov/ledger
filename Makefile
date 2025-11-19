@@ -1,5 +1,5 @@
 GO_SOURCES := $(shell find . -name '*.go' -not -path "./vendor/*")
-GO_TEST_PATHS := ./cmd/... ./internal/... ./ledger_demo/...
+GO_TEST_PATHS := ./cmd/... ./internal/... ./demo/...
 
 ifneq ("$(wildcard tools/TAuth/pkg/sessionvalidator)","")
 GO_TEST_PATHS += ./tools/TAuth/pkg/sessionvalidator

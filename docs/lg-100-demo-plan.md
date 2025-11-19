@@ -4,7 +4,7 @@
 - Demonstrate an end-to-end "virtual currency" experience that exercises the ledger gRPC service plus the tooling stack under `tools/`.
 - Ship a single-page demo that authenticates with TAuth, shows wallet state, and lets the user execute the three mandated flows: (1) spend 5 coins when a 20-coin starting balance exists, (2) reject the spend when balance < 5, (3) spend until balance hits 0 after a refill.
 - Keep the front-end declarative by relying on `mpr-ui` custom elements (header, footer, login, theme toggle) per `tools/mpr-ui/README.md` and `docs/custom-elements.md`.
-- Host the static UI via the same origin as the API (we now use an Nginx front end in `ledger_demo/docker-compose.yml` that serves the static assets and proxies `/auth/*` + `/api/*`).
+- Host the static UI via the same origin as the API (we now use an Nginx front end in `demo/docker-compose.yml` that serves the static assets and proxies `/auth/*` + `/api/*`).
 - Authenticate every backend call with TAuth-issued session cookies (`app_session`), validated via `tools/TAuth/pkg/sessionvalidator`.
 
 ## Proposed Architecture
@@ -24,8 +24,8 @@
 Components:
 1. **Ledger gRPC server** (`cmd/credit`, existing) – stores append-only entries in SQLite/Postgres. We map `1 coin = 100 cents` so 5 coins = 500 cents and the initial 20 coins grant = 2,000 cents (integer math only).
 2. **TAuth** (`tools/TAuth`) – verifies Google Sign-In, issues JWT-backed cookies, exposes `/auth/*`, `/me`, `/static/auth-client.js`. Configure with `APP_ENABLE_CORS=true` and `APP_CORS_ALLOWED_ORIGINS=http://localhost:8000` so the UI origin can exchange cookies.
-3. **Demo transaction API** (Go binary under `ledger_demo/backend/cmd/walletapi` + `ledger_demo/backend/internal/walletapi`) – HTTP/JSON façade that validates TAuth cookies, applies the "5 coins per transaction" rules, and talks to the ledger via the generated gRPC client (`api/credit/v1`).
-4. **UI bundle** (static assets under `ledger_demo/frontend/ui/`) – HTML/CSS/JS referencing the CDN-hosted `mpr-ui.css`/`mpr-ui.js`, Alpine bootstrap per docs, the TAuth `auth-client.js`, and GIS script. Served by an Nginx front end that also proxies `/auth/*` and `/api/*` (see `ledger_demo/nginx.conf`).
+3. **Demo transaction API** (Go binary under `demo/backend/cmd/walletapi` + `demo/backend/internal/walletapi`) – HTTP/JSON façade that validates TAuth cookies, applies the "5 coins per transaction" rules, and talks to the ledger via the generated gRPC client (`api/credit/v1`).
+4. **UI bundle** (static assets under `demo/frontend/ui/`) – HTML/CSS/JS referencing the CDN-hosted `mpr-ui.css`/`mpr-ui.js`, Alpine bootstrap per docs, the TAuth `auth-client.js`, and GIS script. Served by an Nginx front end that also proxies `/auth/*` and `/api/*` (see `demo/nginx.conf`).
 
 ## Component Responsibilities & Integration Details
 
@@ -49,7 +49,7 @@ Components:
   - Use the provided Gin middleware or wrap it in `net/http` middleware to extract claims (user id/email/avatar/roles) before hitting business logic.
 
 ### Demo Transaction API (new)
-- Implement under `ledger_demo/backend/cmd/walletapi/main.go` using Cobra+Viper (mirrors `cmd/credit`). Key config:
+- Implement under `demo/backend/cmd/walletapi/main.go` using Cobra+Viper (mirrors `cmd/credit`). Key config:
   - `WALLETAPI_LISTEN_ADDR` (HTTP port, default `:9090`).
   - `WALLETAPI_TAUTH_BASE_URL` (default `http://localhost:8080`) to reuse in documentation/responses.
   - `WALLETAPI_JWT_SIGNING_KEY` + `WALLETAPI_JWT_ISSUER` to set up the session validator.
@@ -71,7 +71,7 @@ Components:
 - Use `context.WithTimeout` (~3s) for each gRPC call to avoid hanging the UI.
 
 ### Front-End (mpr-ui + custom JS)
-- Directory structure: `ledger_demo/frontend/ui/index.html`, `ledger_demo/frontend/ui/app.js`, `ledger_demo/frontend/ui/styles.css`.
+- Directory structure: `demo/frontend/ui/index.html`, `demo/frontend/ui/app.js`, `demo/frontend/ui/styles.css`.
 - `index.html` loads assets in the documented order and includes:
   - `<mpr-header>` for auth/navigation.
   - `<main>` with:
@@ -89,26 +89,26 @@ Components:
 - CSS: reuse tokens from `mpr-ui.css` for spacing/typography; only add layout wrappers.
 
 ### Hosting the UI / Proxy
-- Use the provided Nginx config (`ledger_demo/nginx.conf`) to serve the static bundle and reverse-proxy `/auth/*` and `/api/*` to the backend services. The docker compose stack wires this up automatically; for manual runs mount the config into an `nginx:alpine` container listening on port 8000.
+- Use the provided Nginx config (`demo/nginx.conf`) to serve the static bundle and reverse-proxy `/auth/*` and `/api/*` to the backend services. The docker compose stack wires this up automatically; for manual runs mount the config into an `nginx:alpine` container listening on port 8000.
 
 ### Local Orchestration / Compose
-- Add `ledger_demo/docker-compose.yml` with services:
+- Add `demo/docker-compose.yml` with services:
   - `ledger`: runs `creditd` with SQLite volume `./tmp/data:/app/data`.
   - `tauth`: builds from `tools/TAuth` or pulls published image; loads `.env.tauth`.
   - `walletapi`: builds from the repo, depends on ledger + tauth, shares `APP_JWT_SIGNING_KEY`.
-  - `web`: runs Nginx, mounts `ledger_demo/frontend/ui`, and proxies `/auth/*` + `/api/*`.
+  - `web`: runs Nginx, mounts `demo/frontend/ui`, and proxies `/auth/*` + `/api/*`.
 - Provide `scripts/demo-up.sh` wrapper (optional) that exports the needed env variables and launches the binaries directly for contributors who prefer the Go toolchain over Compose.
 
 ## Implementation Breakdown for LG-101
-1. **Backend scaffolding** – create `ledger_demo/backend/internal/walletapi` with:
-   - Configuration loader (Viper) + `ledger_demo/backend/cmd/walletapi/main.go` entrypoint.
+1. **Backend scaffolding** – create `demo/backend/internal/walletapi` with:
+   - Configuration loader (Viper) + `demo/backend/cmd/walletapi/main.go` entrypoint.
    - Session middleware using `sessionvalidator`.
    - gRPC client wiring (`grpc.WithTransportCredentials(insecure.NewCredentials())` for local dev, allow TLS later).
    - HTTP handlers per table above with smart constructors for request payloads and domain-level validation (positive coins, multiples of 5, metadata JSON via `credit.MetadataJSON`).
 2. **UI bundle** – craft static assets referencing `mpr-ui` components, handshake with TAuth events, and calling backend endpoints. Provide sample copy explaining the scenarios.
 3. **Orchestration** – add Compose file + docs showing how to run TAuth, ledger, the wallet API, and ghttp together. Document port map + env variables in README or a dedicated `docs/demo/README.md`.
 4. **Testing** –
-   - Go integration tests under `ledger_demo/backend/internal/walletapi` using `httptest.Server` + an in-process ledger service (instantiate `credit.Service` with the SQLite store backed by `t.TempDir()` and `grpc/test/bufconn` to avoid real sockets).
+   - Go integration tests under `demo/backend/internal/walletapi` using `httptest.Server` + an in-process ledger service (instantiate `credit.Service` with the SQLite store backed by `t.TempDir()` and `grpc/test/bufconn` to avoid real sockets).
    - UI smoke tests via Playwright (stretch) once LG-101 adds the front-end; scenario scripts click the button three times to observe success/failure/zero-state.
 5. **CI hooks** – extend `make test` to run new backend tests; include the demo assets in `make lint` or `npm run lint` only if a JS toolchain becomes necessary (today we stay framework-free).
 
@@ -119,9 +119,9 @@ Components:
 - Manual demo script (to be written in LG-101 docs) walks through: login → auto-grant 20 coins → click `Transact` 4 times (success, success, success, failure) → `Buy Coins (10)` → `Transact` twice to hit zero.
 
 ## Deliverables for Implementing LG-101
-- `ledger_demo/backend/cmd/walletapi` binary + supporting `ledger_demo/backend/internal/walletapi/...` packages.
-- Static UI assets under `ledger_demo/frontend/ui/` with `mpr-ui` components + JS glue.
-- `ledger_demo/docker-compose.yml` (or instructions for running binaries manually) plus `ledger_demo/backend/.env.walletapi.example` capturing required env vars.
+- `demo/backend/cmd/walletapi` binary + supporting `demo/backend/internal/walletapi/...` packages.
+- Static UI assets under `demo/frontend/ui/` with `mpr-ui` components + JS glue.
+- `demo/docker-compose.yml` (or instructions for running binaries manually) plus `demo/backend/.env.walletapi.example` capturing required env vars.
 - Documentation snippet (README section or `docs/demo.md`) that references this plan, lists ports, and explains how to run the demo.
 - Integration tests verifying ledger balances for the three required scenarios.
 
