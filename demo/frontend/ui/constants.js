@@ -5,10 +5,21 @@ const demoConfig =
     ? window.__TAUTH_DEMO_CONFIG
     : {};
 
-const DEFAULT_AUTH_BASE_URL =
-  demoConfig && typeof demoConfig.authBaseUrl === 'string' && demoConfig.authBaseUrl.trim()
-    ? demoConfig.authBaseUrl.trim()
-    : 'http://localhost:8080';
+function determineAuthBaseUrl() {
+  const configured =
+    demoConfig && typeof demoConfig.authBaseUrl === 'string'
+      ? demoConfig.authBaseUrl.trim()
+      : '';
+  if (configured) {
+    return configured;
+  }
+  if (typeof window === 'undefined') {
+    return 'http://localhost:8080';
+  }
+  return '/auth';
+}
+
+const DEFAULT_AUTH_BASE_URL = determineAuthBaseUrl();
 
 export const AUTH_BASE_URL = DEFAULT_AUTH_BASE_URL;
 export const API_BASE_URL = '/api';

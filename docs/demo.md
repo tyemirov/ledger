@@ -61,7 +61,7 @@ docker build -t ledger-creditd .
    cp backend/.env.walletapi.example backend/.env.walletapi
    cp .env.tauth.example .env.tauth
    ```
-   Edit both files so `WALLETAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID.
+   Edit both files so `WALLETAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID. In Google Cloud Console, open that Web client and add **both** `http://localhost:8000` (the Nginx proxy that serves the UI and forwards `/auth/*` + `/static/*`) and `http://localhost:8080` (direct access to TAuth) to the **Authorized JavaScript origins** list—Google will omit the nonce claim if those origins are missing, causing TAuth to reject the credential exchange per `docs/TAuth/usage.md`.
 2. Start the stack from the `demo/` directory (creditd publishes on host port `7700`; edit `demo/docker-compose.yml` if you need a different port):
    ```bash
    docker compose up --build

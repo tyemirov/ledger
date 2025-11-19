@@ -15,11 +15,7 @@
       window.Alpine = Alpine;
       Alpine.start();
     </script>
-    <script
-      defer
-      src="http://localhost:8080/static/auth-client.js"
-      crossorigin="anonymous"
-    ></script>
+    <script defer src="/static/auth-client.js" crossorigin="anonymous"></script>
     <script
       defer
       src="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.js"
@@ -37,7 +33,6 @@
       brand-label="Ledger Demo"
       brand-href="#"
       nav-links='[{"label":"Scenario","href":"#scenario"}]'
-      base-url="http://localhost:8080"
       login-path="/auth/google"
       logout-path="/auth/logout"
       nonce-path="/auth/nonce"
@@ -58,15 +53,18 @@
           config && typeof config.authBaseUrl === "string"
             ? config.authBaseUrl.trim()
             : "";
-        var resolvedBaseUrl =
-          authBaseUrl || "http://localhost:8080";
+        var resolvedBaseUrl = authBaseUrl;
         if (header) {
           if (clientId) {
             header.setAttribute("site-id", clientId);
           } else {
             console.error("Missing Google client ID from TAuth config.");
           }
-          header.setAttribute("base-url", resolvedBaseUrl);
+          if (resolvedBaseUrl) {
+            header.setAttribute("base-url", resolvedBaseUrl);
+          } else {
+            header.removeAttribute("base-url");
+          }
         }
       })();
     </script>
