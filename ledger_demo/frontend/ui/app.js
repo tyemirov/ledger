@@ -7,6 +7,7 @@ import {
   PURCHASE_OPTIONS,
   STATUS_MESSAGES,
 } from './constants.js';
+import { createAuthFlow } from './auth-flow.js';
 
 const walletClient = createWalletClient({ baseUrl: API_BASE_URL });
 
@@ -16,9 +17,6 @@ const walletClient = createWalletClient({ baseUrl: API_BASE_URL });
 
 /** @typedef {{ balance: { total_coins: number, available_coins: number, total_cents: number, available_cents: number }, entries: Array<EntryPayload> }} WalletResponse */
 /** @typedef {{ entry_id: string, type: string, amount_coins: number, amount_cents: number, created_unix_utc: number, metadata: any, reservation_id: string, idempotency_key: string }} EntryPayload */
-
-/** @type {Window & typeof globalThis & { initAuthClient?: (options: AuthClientOptions) => void }} */
-const runtimeWindow = window;
 
 const elements = {
   header: document.querySelector("#demo-header"),
@@ -61,18 +59,17 @@ function init() {
   }
   document.addEventListener("mpr-ui:auth:unauthenticated", handleUnauthenticatedEvent);
 
-  void restoreExistingSession();
-
-  if (typeof runtimeWindow.initAuthClient === "function") {
-    runtimeWindow.initAuthClient({
-      baseUrl: AUTH_BASE_URL,
-      onAuthenticated: handleAuthenticated,
-      onUnauthenticated: handleSignOut,
-    });
-  } else {
-    console.warn("auth-client not loaded");
-    showBanner("TAuth auth-client missing from http://localhost:8080/static/auth-client.js", "error");
-  }
+  const authFlow = createAuthFlow({
+    walletClient,
+    onAuthenticated: handleAuthenticated,
+    onSignOut: handleSignOut,
+    onMissingClient: () => {
+      console.warn('auth-client not loaded');
+      showBanner('TAuth auth-client missing from http://localhost:8080/static/auth-client.js', 'error');
+    },
+  });
+  void authFlow.restoreSession();
+  authFlow.attachAuthClient();
 }
 
 if (document.readyState === "loading") {
@@ -108,24 +105,6 @@ function handleSignOut() {
 function handleUnauthenticatedEvent(event) {
   event.preventDefault();
   handleSignOut();
-}
-
-async function restoreExistingSession() {
-  try {
-    const session = await walletClient.fetchSession();
-    if (session && session.user_id) {
-      await handleAuthenticated({
-        display: session.display,
-        user_email: session.email,
-        avatar_url: session.avatar_url,
-        roles: session.roles,
-      }, { bootstrap: false });
-    }
-  } catch (error) {
-    if (!String(error && error.message).includes('401')) {
-      console.error('session restore failed', error);
-    }
-  }
 }
 
 async function refreshWallet() {
