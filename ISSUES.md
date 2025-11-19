@@ -84,5 +84,7 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
 - [x] [LG-405] Switch to sqlite from postgres. Prepare the code that allows to pass the DB URIL sufficient for the GORM to either use a postgres or sqlite driver. ensure that the sqlite driver doesnt require GCO
     - 2024-11-25: Reintroduced the GORM store with reservation support, added a CGO-free SQLite driver alongside the Postgres driver, taught `creditd` to parse the `DATABASE_URL` and pick the right driver (defaulting to SQLite with AutoMigrate), simplified Docker to a single service storing data in an `.env.creditsvc`-defined SQLite path, and updated README/documentation accordingly.
 
+- [ ] [LG-406] Establish github workflows for testing and docker image release. Use an example under @docs/workflow for inspiration. use make commands instead of calling go or other tools directly
+
 ## Planning 
 do not work on the issues below, not ready
