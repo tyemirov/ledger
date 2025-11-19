@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
@@ -30,14 +31,19 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	defer func() { _ = logger.Sync() }()
 
-	dialOptions := []grpc.DialOption{grpc.WithBlock()}
+	dialOptions := []grpc.DialOption{}
 	if cfg.LedgerInsecure {
 		dialOptions = append(dialOptions, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	} else {
 		dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")))
 	}
-	conn, err := grpc.DialContext(ctx, cfg.LedgerAddress, dialOptions...)
+	conn, err := grpc.NewClient(cfg.LedgerAddress, dialOptions...)
 	if err != nil {
+		return fmt.Errorf("connect ledger: %w", err)
+	}
+	conn.Connect()
+	if err := waitForClientReady(ctx, conn); err != nil {
+		_ = conn.Close()
 		return fmt.Errorf("connect ledger: %w", err)
 	}
 	defer conn.Close()
@@ -388,4 +394,22 @@ type entryPayload struct {
 	IdempotencyKey string          `json:"idempotency_key"`
 	Metadata       json.RawMessage `json:"metadata"`
 	CreatedUnixUTC int64           `json:"created_unix_utc"`
+}
+
+func waitForClientReady(ctx context.Context, conn *grpc.ClientConn) error {
+	for {
+		state := conn.GetState()
+		if state == connectivity.Ready {
+			return nil
+		}
+		if state == connectivity.Shutdown {
+			return errors.New("grpc connection shutdown before ready")
+		}
+		if !conn.WaitForStateChange(ctx, state) {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return errors.New("grpc connection failed to reach ready state")
+		}
+	}
 }

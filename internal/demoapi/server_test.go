@@ -180,9 +180,15 @@ func startLedgerClient(t *testing.T) (creditv1.CreditServiceClient, func()) {
 	dialer := func(ctx context.Context, _ string) (net.Conn, error) {
 		return listener.Dial()
 	}
-	conn, err := grpc.DialContext(context.Background(), "bufnet", grpc.WithContextDialer(dialer), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(dialer), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		t.Fatalf("gRPC dial failed: %v", err)
+		t.Fatalf("gRPC client init failed: %v", err)
+	}
+	conn.Connect()
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer waitCancel()
+	if err := waitForClientReady(waitCtx, conn); err != nil {
+		t.Fatalf("gRPC client failed to connect: %v", err)
 	}
 
 	cleanup := func() {
