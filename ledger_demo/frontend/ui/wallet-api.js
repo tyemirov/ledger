@@ -16,14 +16,15 @@ export function createWalletClient(options) {
    * @param {RequestInit} [init]
    */
   async function request(path, init = {}) {
-    const response = await fetch(`${baseUrl}${path}`, {
+    const requestInit = {
+      ...init,
       credentials: 'include',
       headers: {
         'Content-Type': JSON_TYPE,
         ...(init.headers || {}),
       },
-      ...init,
-    });
+    };
+    const response = await executeWithAuth(`${baseUrl}${path}`, requestInit);
     if (!response.ok) {
       const message = await safeReadMessage(response);
       throw new Error(`wallet_api.${response.status}:${message}`);
@@ -65,6 +66,16 @@ export function createWalletClient(options) {
       return normalizeWallet(payload);
     },
   };
+}
+
+/**
+ * @param {string} url
+ * @param {RequestInit} init
+ */
+async function executeWithAuth(url, init) {
+  const hasApiFetch = typeof window !== 'undefined' && typeof window.apiFetch === 'function';
+  const executor = hasApiFetch ? window.apiFetch : fetch;
+  return executor(url, init);
 }
 
 async function safeReadMessage(response) {

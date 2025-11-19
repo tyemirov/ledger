@@ -47,12 +47,14 @@ func NewServer(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("zap init: %w", err)
 	}
 
+	//lint:ignore SA1019 gRPC still requires WithBlock to keep Dial synchronous until the new client API lands everywhere we deploy.
 	dialOptions := []grpc.DialOption{grpc.WithBlock()}
 	if cfg.LedgerInsecure {
 		dialOptions = append(dialOptions, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	} else {
 		dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")))
 	}
+	//lint:ignore SA1019 grpc.Dial is deprecated in favor of NewClient, but Dial remains supported and stable across our stack until we can refactor for NewClient semantics.
 	conn, err := grpc.Dial(cfg.LedgerAddress, dialOptions...)
 	if err != nil {
 		_ = logger.Sync()

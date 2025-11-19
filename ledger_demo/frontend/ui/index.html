@@ -10,6 +10,11 @@
     />
     <link rel="stylesheet" href="./styles.css" />
     <script src="/demo/config.js"></script>
+    <script type="module">
+      import Alpine from "https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/module.esm.js";
+      window.Alpine = Alpine;
+      Alpine.start();
+    </script>
     <script
       defer
       src="http://localhost:8080/static/auth-client.js"
@@ -32,7 +37,7 @@
       brand-label="Ledger Demo"
       brand-href="#"
       nav-links='[{"label":"Scenario","href":"#scenario"}]'
-      base-url="/auth"
+      base-url="http://localhost:8080"
       login-path="/auth/google"
       logout-path="/auth/logout"
       nonce-path="/auth/nonce"
@@ -49,10 +54,19 @@
           config && typeof config.googleClientId === "string"
             ? config.googleClientId.trim()
             : "";
-        if (header && clientId) {
-          header.setAttribute("site-id", clientId);
-        } else {
-          console.error("Missing Google client ID from TAuth config.");
+        var authBaseUrl =
+          config && typeof config.authBaseUrl === "string"
+            ? config.authBaseUrl.trim()
+            : "";
+        var resolvedBaseUrl =
+          authBaseUrl || "http://localhost:8080";
+        if (header) {
+          if (clientId) {
+            header.setAttribute("site-id", clientId);
+          } else {
+            console.error("Missing Google client ID from TAuth config.");
+          }
+          header.setAttribute("base-url", resolvedBaseUrl);
         }
       })();
     </script>
@@ -146,10 +160,5 @@
     ></mpr-footer>
 
     <script type="module" src="./app.js"></script>
-    <script type="module">
-      import Alpine from "https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/module.esm.js";
-      window.Alpine = Alpine;
-      Alpine.start();
-    </script>
   </body>
 </html>

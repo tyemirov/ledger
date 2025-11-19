@@ -1,5 +1,13 @@
 GO_SOURCES := $(shell find . -name '*.go' -not -path "./vendor/*")
-GO_TEST_PATHS := ./cmd/... ./internal/... ./ledger_demo/... ./tools/TAuth/pkg/sessionvalidator ./tools/TAuth/internal/web
+GO_TEST_PATHS := ./cmd/... ./internal/... ./ledger_demo/...
+
+ifneq ("$(wildcard tools/TAuth/pkg/sessionvalidator)","")
+GO_TEST_PATHS += ./tools/TAuth/pkg/sessionvalidator
+endif
+
+ifneq ("$(wildcard tools/TAuth/internal/web)","")
+GO_TEST_PATHS += ./tools/TAuth/internal/web
+endif
 
 .PHONY: fmt lint test ci tools
 
