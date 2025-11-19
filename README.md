@@ -215,7 +215,7 @@ Follow `docs/demo.md` to launch the LG-100 wallet demo. Everything now lives und
 
 - `ledger_demo/backend` hosts the wallet HTTP façade (`cmd/walletapi`) plus its Dockerfile and env template.
 - `ledger_demo/frontend/ui` contains the static bundle that references `mpr-ui` via CDN.
-- `ledger_demo/docker-compose.yml` runs creditd, TAuth, the wallet API, and ghttp together; it maps the ledger container’s `:7000` port to `:7700` on the host to avoid macOS Control Center conflicts.
+- `ledger_demo/docker-compose.yml` runs creditd, TAuth, the wallet API, and an Nginx front end that serves the static UI and proxies `/auth/*` and `/api/*` to the backend services. It maps the ledger container’s `:7000` port to `:7700` on the host to avoid macOS Control Center conflicts.
 - `ledger_demo/.env.tauth.example` exports the Google OAuth Web Client ID consumed by `ledger_demo/frontend/ui/index.html` via `http://localhost:8080/demo/config.js`. There is no fallback—copy the example files, fill in secrets, and restart the stack whenever you rotate credentials.
 
 ---

@@ -4,13 +4,13 @@
 - Demonstrate an end-to-end "virtual currency" experience that exercises the ledger gRPC service plus the tooling stack under `tools/`.
 - Ship a single-page demo that authenticates with TAuth, shows wallet state, and lets the user execute the three mandated flows: (1) spend 5 coins when a 20-coin starting balance exists, (2) reject the spend when balance < 5, (3) spend until balance hits 0 after a refill.
 - Keep the front-end declarative by relying on `mpr-ui` custom elements (header, footer, login, theme toggle) per `tools/mpr-ui/README.md` and `docs/custom-elements.md`.
-- Host the static UI with `ghttp` so it can run from any directory (mirrors `tools/ghttp/README.md`).
+- Host the static UI via the same origin as the API (we now use an Nginx front end in `ledger_demo/docker-compose.yml` that serves the static assets and proxies `/auth/*` + `/api/*`).
 - Authenticate every backend call with TAuth-issued session cookies (`app_session`), validated via `tools/TAuth/pkg/sessionvalidator`.
 
 ## Proposed Architecture
 ```
 +-------------+        +----------------------+        +------------------+
-|  ghttp      |        | demo transaction API |        | ledger gRPC svc  |
+|  nginx proxy      |        | demo transaction API |        | ledger gRPC svc  |
 | serves UI   |<------>| (new HTTP service)   |<------>| cmd/credit       |
 +-------------+        +----------------------+        +------------------+
         ^                        ^   ^                          ^
@@ -25,7 +25,7 @@ Components:
 1. **Ledger gRPC server** (`cmd/credit`, existing) – stores append-only entries in SQLite/Postgres. We map `1 coin = 100 cents` so 5 coins = 500 cents and the initial 20 coins grant = 2,000 cents (integer math only).
 2. **TAuth** (`tools/TAuth`) – verifies Google Sign-In, issues JWT-backed cookies, exposes `/auth/*`, `/me`, `/static/auth-client.js`. Configure with `APP_ENABLE_CORS=true` and `APP_CORS_ALLOWED_ORIGINS=http://localhost:8000` so the UI origin can exchange cookies.
 3. **Demo transaction API** (Go binary under `ledger_demo/backend/cmd/walletapi` + `ledger_demo/backend/internal/walletapi`) – HTTP/JSON façade that validates TAuth cookies, applies the "5 coins per transaction" rules, and talks to the ledger via the generated gRPC client (`api/credit/v1`).
-4. **UI bundle** (static assets under `ledger_demo/frontend/ui/`) – HTML/CSS/JS referencing the CDN-hosted `mpr-ui.css`/`mpr-ui.js`, Alpine bootstrap per docs, the TAuth `auth-client.js`, and GIS script. Served by `ghttp --directory ledger_demo/frontend/ui 8000`.
+4. **UI bundle** (static assets under `ledger_demo/frontend/ui/`) – HTML/CSS/JS referencing the CDN-hosted `mpr-ui.css`/`mpr-ui.js`, Alpine bootstrap per docs, the TAuth `auth-client.js`, and GIS script. Served by an Nginx front end that also proxies `/auth/*` and `/api/*` (see `ledger_demo/nginx.conf`).
 
 ## Component Responsibilities & Integration Details
 
@@ -88,16 +88,15 @@ Components:
   - Display scenario status messages using CSS states (e.g., success banner, error banner, zero-balance notice once total == 0).
 - CSS: reuse tokens from `mpr-ui.css` for spacing/typography; only add layout wrappers.
 
-### Hosting with ghttp
-- Vendor the compiled `ghttp` binary or run `go install github.com/temirov/ghttp/cmd/ghttp@latest` (per `tools/ghttp/README.md`).
-- Serve the UI directory via `ghttp --directory ledger_demo/frontend/ui 8000` (adds markdown rendering and zap logs for free). This keeps front-end static and origin-isolated from the APIs.
+### Hosting the UI / Proxy
+- Use the provided Nginx config (`ledger_demo/nginx.conf`) to serve the static bundle and reverse-proxy `/auth/*` and `/api/*` to the backend services. The docker compose stack wires this up automatically; for manual runs mount the config into an `nginx:alpine` container listening on port 8000.
 
 ### Local Orchestration / Compose
 - Add `ledger_demo/docker-compose.yml` with services:
   - `ledger`: runs `creditd` with SQLite volume `./tmp/data:/app/data`.
   - `tauth`: builds from `tools/TAuth` or pulls published image; loads `.env.tauth`.
   - `walletapi`: builds from the repo, depends on ledger + tauth, shares `APP_JWT_SIGNING_KEY`.
-  - `ghttp`: uses `ghcr.io/temirov/ghttp:latest`, mounts `ledger_demo/frontend/ui`, serves on `8000`.
+  - `web`: runs Nginx, mounts `ledger_demo/frontend/ui`, and proxies `/auth/*` + `/api/*`.
 - Provide `scripts/demo-up.sh` wrapper (optional) that exports the needed env variables and launches the binaries directly for contributors who prefer the Go toolchain over Compose.
 
 ## Implementation Breakdown for LG-101

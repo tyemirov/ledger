@@ -1,7 +1,7 @@
 // @ts-check
 
-export const AUTH_BASE_URL = 'http://localhost:8080';
-export const API_BASE_URL = 'http://localhost:9090/api';
+export const AUTH_BASE_URL = '/auth';
+export const API_BASE_URL = '/api';
 export const TRANSACTION_COINS = 5;
 export const PURCHASE_OPTIONS = Object.freeze([5, 10, 20]);
 export const STATUS_MESSAGES = Object.freeze({

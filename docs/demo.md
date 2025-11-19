@@ -7,7 +7,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
 1. **creditd** (`cmd/credit`) – append-only ledger exposed via gRPC on `:7000` (Compose publishes it on host port `7700` so macOS Control Center can keep `7000` free).
 2. **TAuth** (`tools/TAuth`) – Google Sign-In + JWT session issuer on `:8080`.
 3. **walletapi** (`ledger_demo/backend/cmd/walletapi`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
-4. **ghttp** (`ghcr.io/temirov/ghttp`) – static server for `ledger_demo/frontend/ui` on `:8000`.
+4. **web** (`nginx:alpine`) – serves `ledger_demo/frontend/ui` on `:8000` and reverse-proxies `/auth/*` and `/api/*` to the backend services so cookies stay on the same origin.
 
 ## Manual Run (Go toolchain)
 
@@ -41,11 +41,11 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
   WALLETAPI_TAUTH_BASE_URL=http://localhost:8080 \
   go run ./ledger_demo/backend/cmd/walletapi
   ```
-4. **Static UI** (requires `ghttp` binary or Docker image)
+4. **Static UI + proxy** (requires Nginx or the docker-compose stack)
   ```bash
-  ghttp --directory ledger_demo/frontend/ui 8000
+  docker run --rm -p 8000:8000 -v $(pwd)/ledger_demo/frontend/ui:/usr/share/nginx/html -v $(pwd)/ledger_demo/nginx.conf:/etc/nginx/conf.d/default.conf nginx:1.25-alpine
   ```
-5. Open `http://localhost:8000` and sign in via the header button. The UI will automatically bootstrap the wallet and call `/api/transactions` and `/api/purchases` as you interact with the buttons.
+5. Open `http://localhost:8000` and sign in via the header button. The UI will automatically bootstrap the wallet and call `/api/transactions` and `/api/purchases` through the proxy as you interact with the buttons.
 
 ## Docker Compose Workflow
 
@@ -62,7 +62,7 @@ The repository ships `ledger_demo/docker-compose.yml` plus env templates so you 
    ```bash
    docker compose -f ledger_demo/docker-compose.yml up --build
    ```
-3. Visit `http://localhost:8000` (ghttp), `http://localhost:9090/api/wallet` (walletapi), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI must load `http://localhost:8080/demo/config.js` so `<mpr-header>` receives the Google OAuth Web Client ID defined in `ledger_demo/.env.tauth`; if that script fails or the env variable is empty, sign-in will not work.
+3. Visit `http://localhost:8000` (Nginx proxy), `http://localhost:9090/api/wallet` (walletapi), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `/demo/config.js` through the proxy so `<mpr-header>` receives the Google OAuth Web Client ID defined in `ledger_demo/.env.tauth`; if that script fails or the env variable is empty, sign-in will not work.
 4. Stop everything with `docker compose -f ledger_demo/docker-compose.yml down`.
 
 Volumes `ledger_data` and `tauth_data` persist ledger entries plus refresh tokens. Remove them with `docker volume rm ledger_ledger_data ledger_tauth_data` if you need a fresh state.

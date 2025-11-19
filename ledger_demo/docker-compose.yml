@@ -36,16 +36,17 @@ services:
     ports:
       - "9090:9090"
 
-  ghttp:
-    image: ghcr.io/tyemirov/ghttp:latest
-    container_name: ledger-ghttp
-    command: ["--directory", "/data", "8000"]
+  web:
+    image: nginx:1.25-alpine
+    container_name: ledger-web
+    depends_on:
+      - walletapi
+      - tauth
     ports:
       - "8000:8000"
     volumes:
-      - ./frontend/ui:/data:ro
-    depends_on:
-      - walletapi
+      - ./frontend/ui:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
 volumes:
   ledger_data:
