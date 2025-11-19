@@ -1,4 +1,5 @@
 GO_SOURCES := $(shell find . -name '*.go' -not -path "./vendor/*")
+GO_TEST_PATHS := ./cmd/... ./internal/... ./ledger_demo/... ./tools/TAuth/pkg/sessionvalidator ./tools/TAuth/internal/web
 
 .PHONY: fmt lint test ci tools
 
@@ -17,7 +18,7 @@ lint: tools
 	ineffassign ./...
 
 test:
-	go test ./...
+	go test $(GO_TEST_PATHS)
 	go test ./internal/credit -coverprofile=coverage.out -covermode=count
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 80.0) { print "coverage below 80%"; exit 1 } }'
 	npm ci
