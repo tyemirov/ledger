@@ -1,14 +1,15 @@
 // @ts-check
+
 import { AUTH_BASE_URL } from './constants.js';
 
 /**
- * @param {{ walletClient: ReturnType<typeof import('./wallet-api.js').createWalletClient>, onAuthenticated: (profile: any, options?: { bootstrap?: boolean }) => Promise<void>, onSignOut: () => void, onMissingClient: () => void }} options
+ * @param {{ walletClient: ReturnType<typeof import('./wallet-api.js').createWalletClient>, onAuthenticated: (profile: any, options?: { bootstrap?: boolean }) => Promise<void>, onSignOut: () => void, onMissingClient?: () => void }} params
  */
-export function createAuthFlow(options) {
-  if (!options || typeof options.walletClient !== 'object') {
-    throw new Error('auth_flow.invalid_wallet_client');
+export function createAuthFlow(params) {
+  const { walletClient, onAuthenticated, onSignOut, onMissingClient } = params;
+  if (!walletClient || typeof onAuthenticated !== 'function' || typeof onSignOut !== 'function') {
+    throw new Error('auth_flow.invalid_parameters');
   }
-  const { walletClient, onAuthenticated, onSignOut, onMissingClient } = options;
 
   async function restoreSession() {
     try {
@@ -18,14 +19,14 @@ export function createAuthFlow(options) {
           {
             display: session.display,
             user_email: session.email,
-            avatar_url: session.avatar,
+            avatar_url: session.avatar_url,
             roles: session.roles,
           },
           { bootstrap: false },
         );
       }
     } catch (error) {
-      const message = typeof error?.message === 'string' ? error.message : '';
+      const message = String(error && error.message ? error.message : '');
       if (!message.includes('401')) {
         console.error('session restore failed', error);
       }

@@ -9,11 +9,6 @@
       href="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css"
     />
     <link rel="stylesheet" href="./styles.css" />
-    <script type="module">
-      import Alpine from "https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/module.esm.js";
-      window.Alpine = Alpine;
-      Alpine.start();
-    </script>
     <script src="http://localhost:8080/demo/config.js"></script>
     <script
       defer
@@ -31,7 +26,7 @@
       defer
     ></script>
   </head>
-  <body data-auth-state="signed-out">
+  <body x-data="walletPage()" x-cloak :data-auth-state="authState">
     <mpr-header
       id="demo-header"
       brand-label="Ledger Demo"
@@ -63,20 +58,20 @@
     </script>
 
     <main class="demo-layout">
-      <section class="panel" data-auth-message>
+      <section class="panel" data-auth-message x-show="!isAuthenticated">
         <h2>Sign in to begin</h2>
         <p>Use the header button to authenticate with TAuth. The demo loads automatically.</p>
       </section>
 
-      <section class="panel" data-wallet hidden>
+      <section class="panel" data-wallet x-show="isAuthenticated">
         <header class="panel-header">
           <div>
             <p class="panel-eyebrow">Available balance</p>
-            <p class="panel-metric"><span data-available-coins>0</span> coins</p>
+            <p class="panel-metric"><span data-available-coins x-text="availableCoins"></span> coins</p>
           </div>
           <div>
             <p class="panel-eyebrow">Total grants</p>
-            <p class="panel-metric"><span data-total-coins>0</span> coins</p>
+            <p class="panel-metric"><span data-total-coins x-text="totalCoins"></span> coins</p>
           </div>
         </header>
         <p class="panel-body-text">
@@ -86,55 +81,62 @@
         <dl class="balance-breakdown">
           <div>
             <dt>Total (cents)</dt>
-            <dd data-total-cents>0</dd>
+            <dd data-total-cents x-text="totalCents"></dd>
           </div>
           <div>
             <dt>Available (cents)</dt>
-            <dd data-available-cents>0</dd>
+            <dd data-available-cents x-text="availableCents"></dd>
           </div>
         </dl>
       </section>
 
-      <section class="panel" data-transactions hidden>
+      <section class="panel" data-transactions x-show="isAuthenticated">
         <h2>Spend 5 coins</h2>
         <p>Validate both success and rejection flows with the same button.</p>
-        <button type="button" class="cta" data-transact>Spend 5 coins</button>
-        <p class="status" data-transaction-status>Waiting for action…</p>
+        <button type="button" class="cta" data-transact @click="handleTransactionClick" :disabled="busy">Spend 5 coins</button>
+        <p class="status" data-transaction-status :data-status-kind="transactionStatusKind" x-text="transactionStatus"></p>
       </section>
 
-      <section class="panel" data-purchase hidden>
+      <section class="panel" data-purchase x-show="isAuthenticated">
         <h2>Buy more coins</h2>
         <p>Select how many coins to add (min 5, steps of 5) and click purchase.</p>
-        <form data-purchase-form>
+        <form data-purchase-form @submit.prevent="handlePurchaseSubmit">
           <div class="purchase-options">
-            <label>
-              <input type="radio" name="purchase" value="5" checked />
-              <span>5 coins</span>
-            </label>
-            <label>
-              <input type="radio" name="purchase" value="10" />
-              <span>10 coins</span>
-            </label>
-            <label>
-              <input type="radio" name="purchase" value="20" />
-              <span>20 coins</span>
-            </label>
+            <template x-for="option in purchaseOptions" :key="option">
+              <label>
+                <input type="radio" name="purchase" :value="option" x-model.number="selectedPurchase" />
+                <span x-text="option + ' coins'"></span>
+              </label>
+            </template>
           </div>
-          <button type="submit" class="cta secondary">Buy coins</button>
+          <button type="submit" class="cta secondary" :disabled="busy">Buy coins</button>
         </form>
       </section>
 
-      <section class="panel" data-history hidden>
+      <section class="panel" data-history x-show="isAuthenticated">
         <h2 id="scenario">Ledger history</h2>
         <p class="panel-body-text">
           Track every grant and spend. Use these entries to confirm the “success, insufficient
           funds, zero balance” scenarios described in the plan.
         </p>
-        <ul class="entry-list" data-entry-list></ul>
+        <ul class="entry-list" data-entry-list>
+          <template x-if="walletEntries.length === 0">
+            <li class="entry-empty">No ledger activity yet.</li>
+          </template>
+          <template x-for="entry in walletEntries" :key="entry.entry_id">
+            <li>
+              <div>
+                <span class="entry-type" x-text="entry.type"></span><br />
+                <small x-text="formatEntryDate(entry)"></small>
+              </div>
+              <div class="entry-amount" :class="entry.amount_coins < 0 ? 'negative' : 'positive'" x-text="formatCoins(entry.amount_coins)"></div>
+            </li>
+          </template>
+        </ul>
       </section>
     </main>
 
-    <div class="status-banner" data-status-banner hidden></div>
+    <div class="status-banner" data-status-banner x-show="bannerVisible" x-text="bannerMessage" :data-status-kind="bannerKind"></div>
 
     <mpr-footer
       prefix-text="Built with mpr-ui"
@@ -144,5 +146,10 @@
     ></mpr-footer>
 
     <script type="module" src="./app.js"></script>
+    <script type="module">
+      import Alpine from "https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/module.esm.js";
+      window.Alpine = Alpine;
+      Alpine.start();
+    </script>
   </body>
 </html>

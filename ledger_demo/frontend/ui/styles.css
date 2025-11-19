@@ -20,6 +20,10 @@ body {
   color: #e2e8f0;
 }
 
+[x-cloak] {
+  display: none !important;
+}
+
 main.demo-layout {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

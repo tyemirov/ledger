@@ -5,6 +5,7 @@ export const API_BASE_URL = 'http://localhost:9090/api';
 export const TRANSACTION_COINS = 5;
 export const PURCHASE_OPTIONS = Object.freeze([5, 10, 20]);
 export const STATUS_MESSAGES = Object.freeze({
+  idle: 'Waiting for action…',
   processing: 'Processing…',
   spendSuccess: 'Transaction succeeded.',
   spendInsufficient: 'Insufficient funds. Purchase more coins to continue.',
@@ -15,4 +16,6 @@ export const STATUS_MESSAGES = Object.freeze({
   bootstrapError: 'Bootstrap failed. Check the API logs.',
   loadWalletError: 'Unable to load wallet',
   zeroBalance: 'Balance is zero. Purchase coins to continue.',
+  signedOut: 'Signed out',
+  authClientMissing: 'TAuth auth-client missing from http://localhost:8080/static/auth-client.js',
 });
