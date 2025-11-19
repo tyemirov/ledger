@@ -21,8 +21,8 @@ services:
 
   walletapi:
     build:
-      context: ..
-      dockerfile: demo/backend/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
     image: ledger-walletapi:latest
     container_name: ledger-walletapi
     env_file:
