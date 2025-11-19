@@ -19,14 +19,14 @@ LG-105 tracks the "ledger demo" experience that lives entirely under `ledger_dem
 
 ### 2. Front-End Restructure (`ledger_demo/frontend/ui`)
 - [x] Extract `wallet-api.js` that exports `createWalletClient({ baseUrl })` with methods `getSession`, `bootstrap`, `getWallet`, `spend`, `purchase`. Each method returns normalized objects (coins, cents, entries) and throws with codes when HTTP fails.
-- [ ] Create `auth-store.js` (Alpine friendly) that orchestrates `initAuthClient`, tracks the logged-in profile, and exposes `restoreSession()` (invokes the new API client) so the UI boot file simply mounts stores and renders.
+- [x] Create `auth-flow` helper that orchestrates `initAuthClient`, tracks the logged-in profile, and exposes `restoreSession()` (invokes the new API client) so the UI boot file simply mounts stores and renders.
 - [ ] Update `app.js` to import/use the new helpers; remove inline `apiFetch`/`state` objects; turn transaction/purchase form logic into Alpine components (e.g., `<section x-data="WalletPanel()">`).
 - [x] Move strings for banners/statuses into a `constants.js` file to avoid scattering literal text.
 
 ### 3. Testing (`ledger_demo/tests`)
 - [x] Expand `auth.spec.js` to include a regression case where the stub clears the session and ensures the UI returns to the signed-out state.
 - [x] Add a helper to assert ledger history entries (presence/count/order) after each transaction/purchase.
-- [ ] Confirm `playwright.config.js` records screenshots/video on failure (flip `use.screenshot = 'only-on-failure'`, `trace = 'retain-on-failure'`).
+- [x] Confirm `playwright.config.js` records screenshots/video on failure (flip `use.screenshot = 'only-on-failure'`, `trace = 'retain-on-failure'`).
 - [x] Update the stub server to simulate `/api/session`, login, logout, and ledger entry mutations for realistic flows.
 
 ### 4. Documentation & Tooling
