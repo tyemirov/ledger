@@ -57,7 +57,7 @@ The repository ships `ledger_demo/docker-compose.yml` plus env templates so you 
    cp backend/.env.walletapi.example backend/.env.walletapi
    cp .env.tauth.example .env.tauth
    ```
-   Edit both files so `WALLETAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY`, provide your Google OAuth Web Client ID, and set `APP_DEV_ALLOW_EMPTY_NONCE=true` so the local Google flow can complete without nonce validation.
+   Edit both files so `WALLETAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID.
 2. Start the stack (creditd publishes on host port `7700`; edit `ledger_demo/docker-compose.yml` if you need a different port):
    ```bash
    docker compose -f ledger_demo/docker-compose.yml up --build
