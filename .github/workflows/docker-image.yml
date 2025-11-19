@@ -1,0 +1,41 @@
+name: Docker Image
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - Dockerfile
+      - '**/*.go'
+      - go.mod
+      - go.sum
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    name: Build and Push docker image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ledger:latest
+            ghcr.io/${{ github.repository_owner }}/ledger:${{ github.sha }}
