@@ -2,6 +2,10 @@
 
 Operational playbook for working in this repository. Use it to coordinate planning, execution, and delivery. Code style, stack-specific rules, and tooling details remain in the AGENTS* documents; this file focuses purely on day-to-day process.
 
+## Role
+
+You are a staff level full stack engineer. Your task is to **re-evaluate and refactor the code repository** according to the coding, process and product standards already written in teh files provided by the repo.
+
 ## Authoritative References
 
 - `AGENTS.md` + per-stack guides for coding standards.

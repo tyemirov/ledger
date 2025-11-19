@@ -63,6 +63,36 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
     - Fixed `demo/docker-compose.yml` to reference `demo/backend/Dockerfile` and adjusted that Dockerfile to build from `./demo/backend/cmd/walletapi`.
     - `docker compose -f demo/docker-compose.yml config` now resolves without path errors; `make test` (Go + Playwright) passes.
 
+- [ ] [LG-301] I am unable to log into demo. Fix the login first with complete disregard to ledger server (remove all ledger-related functionality and just ensure we have a stable login).
+Read the docs and follow the docs under docs/TAuth/usage.md and docs/mpr-ui/custom-elements.md, docs/mpr-ui/demo-index-auth.md, @docs/mpr-ui/demo/.
+
+Deliver the page that allows a user to log-in and stay logged in after the page refresh. Copy the demo from docs/mpr-ui/demo/ and use it as a start.
+
+```
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:21 +0000] "GET / HTTP/1.1" 200 6272 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:21 +0000] "GET /styles.css HTTP/1.1" 200 3513 "http://localhost:8000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+ledger-tauth      | {"level":"info","ts":1763594481.1039588,"caller":"server/main.go:297","msg":"http","method":"GET","path":"/demo/config.js","status":200,"ip":"192.168.65.1","elapsed":0.000215878}
+ledger-tauth      | {"level":"info","ts":1763594481.1043713,"caller":"server/main.go:297","msg":"http","method":"GET","path":"/static/auth-client.js","status":200,"ip":"192.168.65.1","elapsed":0.000259635}
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:21 +0000] "GET /demo/config.js HTTP/1.1" 200 546 "http://localhost:8000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:21 +0000] "GET /static/auth-client.js HTTP/1.1" 200 5462 "http://localhost:8000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:21 +0000] "GET /app.js HTTP/1.1" 200 6363 "http://localhost:8000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:21 +0000] "GET /wallet-api.js HTTP/1.1" 200 4040 "http://localhost:8000/app.js" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:21 +0000] "GET /constants.js HTTP/1.1" 200 1404 "http://localhost:8000/app.js" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:21 +0000] "GET /auth-flow.js HTTP/1.1" 200 1637 "http://localhost:8000/app.js" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+
+
+ledger-tauth      | {"level":"info","ts":1763594481.2422597,"caller":"server/main.go:297","msg":"http","method":"POST","path":"/nonce","status":404,"ip":"192.168.65.1","elapsed":0.000097553}
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:21 +0000] "GET /me HTTP/1.1" 200 6272 "http://localhost:8000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+
+
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:21 +0000] "POST /auth/nonce HTTP/1.1" 404 18 "http://localhost:8000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:21 +0000] "GET /favicon.ico HTTP/1.1" 200 6272 "http://localhost:8000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+ledger-tauth      | {"level":"info","ts":1763594490.473501,"caller":"server/main.go:297","msg":"http","method":"POST","path":"/nonce","status":404,"ip":"192.168.65.1","elapsed":0.000028597}
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:30 +0000] "POST /auth/nonce HTTP/1.1" 404 18 "http://localhost:8000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+ledger-tauth      | {"level":"info","ts":1763594490.4974575,"caller":"server/main.go:297","msg":"http","method":"POST","path":"/nonce","status":404,"ip":"192.168.65.1","elapsed":0.000044506}
+ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:30 +0000] "POST /auth/nonce HTTP/1.1" 404 18 "http://localhost:8000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+```
+
 ## Maintenance (400–499)
 
 - [x] [LG-400] Review @POLICY.md and verify what code areas need improvements and refactoring. Prepare a detailed plan of refactoring. Check for bugs, missing tests, poor coding practices, uplication and slop. Ensure strong encapsulation and following the principles og @AGENTS.md, @AGENTS.GO.md and policies of @POLICY.md
@@ -99,7 +129,7 @@ Each issue is formatted as `- [ ] [<ID>-<number>]`. When resolved it becomes -` 
 - [x] [LG-405] Switch to sqlite from postgres. Prepare the code that allows to pass the DB URIL sufficient for the GORM to either use a postgres or sqlite driver. ensure that the sqlite driver doesnt require GCO
     - 2024-11-25: Reintroduced the GORM store with reservation support, added a CGO-free SQLite driver alongside the Postgres driver, taught `creditd` to parse the `DATABASE_URL` and pick the right driver (defaulting to SQLite with AutoMigrate), simplified Docker to a single service storing data in an `.env.creditsvc`-defined SQLite path, and updated README/documentation accordingly.
 
-- [ ] [LG-406] Establish github workflows for testing and docker image release. Use an example under @docs/workflow for inspiration
+- [x] [LG-406] Establish github workflows for testing and docker image release. Use an example under @docs/workflow for inspiration
 
 ## Planning 
 do not work on the issues below, not ready
