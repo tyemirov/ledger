@@ -39,6 +39,21 @@ function walletPage() {
         event.preventDefault();
         this.handleSignOut();
       });
+      document.addEventListener('mpr-ui:auth:authenticated', (event) => {
+        const profile = event?.detail?.profile;
+        if (!profile) {
+          return;
+        }
+        this.handleAuthenticated(
+          {
+            display: profile.display,
+            user_email: profile.user_email,
+            avatar_url: profile.avatar_url,
+            roles: profile.roles,
+          },
+          { bootstrap: true },
+        );
+      });
       this.authFlow = createAuthFlow({
         walletClient,
         onAuthenticated: (profile, options) => this.handleAuthenticated(profile, options),
@@ -80,7 +95,12 @@ function walletPage() {
       return `${prefix}${value} coins`;
     },
     async handleAuthenticated(profile, options = { bootstrap: true }) {
-      this.profile = profile;
+      this.profile = {
+        display: profile?.display || profile?.user_email || 'User',
+        user_email: profile?.user_email || '',
+        avatar_url: profile?.avatar_url || '',
+        roles: Array.isArray(profile?.roles) ? profile.roles : [],
+      };
       this.showBanner(`Signed in as ${profile?.display || 'user'}`, 'success');
       try {
         if (options.bootstrap !== false) {
