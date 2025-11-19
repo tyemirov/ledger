@@ -24,11 +24,28 @@ import (
 
 // Run boots the HTTP façade using the supplied configuration.
 func Run(ctx context.Context, cfg Config) error {
+	server, err := NewServer(cfg)
+	if err != nil {
+		return err
+	}
+	defer server.Close()
+	return server.Run(ctx)
+}
+
+// Server owns the HTTP runtime plus ledger client wiring.
+type Server struct {
+	cfg        Config
+	logger     *zap.Logger
+	ledgerConn *grpc.ClientConn
+	httpServer *http.Server
+}
+
+// NewServer constructs a Server with all dependencies wired.
+func NewServer(cfg Config) (*Server, error) {
 	logger, err := zap.NewProduction()
 	if err != nil {
-		return fmt.Errorf("zap init: %w", err)
+		return nil, fmt.Errorf("zap init: %w", err)
 	}
-	defer func() { _ = logger.Sync() }()
 
 	dialOptions := []grpc.DialOption{grpc.WithBlock()}
 	if cfg.LedgerInsecure {
@@ -36,11 +53,11 @@ func Run(ctx context.Context, cfg Config) error {
 	} else {
 		dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")))
 	}
-	conn, err := grpc.DialContext(ctx, cfg.LedgerAddress, dialOptions...)
+	conn, err := grpc.Dial(cfg.LedgerAddress, dialOptions...)
 	if err != nil {
-		return fmt.Errorf("connect ledger: %w", err)
+		_ = logger.Sync()
+		return nil, fmt.Errorf("connect ledger: %w", err)
 	}
-	defer conn.Close()
 
 	ledgerClient := creditv1.NewCreditServiceClient(conn)
 	sessionValidator, err := sessionvalidator.New(sessionvalidator.Config{
@@ -49,7 +66,9 @@ func Run(ctx context.Context, cfg Config) error {
 		CookieName: cfg.SessionCookieName,
 	})
 	if err != nil {
-		return fmt.Errorf("session validator: %w", err)
+		conn.Close()
+		_ = logger.Sync()
+		return nil, fmt.Errorf("session validator: %w", err)
 	}
 
 	handler := &httpHandler{
@@ -57,26 +76,35 @@ func Run(ctx context.Context, cfg Config) error {
 		ledgerClient: ledgerClient,
 		cfg:          cfg,
 	}
-
 	router := setupRouter(cfg, handler, sessionValidator)
 
-	server := &http.Server{
+	httpServer := &http.Server{
 		Addr:    cfg.ListenAddr,
 		Handler: router,
 	}
 
+	return &Server{
+		cfg:        cfg,
+		logger:     logger,
+		ledgerConn: conn,
+		httpServer: httpServer,
+	}, nil
+}
+
+// Run starts the HTTP server and blocks until the context is canceled or the listener fails.
+func (server *Server) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("walletapi listening", zap.String("addr", cfg.ListenAddr))
-		errCh <- server.ListenAndServe()
+		server.logger.Info("walletapi listening", zap.String("addr", server.cfg.ListenAddr))
+		errCh <- server.httpServer.ListenAndServe()
 	}()
 
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if shutdownErr := server.Shutdown(shutdownCtx); shutdownErr != nil {
-			logger.Warn("server shutdown error", zap.Error(shutdownErr))
+		if shutdownErr := server.httpServer.Shutdown(shutdownCtx); shutdownErr != nil {
+			server.logger.Warn("server shutdown error", zap.Error(shutdownErr))
 		}
 		return nil
 	case err := <-errCh:
@@ -84,6 +112,16 @@ func Run(ctx context.Context, cfg Config) error {
 			return nil
 		}
 		return err
+	}
+}
+
+// Close releases resources held by the Server.
+func (server *Server) Close() {
+	if server.ledgerConn != nil {
+		_ = server.ledgerConn.Close()
+	}
+	if server.logger != nil {
+		_ = server.logger.Sync()
 	}
 }
 
