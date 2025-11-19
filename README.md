@@ -194,6 +194,9 @@ make fmt   # verifies gofmt formatting
 make lint  # runs go vet, staticcheck, and ineffassign
 make test  # executes go test with >=80% coverage enforcement for internal packages
 make ci    # runs fmt + lint + test
+
+# UI demo tests
+npm run test:ui
 ```
 
 Docker Compose reads configuration from `.env.creditsvc`, so the container runtime matches the CLI flag/environment setup.
