@@ -213,7 +213,7 @@ The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite://
 
 Follow `docs/demo.md` to launch the LG-100 wallet demo. Everything now lives under `demo/`:
 
-- `demo/backend` hosts the wallet HTTP façade (`cmd/walletapi`) plus its Dockerfile and env template.
+- `demo/backend` hosts the wallet HTTP façade (`cmd/walletapi`) plus its Dockerfile and env template. The backend is a separate Go module (`demo/backend/go.mod`) that imports the published `github.com/MarkoPoloResearchLab/ledger` API, so the entire `demo/` tree is portable and can live outside this repository if you only need the wallet experience.
 - `demo/frontend/ui` contains the static bundle that references `mpr-ui` via CDN.
 - `demo/docker-compose.yml` runs creditd (using a prebuilt `ledger-creditd` image), TAuth, the wallet API, and an Nginx front end that serves the static UI and proxies `/auth/*` and `/api/*` to the backend services. It maps the ledger container’s `:7000` port to `:7700` on the host to avoid macOS Control Center conflicts. Build the ledger image once from the repo root (`docker build -t ledger-creditd .`) before running compose from within `demo/`.
 - `demo/.env.tauth.example` exports the Google OAuth Web Client ID consumed by `demo/frontend/ui/index.html` via `http://localhost:8080/demo/config.js`. There is no fallback—copy the example files, fill in secrets, and restart the stack whenever you rotate credentials.

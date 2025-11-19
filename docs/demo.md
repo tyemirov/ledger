@@ -49,7 +49,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
 
 ## Docker Compose Workflow
 
-The repository ships `demo/docker-compose.yml` plus env templates so you can run the entire stack. Compose commands should be executed from inside the `demo/` directory (paths are relative). Build the ledger image once from the repo root before bringing up the demo stack:
+The repository ships `demo/docker-compose.yml` plus env templates so you can run the entire stack. **Treat `demo/` as a fully standalone application**: you can copy this directory anywhere (or check it out independently) because its Go backend lives in its own module (`demo/backend/go.mod`) and consumes the published `github.com/MarkoPoloResearchLab/ledger` module for gRPC types. Compose commands should be executed from inside the `demo/` directory (paths are relative). Build the ledger image once from the repo root before bringing up the demo stack:
 
 ```bash
 docker build -t ledger-creditd .
