@@ -24,6 +24,7 @@ import (
 
 const (
 	healthPath              = "/healthz"
+	sessionPath             = "/api/session"
 	bootstrapPath           = "/api/bootstrap"
 	walletPath              = "/api/wallet"
 	transactionsPath        = "/api/transactions"
@@ -138,7 +139,38 @@ func TestRun_WalletFlowIntegration(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "session endpoint returns profile",
+			action: func(t *testing.T, client *http.Client, apiBaseURL string, cookie *http.Cookie, state *integrationState) {
+				session := executeSessionRequest(t, client, apiBaseURL, cookie)
+				if session.UserID != sessionUserID {
+					t.Fatalf("expected session user %s, received %s", sessionUserID, session.UserID)
+				}
+				if session.Email != sessionUserEmail {
+					t.Fatalf("expected session email %s, received %s", sessionUserEmail, session.Email)
+				}
+				if session.Expires == 0 {
+					t.Fatalf("expected session expiry to be populated")
+				}
+			},
+		},
 	}
+
+	t.Run("session endpoint rejects missing cookie", func(t *testing.T) {
+		client := &http.Client{Timeout: 2 * time.Second}
+		request, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s%s", configuration.ListenAddr, sessionPath), nil)
+		if err != nil {
+			t.Fatalf("session request init failed: %v", err)
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatalf("session request failed: %v", err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("expected unauthorized status, received %d", response.StatusCode)
+		}
+	})
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -207,6 +239,27 @@ func executeWalletRequest(t *testing.T, client *http.Client, apiBaseURL string, 
 	var envelope walletapi.WalletEnvelope
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
 		t.Fatalf("response decode failed for %s: %v", path, err)
+	}
+	return envelope
+}
+
+func executeSessionRequest(t *testing.T, client *http.Client, apiBaseURL string, cookie *http.Cookie) walletapi.SessionEnvelope {
+	request, err := http.NewRequest(http.MethodGet, apiBaseURL+sessionPath, nil)
+	if err != nil {
+		t.Fatalf("session request init failed: %v", err)
+	}
+	request.AddCookie(cookie)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("session request failed: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected session status: %d", response.StatusCode)
+	}
+	var envelope walletapi.SessionEnvelope
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		t.Fatalf("session response decode failed: %v", err)
 	}
 	return envelope
 }
