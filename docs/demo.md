@@ -83,4 +83,4 @@ Monitor logs for:
 - `creditd`: gRPC operations landing in the ledger.
 - `tauth`: nonce/login/refresh lifecycle.
 
-The UI also surfaces toast banners for auth/sign-out events so flows remain observable without tailing logs.
+The UI also surfaces toast banners for auth/sign-out events so flows remain observable without tailing logs. For automated coverage, run `npm run test:ui`, which executes the Playwright suite under `ledger_demo/tests` (the same command is wired into `make test`).
