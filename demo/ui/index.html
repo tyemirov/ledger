@@ -56,7 +56,7 @@
       settings-label="Settings"
     ></mpr-header>
 
-    <main x-data="LedgerDemo()" x-init="init()" x-cloak>
+    <main x-data="LedgerDemo()" x-init="init()">
       <section class="hero">
         <span class="hero__eyebrow">Ledger demo stack</span>
         <h1 class="hero__title">Spend 5 coins, replenish, and observe history</h1>
@@ -69,8 +69,8 @@
       </section>
 
       <section class="card status-grid">
-        <div class="status-pill" x-text="statusTitle()"></div>
-        <p class="hero__lede" x-text="statusDetail()"></p>
+        <div class="status-pill" x-text="statusTitle()">Connecting</div>
+        <p class="hero__lede" x-text="statusDetail()">Loading…</p>
         <template x-if="profile">
           <dl class="profile" aria-live="polite">
             <div class="profile__row">
@@ -133,11 +133,11 @@
             <div class="wallet-summary" aria-live="polite">
               <div class="wallet-metric">
                 <span>Total coins</span>
-                <strong x-text="formattedCoins(wallet.balance.totalCoins)"></strong>
+                <strong x-text="formattedCoins(wallet.balance.totalCoins)">—</strong>
               </div>
               <div class="wallet-metric">
                 <span>Available coins</span>
-                <strong x-text="formattedCoins(wallet.balance.availableCoins)"></strong>
+                <strong x-text="formattedCoins(wallet.balance.availableCoins)">—</strong>
               </div>
             </div>
           </template>
@@ -147,7 +147,7 @@
 
           <div class="actions">
             <button class="button" type="button" @click="spendWalletCoins" :disabled="!canSpend()">
-              <span x-text="copy.spendButtonLabel"></span>
+              <span x-text="copy.spendButtonLabel">Spend 5 coins</span>
               <template x-if="isSpendPending">
                 <span aria-hidden="true">…</span>
               </template>
@@ -172,7 +172,7 @@
                 @click="purchaseWalletCoins"
                 :disabled="!canPurchase()"
               >
-                <span x-text="copy.purchaseButtonLabel"></span>
+                <span x-text="copy.purchaseButtonLabel">Buy coins</span>
                 <template x-if="isPurchasePending">
                   <span aria-hidden="true">…</span>
                 </template>
