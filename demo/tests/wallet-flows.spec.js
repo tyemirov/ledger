@@ -31,6 +31,7 @@ function startDemoServer() {
   }
 
   const server = http.createServer((request, response) => {
+    console.log("mock request", request.method, request.url);
     const { method, url } = request;
     if (!url) {
       response.statusCode = 400;
