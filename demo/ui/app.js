@@ -543,3 +543,9 @@ document.addEventListener("alpine:init", () => {
     window.Alpine.data("LedgerDemo", LedgerDemo);
   }
 });
+
+window.gisLoaded = function gisLoaded() {
+  if (window.Alpine && typeof window.Alpine.start === "function") {
+    window.Alpine.start();
+  }
+};
