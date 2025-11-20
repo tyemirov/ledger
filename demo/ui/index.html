@@ -9,6 +9,11 @@
       href="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css"
     />
     <link rel="stylesheet" href="./styles.css" />
+    <script>
+      window.deferLoadingAlpine = function (alpine) {
+        window.Alpine = alpine;
+      };
+    </script>
     <script
       defer
       src="http://localhost:8080/static/auth-client.js"

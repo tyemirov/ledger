@@ -560,3 +560,13 @@ document.addEventListener("alpine:init", () => {
     window.Alpine.data("LedgerDemo", LedgerDemo);
   }
 });
+
+if (window.Alpine && typeof window.Alpine.start === "function") {
+  window.Alpine.start();
+} else {
+  document.addEventListener("DOMContentLoaded", () => {
+    if (window.Alpine && typeof window.Alpine.start === "function") {
+      window.Alpine.start();
+    }
+  });
+}
