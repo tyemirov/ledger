@@ -1,8 +1,6 @@
 GO_SOURCES := $(shell find . -name '*.go' -not -path "./vendor/*" -not -path "./.git/*" -not -path "*/.git/*" -not -path "./demo/*")
 STATICCHECK_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1 | grep -v github.com/MarkoPoloResearchLab/ledger/demo/backend)
 UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1 | grep -v github.com/MarkoPoloResearchLab/ledger/demo/backend)
-INTEGRATION_TEST_PACKAGES :=
-
 .PHONY: fmt format check-format lint test test-unit test-integration ci tools
 
 fmt: check-format
@@ -25,20 +23,14 @@ lint: tools
 	staticcheck $(STATICCHECK_PACKAGES)
 	ineffassign ./...
 
-test: test-unit test-integration
+test: test-unit
 
 test-unit:
 	go test $(UNIT_TEST_PACKAGES)
 	go test ./internal/credit -coverprofile=coverage.out -covermode=count
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 80.0) { print "coverage below 80%"; exit 1 } }'
 
-test-integration:
-	@if [ -n "$(INTEGRATION_TEST_PACKAGES)" ]; then \
-		go test $(INTEGRATION_TEST_PACKAGES); \
-	fi
-
 ci: check-format lint test-unit
-	@if [ -n "$(INTEGRATION_TEST_PACKAGES)" ]; then $(MAKE) test-integration; fi
 
 tools:
 	@command -v staticcheck >/dev/null 2>&1 || go install honnef.co/go/tools/cmd/staticcheck@latest
