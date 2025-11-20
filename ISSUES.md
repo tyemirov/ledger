@@ -24,6 +24,14 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
     a web service, ghhtp, that serves the stand alone front end
 
     Find dependencies under tools folder and read their documentation and code to understand the integration. be specific in the produced plan on the intehration path forward
+    
+    Read the docs and follow the docs under docs/TAuth/usage.md and docs/mpr-ui/custom-elements.md, docs/mpr-ui/demo-index-auth.md, @docs/mpr-ui/demo/.
+
+    1. Build a demo page that copies the @docs/mpr-ui/demo
+    2. Add ledger service to the docker orchestration
+    3. Wire ledger service to operate with transactions as described above
+    
+    
     - 2025-11-17: Authored `docs/lg-100-demo-plan.md`, outlining the multi-service architecture (TAuth + demo HTTP API + creditd + ghttp) plus the UI/backend tasks, endpoints, and testing strategy required for LG-101.
 
 - [x] [LG-101] Build the demo transaction API service described in `docs/lg-100-demo-plan.md`.
@@ -53,6 +61,29 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
     - Compose a dedicated Dockerfile + docker-compose overlay under `demo/` so contributors can run `creditd`, the new wallet API, TAuth, and a static file server (ghttp) from one command. Ensure `.env` samples (e.g., `.env.walletapi`, `.env.tauth`) live inside `demo/` and are the only source of runtime configuration.
     - Add Playwright coverage under `demo/tests/` that drives the new front end end-to-end. Write a stub server (similar to the existing root-level harness) to intercept `/demo/config.js`, `/static/auth-client.js`, GIS, and the wallet API endpoints so the four mandatory scenarios (sign-in prompt, successful spend, insufficient funds, purchase replenishment) and the zero-balance banner are asserted. Wire these tests into `make test`.
     - Update repository docs (`README.md`, `docs/demo.md`, and `docs/lg-100-demo-plan.md` if necessary) to point to the new `demo/` workflow, including the commands for building/running the Docker stack and executing the Playwright suite.
+
+- [ ] [LG-106] Prepare a demo of a web app which uses ledger backend for transactions. A deliverable is a plan of execution.
+    - Rely on mpr-ui for the backend. Use a header and a footer. Use mpr-ui declarative syntax
+    - Rely on TAuth for authentication. Usge TAuth. Mimic the demo
+    - Have a simple case of 
+    transaction button that takes 5 units of virtual currency
+    1. enough funds -- transaction succeed
+    2. not enough funds -- transaction fails
+    3. enough funds after which there is 0 units of virtual currency left
+
+    A single button which says transact with a virtual currency be 5 coins per transaction. A user gets 20 coins when an account is created. A user can buy coins at any time. once the coins are depleded, a user can no longwer transact untill a user obtains the coins
+
+    The architecture shall be -- a backend that supports TAuth authentication by accepting the JWTs and verifying them against google service
+    a backend service that integrates with Ledger and verifies that the use has sufficient balance for the transactions
+    a web service, ghhtp, that serves the stand alone front end
+
+    Find dependencies under tools folder and read their documentation and code to understand the integration. be specific in the produced plan on the intehration path forward
+    
+    Read the docs and follow the docs under docs/TAuth/usage.md and docs/mpr-ui/custom-elements.md, docs/mpr-ui/demo-index-auth.md, @docs/mpr-ui/demo/.
+
+    1. Build a demo page that copies the @docs/mpr-ui/demo
+    2. Add ledger service to the docker orchestration
+    3. Wire ledger service to operate with transactions as described above
 
 ## Improvements (200–299)
 

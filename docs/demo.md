@@ -2,6 +2,8 @@
 
 This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the end-to-end wallet scenario that combines creditd (ledger), TAuth, the wallet API under `demo/backend`, and the static UI under `demo/frontend`.
 
+> LG-301 note: the UI is currently **login-only** to debug TAuth + Google sign-in. Ledger and wallet calls remain available behind the proxy, but the front-end panels are disabled until authentication is stable.
+
 ## Components
 
 1. **creditd** (`cmd/credit`) – append-only ledger exposed via gRPC on `:7000` (Compose publishes it on host port `7700` so macOS Control Center can keep `7000` free).
@@ -45,7 +47,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
   ```bash
   docker run --rm -p 8000:8000 -v $(pwd)/demo/frontend/ui:/usr/share/nginx/html -v $(pwd)/demo/nginx.conf:/etc/nginx/conf.d/default.conf nginx:1.25-alpine
   ```
-5. Open `http://localhost:8000` and sign in via the header button. The UI will automatically bootstrap the wallet and call `/api/transactions` and `/api/purchases` through the proxy as you interact with the buttons.
+5. Open `http://localhost:8000` and sign in via the header button. The UI surfaces only the authentication card while we debug login stability; ledger and wallet endpoints stay available behind the proxy but are not invoked by the page.
 
 ## Docker Compose Workflow
 
@@ -66,25 +68,23 @@ docker build -t ledger-creditd .
    ```bash
    docker compose up --build
    ```
-3. Visit `http://localhost:8000` (Nginx proxy), `http://localhost:9090/api/wallet` (walletapi), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `/demo/config.js` through the proxy so `<mpr-header>` receives the Google OAuth Web Client ID defined in `demo/.env.tauth`; if that script fails or the env variable is empty, sign-in will not work.
+3. Visit `http://localhost:8000` (Nginx proxy), `http://localhost:9090/api/wallet` (walletapi), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `/demo/config.js` through the proxy so `<mpr-header>` receives the Google OAuth Web Client ID defined in `demo/.env.tauth`; if that script fails or the env variable is empty, sign-in will not work. While LG-301 is active the page renders only the auth card; wallet endpoints stay reachable for manual testing but are not called from the UI.
 4. Stop everything with `docker compose down`.
 
 Volumes `ledger_data` and `tauth_data` persist ledger entries plus refresh tokens. Remove them with `docker volume rm ledger_ledger_data ledger_tauth_data` if you need a fresh state.
 
 ## Scenario Checklist
 
-Once authenticated:
+Focus on authentication while ledger flows are disabled in the UI:
 
-1. The UI automatically grants 20 coins (POST `/api/bootstrap`).
-2. Click **Spend 5 coins** three times – the first four transactions should succeed until the balance reaches 5 coins.
-3. Click the button again to observe the **insufficient funds** state (HTTP 409 converted to a banner message).
-4. Use **Buy coins** (5 or 10) to top up and watch the ledger list update.
-5. Continue spending until the **zero balance** banner appears, confirming the third requirement from LG-100.
+1. Load `http://localhost:8000` and confirm the page shows a signed-out prompt.
+2. Click the Google sign-in button; TAuth should accept the nonce + credential exchange and the session card should show your profile.
+3. Reload the page and verify the session persists (the card is already populated without clicking anything).
+4. Click **Sign out** and confirm the cookies clear plus the UI returns to the signed-out state.
 
 Monitor logs for:
 
-- `walletapi`: zap logs containing `status` + `user_id` fields.
-- `creditd`: gRPC operations landing in the ledger.
 - `tauth`: nonce/login/refresh lifecycle.
+- `walletapi`/`creditd`: optional while LG-301 is active; the UI no longer calls these services but they remain available for manual exercises.
 
-The UI also surfaces toast banners for auth/sign-out events so flows remain observable without tailing logs. For automated coverage, run `npm run test:ui`, which executes the Playwright suite under `demo/tests` (the same command is wired into `make test`).
+The UI surfaces auth banners in place of wallet toasts. For automated coverage, run `npm run test:ui`, which executes the Playwright suite under `demo/tests` (the same command is wired into `make test`).

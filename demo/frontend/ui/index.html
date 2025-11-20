@@ -3,158 +3,46 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Ledger Demo Wallet</title>
+    <title>Ledger Demo Login</title>
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css"
     />
-    <link rel="stylesheet" href="./styles.css" />
     <script src="/demo/config.js"></script>
-    <script type="module">
-      import Alpine from "https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/module.esm.js";
-      window.Alpine = Alpine;
-      Alpine.start();
-    </script>
     <script defer src="/static/auth-client.js" crossorigin="anonymous"></script>
     <script
       defer
       src="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.js"
       id="mpr-ui-bundle"
     ></script>
-    <script
-      src="https://accounts.google.com/gsi/client"
-      async
-      defer
-    ></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
-  <body x-data="walletPage()" x-cloak :data-auth-state="authState">
+  <body data-auth-state="anonymous">
     <mpr-header
       id="demo-header"
       brand-label="Ledger Demo"
-      brand-href="#"
-      nav-links='[{"label":"Scenario","href":"#scenario"}]'
+      brand-href="https://mprlab.com/"
+      nav-links='[
+        { "label": "Docs", "href": "https://github.com/MarcoPoloResearchLab/mpr-ui/blob/master/README.md" },
+        { "label": "Auth flow", "href": "https://github.com/MarkoPoloResearchLab/ledger/blob/master/docs/mpr-ui/demo-index-auth.md" }
+      ]'
       login-path="/auth/google"
       logout-path="/auth/logout"
       nonce-path="/auth/nonce"
       settings="true"
       settings-label="Profile"
     ></mpr-header>
-    <script>
-      (function applyTAuthClientId() {
-        var header =
-          document.getElementById("demo-header") ||
-          document.querySelector("mpr-header");
-        var config = window.__TAUTH_DEMO_CONFIG || {};
-        var clientId =
-          config && typeof config.googleClientId === "string"
-            ? config.googleClientId.trim()
-            : "";
-        var authBaseUrl =
-          config && typeof config.authBaseUrl === "string"
-            ? config.authBaseUrl.trim()
-            : "";
-        var resolvedBaseUrl = authBaseUrl;
-        if (header) {
-          if (clientId) {
-            header.setAttribute("site-id", clientId);
-          } else {
-            console.error("Missing Google client ID from TAuth config.");
-          }
-          if (resolvedBaseUrl) {
-            header.setAttribute("base-url", resolvedBaseUrl);
-          } else {
-            header.removeAttribute("base-url");
-          }
-        }
-      })();
-    </script>
 
-    <main class="demo-layout">
-      <section class="panel" data-auth-message x-show="!isAuthenticated">
-        <h2>Sign in to begin</h2>
-        <p>Use the header button to authenticate with TAuth. The demo loads automatically.</p>
-      </section>
-
-      <section class="panel" data-wallet x-show="isAuthenticated">
-        <header class="panel-header">
-          <div>
-            <p class="panel-eyebrow">Available balance</p>
-            <p class="panel-metric"><span data-available-coins x-text="availableCoins"></span> coins</p>
-          </div>
-          <div>
-            <p class="panel-eyebrow">Total grants</p>
-            <p class="panel-metric"><span data-total-coins x-text="totalCoins"></span> coins</p>
-          </div>
-        </header>
-        <p class="panel-body-text">
-          Every account receives <strong>20 coins</strong> on first login. Each transaction
-          spends exactly <strong>5 coins</strong>. Buying more coins instantly updates the ledger.
-        </p>
-        <dl class="balance-breakdown">
-          <div>
-            <dt>Total (cents)</dt>
-            <dd data-total-cents x-text="totalCents"></dd>
-          </div>
-          <div>
-            <dt>Available (cents)</dt>
-            <dd data-available-cents x-text="availableCents"></dd>
-          </div>
-        </dl>
-      </section>
-
-      <section class="panel" data-transactions x-show="isAuthenticated">
-        <h2>Spend 5 coins</h2>
-        <p>Validate both success and rejection flows with the same button.</p>
-        <button type="button" class="cta" data-transact @click="handleTransactionClick" :disabled="busy">Spend 5 coins</button>
-        <p class="status" data-transaction-status :data-status-kind="transactionStatusKind" x-text="transactionStatus"></p>
-      </section>
-
-      <section class="panel" data-purchase x-show="isAuthenticated">
-        <h2>Buy more coins</h2>
-        <p>Select how many coins to add (min 5, steps of 5) and click purchase.</p>
-        <form data-purchase-form @submit.prevent="handlePurchaseSubmit">
-          <div class="purchase-options">
-            <template x-for="option in purchaseOptions" :key="option">
-              <label>
-                <input type="radio" name="purchase" :value="option" x-model.number="selectedPurchase" />
-                <span x-text="option + ' coins'"></span>
-              </label>
-            </template>
-          </div>
-          <button type="submit" class="cta secondary" :disabled="busy">Buy coins</button>
-        </form>
-      </section>
-
-      <section class="panel" data-history x-show="isAuthenticated">
-        <h2 id="scenario">Ledger history</h2>
-        <p class="panel-body-text">
-          Track every grant and spend. Use these entries to confirm the “success, insufficient
-          funds, zero balance” scenarios described in the plan.
-        </p>
-        <ul class="entry-list" data-entry-list>
-          <template x-if="walletEntries.length === 0">
-            <li class="entry-empty">No ledger activity yet.</li>
-          </template>
-          <template x-for="entry in walletEntries" :key="entry.entry_id">
-            <li>
-              <div>
-                <span class="entry-type" x-text="entry.type"></span><br />
-                <small x-text="formatEntryDate(entry)"></small>
-              </div>
-              <div class="entry-amount" :class="entry.amount_coins < 0 ? 'negative' : 'positive'" x-text="formatCoins(entry.amount_coins)"></div>
-            </li>
-          </template>
-        </ul>
-      </section>
-    </main>
-
-    <div class="status-banner" data-status-banner x-show="bannerVisible" x-text="bannerMessage" :data-status-kind="bannerKind"></div>
+    <main></main>
 
     <mpr-footer
       prefix-text="Built with mpr-ui"
       privacy-link-label="Privacy"
-      privacy-link-href="#"
-      links='[{"label":"Plan","url":"https://github.com/MarkoPoloResearchLab/ledger"}]'
+      privacy-link-href="https://mprlab.com/privacy"
+      links='[
+        { "label": "Demo docs", "url": "https://github.com/MarkoPoloResearchLab/ledger/tree/master/docs/mpr-ui/demo" },
+        { "label": "Architecture", "url": "https://github.com/MarcoPoloResearchLab/mpr-ui/blob/master/ARCHITECTURE.md" }
+      ]'
     ></mpr-footer>
 
     <script type="module" src="./app.js"></script>
