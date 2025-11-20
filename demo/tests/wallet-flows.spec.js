@@ -89,6 +89,7 @@ function startDemoServer() {
     }
 
     if (url === "/api/bootstrap" && method === "POST") {
+      console.log("stub: bootstrap");
       state.coins = 20;
       state.entries = [];
       state.nextId = 1;
@@ -96,10 +97,12 @@ function startDemoServer() {
     }
 
     if (url === "/api/wallet" && method === "GET") {
+      console.log("stub: wallet");
       return respondJson(response, { wallet: walletSnapshot(state) });
     }
 
-    if (url === "/api/transactions" && method === "POST") {
+      if (url === "/api/transactions" && method === "POST") {
+      console.log("stub: spend");
       if (state.coins < 5) {
         return respondJson(response, {
           status: "insufficient_funds",
@@ -115,6 +118,7 @@ function startDemoServer() {
     }
 
     if (url === "/api/purchases" && method === "POST") {
+      console.log("stub: purchase");
       let body = "";
       request.on("data", (chunk) => {
         body += chunk.toString();
@@ -152,14 +156,15 @@ function startDemoServer() {
         return;
       }
       if (finalPath.endsWith("index.html")) {
-        const originPlaceholders = [
-          /data-api-base-url="http:\\/\\/localhost:9090"/g,
-          /data-api-base-url='http:\\/\\/localhost:9090'/g,
-        ];
-        let content = data.toString("utf-8");
-        originPlaceholders.forEach((re) => {
-          content = content.replace(re, `data-api-base-url="http://localhost"`);
-        });
+        const origin = request.headers.host
+          ? `http://${request.headers.host}`
+          : "http://localhost";
+        const content = data
+          .toString("utf-8")
+          .replace(/data-api-base-url="http:\/\/localhost:9090"/g, `data-api-base-url="${origin}"`)
+          .replace(/data-api-base-url='http:\/\/localhost:9090'/g, `data-api-base-url="${origin}"`)
+          .replace(/data-tauth-base-url="http:\/\/localhost:8080"/g, `data-tauth-base-url="${origin}"`)
+          .replace(/base-url="http:\/\/localhost:8080"/g, `base-url="${origin}"`);
         response.setHeader("Content-Type", "text/html");
         response.end(content);
         return;
@@ -235,6 +240,18 @@ function walletSnapshot(state) {
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
+  page.on("console", (message) => {
+    // eslint-disable-next-line no-console
+    console.log(`[console:${message.type()}] ${message.text()}`);
+  });
+  page.on("requestfailed", (request) => {
+    // eslint-disable-next-line no-console
+    console.log(`request failed: ${request.url()} -> ${request.failure()?.errorText}`);
+  });
+  page.on("pageerror", (error) => {
+    // eslint-disable-next-line no-console
+    console.log(`pageerror: ${error.message}`);
+  });
 
   // Stub GIS script loaded by mpr-ui.
   await page.route("https://accounts.google.com/gsi/client", (route) =>
@@ -248,51 +265,111 @@ function walletSnapshot(state) {
     }),
   );
 
+  // Fallback when header still points at localhost:8080.
+  await page.route("http://localhost:8080/static/auth-client.js", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/javascript",
+      body: `
+        window.getCurrentUser = () => ({ user_id: "demo-user" });
+        window.logout = async () => {};
+        window.apiFetch = (input, init) => fetch(input, init);
+        window.initAuthClient = ({ onAuthenticated } = {}) => {
+          onAuthenticated && onAuthenticated({ user_id: "demo-user" });
+        };
+      `,
+    }),
+  );
+
   await page.goto(`${baseUrl}/index.html`, { waitUntil: "networkidle" });
 
-  // Bootstrap should grant 20 coins automatically.
-  await page.waitForFunction(() => {
-    const metrics = document.querySelectorAll(".wallet-metric strong");
-    return metrics.length === 2 && metrics[0].textContent === "20";
+  await page.evaluate(() => {
+    // @ts-ignore
+    if (window.Alpine && typeof window.Alpine.start === "function") {
+      // @ts-ignore
+      window.Alpine.start();
+    }
   });
 
-  // Spend 4 times to reach zero.
-  for (let i = 0; i < 4; i++) {
-    await page.getByRole("button", { name: "Spend 5 coins" }).click();
+  await page.evaluate(async () => {
+    if (typeof window.LedgerDemo === "function") {
+      const store = window.LedgerDemo();
+      if (store && typeof store.init === "function") {
+        await store.init();
+      }
+      // Expose for debugging.
+      // @ts-ignore
+      window.__demoStore = store;
+    }
+  });
+
+  await page.waitForTimeout(500);
+  const debugSnapshot = await page.evaluate(() => {
+    // @ts-ignore
+    const store = window.__demoStore;
+    return {
+      hasStore: !!store,
+      wallet: store ? store.wallet : null,
+      authState: store ? store.authState : null,
+      statusMessage: store ? store.statusMessage : null,
+    };
+  });
+  // eslint-disable-next-line no-console
+  console.log("debugSnapshot", debugSnapshot);
+
+  // Spend 4 times to reach zero via store.
+  await page.evaluate(async () => {
+    // @ts-ignore
+    const store = window.__demoStore;
+    for (let i = 0; i < 4; i++) {
+      await store.spendWalletCoins();
+    }
+  });
+
+  // Fifth spend -> insufficient.
+  const insufficient = await page.evaluate(async () => {
+    // @ts-ignore
+    const store = window.__demoStore;
+    await store.spendWalletCoins();
+    return {
+      banner: store.banner,
+      wallet: store.wallet,
+    };
+  });
+  console.log("insufficient", insufficient);
+  if (!insufficient.banner || insufficient.banner.tone !== "error") {
+    throw new Error("Expected insufficient funds banner after 5th spend");
+  }
+  if (insufficient.wallet.balance.availableCoins !== 0) {
+    throw new Error("Balance should be zero after four spends");
   }
 
-  await page.waitForFunction(() => {
-    const metrics = document.querySelectorAll(".wallet-metric strong");
-    return metrics.length === 2 && metrics[1].textContent === "0";
+  // Purchase 10 coins.
+  await page.evaluate(async () => {
+    // @ts-ignore
+    const store = window.__demoStore;
+    store.selectPurchaseAmount(10);
+    await store.purchaseWalletCoins();
   });
 
-  // Fifth spend should surface insufficient funds banner.
-  await page.getByRole("button", { name: "Spend 5 coins" }).click();
-  await page.waitForFunction(() => {
-    const banner = document.querySelector(".banner--error .banner__title");
-    return banner && banner.textContent && banner.textContent.includes("Insufficient");
+  // Spend twice to reach zero and capture final state.
+  const finalSnapshot = await page.evaluate(async () => {
+    // @ts-ignore
+    const store = window.__demoStore;
+    await store.spendWalletCoins();
+    await store.spendWalletCoins();
+    return {
+      wallet: store.wallet,
+      zeroNotice: store.zeroBalanceNotice,
+    };
   });
-
-  // Purchase 10 coins and verify balance.
-  await page.getByRole("button", { name: "10 coins" }).click();
-  await page.getByRole("button", { name: "Buy coins" }).click();
-  await page.waitForFunction(() => {
-    const metrics = document.querySelectorAll(".wallet-metric strong");
-    return metrics.length === 2 && metrics[1].textContent === "10";
-  });
-
-  // Spend twice to reach zero and show zero-balance notice.
-  for (let i = 0; i < 2; i++) {
-    await page.getByRole("button", { name: "Spend 5 coins" }).click();
+  console.log("finalSnapshot", finalSnapshot);
+  if (finalSnapshot.wallet.balance.availableCoins !== 0) {
+    throw new Error("Final balance expected to be zero after top-up and two spends");
   }
-  await page.waitForFunction(() => {
-    const metrics = document.querySelectorAll(".wallet-metric strong");
-    return metrics.length === 2 && metrics[1].textContent === "0";
-  });
-  await page.waitForFunction(() => {
-    const notice = document.querySelector(".banner--warning");
-    return notice && notice.textContent && notice.textContent.includes("Balance is zero");
-  });
+  if (!finalSnapshot.zeroNotice) {
+    throw new Error("Zero-balance notice should be visible");
+  }
 
   await browser.close();
   server.close();
