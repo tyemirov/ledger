@@ -1,6 +1,14 @@
 tools/
 .env
+.env.*
 
 PLAN.md
 coverage.out
 *.db
+node_modules/
+test-results/
+*.png
+
+docs/mpr-ui/
+docs/TAuth/
+docs/workflows
