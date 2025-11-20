@@ -35,11 +35,10 @@ test-unit:
 test-integration:
 	@if [ -n "$(INTEGRATION_TEST_PACKAGES)" ]; then \
 		go test $(INTEGRATION_TEST_PACKAGES); \
-	else \
-		echo "Skipping integration tests (no packages configured)"; \
 	fi
 
-ci: check-format lint test-unit test-integration
+ci: check-format lint test-unit
+	@if [ -n "$(INTEGRATION_TEST_PACKAGES)" ]; then $(MAKE) test-integration; fi
 
 tools:
 	@command -v staticcheck >/dev/null 2>&1 || go install honnef.co/go/tools/cmd/staticcheck@latest
