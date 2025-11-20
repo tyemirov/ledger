@@ -25,6 +25,26 @@
       defer
     ></script>
     <script type="module" src="./app.js" defer></script>
+    <template id="mpr-header-template">
+      <mpr-header
+        id="auth-header"
+        brand-label="Marco Polo Research Lab"
+        brand-href="https://mprlab.com/"
+        nav-links='[
+          { "label": "Ledger README", "href": "https://github.com/tyemirov/ledger#readme" },
+          { "label": "Demo guide", "href": "https://github.com/tyemirov/ledger/blob/master/demo/docs/demo.md" },
+          { "label": "TAuth usage", "href": "https://github.com/tyemirov/ledger/blob/master/docs/TAuth/usage.md" }
+        ]'
+        base-url="http://localhost:8080"
+        data-tauth-base-url="http://localhost:8080"
+        login-path="/auth/google"
+        logout-path="/auth/logout"
+        nonce-path="/auth/nonce"
+        settings="true"
+        settings-label="Settings"
+      ></mpr-header>
+    </template>
+    <div id="header-mount" data-header-mount data-tauth-base-url="http://localhost:8080"></div>
     <script
       defer
       src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"
@@ -37,25 +57,6 @@
     data-api-base-url="http://localhost:9090"
     data-tauth-base-url="http://localhost:8080"
   >
-    <mpr-header
-      id="auth-header"
-      brand-label="Marco Polo Research Lab"
-      brand-href="https://mprlab.com/"
-      nav-links='[
-        { "label": "Ledger README", "href": "https://github.com/tyemirov/ledger#readme" },
-        { "label": "Demo guide", "href": "https://github.com/tyemirov/ledger/blob/master/demo/docs/demo.md" },
-        { "label": "TAuth usage", "href": "https://github.com/tyemirov/ledger/blob/master/docs/TAuth/usage.md" }
-      ]'
-      site-id="991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com"
-      base-url="http://localhost:8080"
-      data-tauth-base-url="http://localhost:8080"
-      login-path="/auth/google"
-      logout-path="/auth/logout"
-      nonce-path="/auth/nonce"
-      settings="true"
-      settings-label="Settings"
-    ></mpr-header>
-
     <main x-data="LedgerDemo()" x-init="init()">
       <section class="hero">
         <span class="hero__eyebrow">Ledger demo stack</span>
