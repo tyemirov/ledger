@@ -61,12 +61,12 @@ The repository ships a single compose file under `demo/docker-compose.yml` plus 
    cp .env.ledgersvc.example .env.ledgersvc
    ```
    Edit the files so `DEMOAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID.
-2. Start the wallet stack (the compose file uses profiles; `demo` boots ledgerd + demoapi + ghttp + TAuth):
+2. Start the wallet stack (ledgerd + demoapi + ghttp + TAuth):
    ```bash
-   docker compose up --build --profile demo
+   docker compose up --build
    ```
 3. Visit `http://localhost:8000` (ghttp), `http://localhost:9090/api/wallet` (demoapi), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `http://localhost:8080/demo/config.js`, so whatever Google OAuth Web Client ID you set in `.env.tauth` is automatically injected into `<mpr-header>`—no need to edit the HTML file manually.
-4. Stop everything with `docker compose down --profile demo`.
+4. Stop everything with `docker compose down`.
 
 Volumes `ledger_data` and `tauth_data` persist ledger entries plus refresh tokens. Remove them with `docker volume rm ledger_ledger_data ledger_tauth_data` if you need a fresh state.
 
@@ -90,24 +90,15 @@ The UI also surfaces toast banners for auth/sign-out events so flows remain obse
 
 ## Auth-Only Login Demo (LG-301)
 
-For a lightweight login-only check (no ledger or demoapi dependencies), reuse the same compose file with the `auth` profile so the stack stays self-contained:
-
-1. Populate `.env.tauth` inside `demo/` if you haven't already.
-2. Run only the auth profile:
-   ```bash
-   cd demo
-   docker compose up --build --profile auth
-   ```
-3. Open `http://localhost:8000` (served from `demo/ui/index.html`). The page pulls `http://localhost:8080/demo/config.js`, uses `<mpr-header>` pointed at TAuth (`/auth/nonce`, `/auth/google`, `/auth/logout`), loads `auth-client.js`, and keeps you signed in after refresh.
-4. Stop the login stack with `docker compose down --profile auth`.
+For a lightweight login-only check (no ledger or demoapi dependencies), start only TAuth + ghttp manually (or comment out the other services in `demo/docker-compose.yml`) and follow the same UI steps. There isn’t a dedicated compose profile anymore; the primary compose stack always runs the full demo.
 
 ## Self-Contained End-to-End Demo from `demo/`
 
 When you want the full ledger + demoapi + UI flow without referencing files outside `demo/`, use the bundled Dockerfiles and compose file in that directory. The Dockerfiles build both binaries from the checked-out repository (with `replace` directives), while ghttp/TAuth images continue to come from GHCR.
 
 1. Populate the environment files as described above.
-2. Launch the demo profile (builds ledgerd/demoapi from the Dockerfiles in `demo/` and pulls TAuth + ghttp from GHCR):
+2. Launch the stack (builds ledgerd/demoapi from the Dockerfiles in `demo/` and pulls TAuth + ghttp from GHCR):
    ```bash
-   docker compose up --build --profile demo
+   docker compose up --build
    ```
-3. Visit `http://localhost:8000` (UI), `http://localhost:9090/api/wallet` (demoapi), `http://localhost:8080` (TAuth), and `http://localhost:50051` (ledger gRPC). Stop with `docker compose down --profile demo`.
+3. Visit `http://localhost:8000` (UI), `http://localhost:9090/api/wallet` (demoapi), `http://localhost:8080` (TAuth), and `http://localhost:50051` (ledger gRPC). Stop with `docker compose down`.

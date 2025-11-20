@@ -1,6 +1,5 @@
 services:
   ledger:
-    profiles: ["demo"]
     build:
       context: ..
       dockerfile: Dockerfile
@@ -14,7 +13,6 @@ services:
       - "50051:50051"
 
   tauth:
-    profiles: ["demo", "auth"]
     image: ghcr.io/tyemirov/tauth:latest
     container_name: ledger-tauth
     env_file:
@@ -25,7 +23,6 @@ services:
       - "8080:8080"
 
   demoapi:
-    profiles: ["demo"]
     build:
       context: ..
       dockerfile: ./demo/Dockerfile
@@ -39,8 +36,7 @@ services:
     ports:
       - "9090:9090"
 
-  web-demo:
-    profiles: ["demo"]
+  web:
     image: ghcr.io/temirov/ghttp:latest
     container_name: ledger-ghttp
     command: ["--directory", "/data", "8000"]
@@ -50,18 +46,6 @@ services:
       - ./ui:/data:ro
     depends_on:
       - demoapi
-      - tauth
-
-  web-auth:
-    profiles: ["auth"]
-    image: ghcr.io/temirov/ghttp:latest
-    container_name: ledger-ghttp-auth
-    command: ["--directory", "/data", "8000"]
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./ui:/data:ro
-    depends_on:
       - tauth
 
 volumes:
