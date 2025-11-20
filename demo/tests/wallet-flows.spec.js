@@ -284,7 +284,7 @@ function walletSnapshot(state) {
   await page.goto(`${baseUrl}/index.html`, { waitUntil: "networkidle" });
 
   // Wait for spend control to appear; fail on blank UI.
-  const spendButton = page.getByRole("button", { name: "Spend 5 coins" });
+  const spendButton = page.locator("text=Spend 5 coins").first();
   await spendButton.waitFor({ timeout: 30000 });
 
   // Expect initial balances to show 20 coins.
