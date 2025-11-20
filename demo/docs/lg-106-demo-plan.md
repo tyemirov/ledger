@@ -7,7 +7,7 @@
 - Authenticate every HTTP call with TAuth session cookies; the backend validates them before touching the ledger.
 
 ## Current State and Gaps
-- Ledger service (`cmd/ledger`) is present; Docker (`demo/docker-compose.yml`) runs it on port `7000` (plaintext gRPC via SQLite).
+- Ledger service (`cmd/ledger`) is present; Docker (`demo/docker-compose.yml`) runs it on port `50051` (plaintext gRPC via SQLite).
 - Demo API exists (`demo/backend/cmd/demoapi` + `demo/backend/internal/demoapi`), already exposing `/api/session`, `/api/bootstrap`, `/api/wallet`, `/api/transactions`, `/api/purchases` with constants matching the required flows (5-coin spend, 20-coin bootstrap, 5-coin purchase increments). Integration tests cover the spend/insufficient/purchase paths.
 - TAuth is assumed via the published image (`ghcr.io/tyemirov/tauth:latest`); `.env.tauth.example` in `demo/` keeps the local configuration aligned with production defaults.
 - `ghttp` (under `tools/ghttp`) serves the `demo/ui` bundle, which now houses the ledger demo UI described in this plan.
@@ -67,7 +67,7 @@
 - Reuse `demo/.env.demoapi.example` for the demo API; ensure `DEMOAPI_JWT_SIGNING_KEY` matches TAuth and `DEMOAPI_ALLOWED_ORIGINS=http://localhost:8000`.
 - Ensure ledgerd picks up `.env.ledgersvc` (SQLite path and listen addr) or Compose defaults.
 - The UI reads the demo API origin from `<body data-api-base-url>` (defaults to `http://localhost:9090`); template or override that attribute if the API is proxied elsewhere.
-- Update `demo/docker-compose.yml` to mount the new `demo/ui` assets, point ghttp at that directory, and keep port mappings (`8000` UI, `8080` TAuth, `9090` demoapi, `7000` ledger).
+- Update `demo/docker-compose.yml` to mount the new `demo/ui` assets, point ghttp at that directory, and keep port mappings (`8000` UI, `8080` TAuth, `9090` demoapi, `50051` ledger).
 - Document manual run commands (Go toolchain) mirroring Compose, including `ghttp --directory demo/ui 8000`.
 
 ## Testing and Validation Strategy

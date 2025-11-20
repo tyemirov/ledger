@@ -110,4 +110,4 @@ When you want the full ledger + demoapi + UI flow without referencing files outs
    ```bash
    docker compose up --build --profile demo
    ```
-3. Visit `http://localhost:8000` (UI), `http://localhost:9090/api/wallet` (demoapi), `http://localhost:8080` (TAuth), and `http://localhost:7000` (ledger gRPC). Stop with `docker compose down --profile demo`.
+3. Visit `http://localhost:8000` (UI), `http://localhost:9090/api/wallet` (demoapi), `http://localhost:8080` (TAuth), and `http://localhost:50051` (ledger gRPC). Stop with `docker compose down --profile demo`.

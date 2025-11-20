@@ -11,7 +11,7 @@ services:
     volumes:
       - ledger_data:/srv/data
     ports:
-      - "7000:7000"
+      - "50051:50051"
 
   tauth:
     profiles: ["demo", "auth"]
