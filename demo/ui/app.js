@@ -385,21 +385,22 @@ function resolveHeaderBaseUrl() {
  * @returns {HTMLElement}
  */
 function renderHeader(config) {
+  const existing = document.querySelector(SELECTORS.header);
+  if (existing instanceof HTMLElement) {
+    applyHeaderConfig(existing, config);
+    return existing;
+  }
   const mount = document.querySelector(SELECTORS.headerMount);
   const template = document.querySelector(SELECTORS.headerTemplate);
-  if (!(mount instanceof HTMLElement)) {
-    throw new Error("Missing header mount for mpr-ui header.");
+  if (mount instanceof HTMLElement && template instanceof HTMLTemplateElement) {
+    mount.replaceChildren(template.content.cloneNode(true));
+    const header = mount.querySelector(SELECTORS.header);
+    if (header instanceof HTMLElement) {
+      applyHeaderConfig(header, config);
+      return header;
+    }
   }
-  if (!(template instanceof HTMLTemplateElement)) {
-    throw new Error("Missing header template for mpr-ui header.");
-  }
-  mount.replaceChildren(template.content.cloneNode(true));
-  const header = mount.querySelector(SELECTORS.header);
-  if (!(header instanceof HTMLElement)) {
-    throw new Error("mpr-header element is missing; cannot render header.");
-  }
-  applyHeaderConfig(header, config);
-  return header;
+  throw new Error("mpr-header element is missing; cannot render header.");
 }
 
 /**
