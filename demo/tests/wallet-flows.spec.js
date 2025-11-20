@@ -294,12 +294,14 @@ function walletSnapshot(state) {
   // Wait for spend control to appear; fail on blank UI.
   const spendButton = page.locator("text=Spend 5 coins").first();
   await spendButton.waitFor({ timeout: 30000 });
+  console.log("button ready");
 
   // Expect initial balances to show 20 coins.
   await page.waitForFunction(() => {
     const metrics = Array.from(document.querySelectorAll(".wallet-metric strong"));
     return metrics.some((node) => node.textContent && node.textContent.includes("20"));
   });
+  console.log("saw 20 coins");
 
   // Spend 4 times to reach zero.
   for (let i = 0; i < 4; i++) {
