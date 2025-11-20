@@ -204,9 +204,7 @@ function normalizeWalletSnapshot(raw) {
             ? normalizeEntry(entry)
             : null,
         )
-        .filter(
-          (entry): entry is LedgerEntrySnapshot => entry !== null,
-        )
+        .filter((entry) => entry !== null)
     : [];
   return {
     balance: normalizeBalance(balanceValue),

@@ -34,7 +34,7 @@ services:
       - "9090:9090"
 
   web:
-    image: ghcr.io/temirov/ghttp:latest
+    image: ghcr.io/tyemirov/ghttp:latest
     container_name: ledger-ghttp
     command: ["--directory", "/data", "8000"]
     ports:

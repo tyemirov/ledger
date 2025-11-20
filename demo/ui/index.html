@@ -31,24 +31,7 @@
     data-demo-palette="default"
     data-api-base-url="http://localhost:9090"
   >
-    <mpr-header
-      id="auth-header"
-      brand-label="Marco Polo Research Lab"
-      brand-href="https://mprlab.com/"
-      nav-links='[
-        { "label": "Ledger README", "href": "https://github.com/tyemirov/ledger#readme" },
-        { "label": "Demo guide", "href": "https://github.com/tyemirov/ledger/blob/master/demo/docs/demo.md" },
-        { "label": "TAuth usage", "href": "https://github.com/tyemirov/ledger/blob/master/docs/TAuth/usage.md" }
-      ]'
-      site-id=""
-      base-url="http://localhost:8080"
-      data-tauth-base-url="http://localhost:8080"
-      login-path="/auth/google"
-      logout-path="/auth/logout"
-      nonce-path="/auth/nonce"
-      settings="true"
-      settings-label="Settings"
-    ></mpr-header>
+    <div id="header-mount" data-tauth-base-url="http://localhost:8080"></div>
 
     <main x-data="LedgerDemo()" x-init="init()" x-cloak>
       <section class="hero">
