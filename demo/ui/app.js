@@ -278,8 +278,7 @@ function createLedgerDemo() {
         this.authState === "authenticated" &&
         !this.isInitializing &&
         !this.isSpendPending &&
-        !!this.wallet &&
-        this.wallet.balance.availableCoins >= TRANSACTION_COINS
+        !!this.wallet
       );
     },
     canPurchase() {
