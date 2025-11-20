@@ -1,9 +1,6 @@
 services:
   ledger:
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    image: ledger-ledgerd:latest
+    image: ghcr.io/tyemirov/ledger:latest
     container_name: ledger-ledgerd
     env_file:
       - ./.env.ledgersvc
