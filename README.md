@@ -215,6 +215,12 @@ The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite://
 
 ---
 
+## Demo Stack
+
+A complete demo experience (TAuth + HTTP façade + static UI) lives in the `demo/` directory. Review `demo/README.md` for an overview, `demo/docs/demo.md` for run instructions, and `demo/docker-compose.yml` for an orchestration that launches ledgerd (via this repo’s GHCR image), demoapi, TAuth, and ghttp together.
+
+---
+
 ## License
 
 MIT — See `LICENSE` file.
