@@ -39,15 +39,18 @@ function startDemoServer() {
     }
 
     if (url === "/demo/config.js") {
+      const origin = request.headers.host
+        ? `http://${request.headers.host}`
+        : "http://localhost";
       response.setHeader("Content-Type", "application/javascript");
       response.end(
         `window.demoConfig=${JSON.stringify({
-          baseUrl: "http://localhost",
+          baseUrl: origin,
           siteId: DEMO_SITE_ID,
           loginPath: "/auth/google",
           logoutPath: "/auth/logout",
           noncePath: "/auth/nonce",
-          authClientUrl: "/static/auth-client.js",
+          authClientUrl: `${origin}/static/auth-client.js`,
         })};`,
       );
       return;
