@@ -17,6 +17,8 @@ export const PURCHASE_PRESETS = Object.freeze([5, 10, 20]);
 
 export const SELECTORS = Object.freeze({
   header: "mpr-header",
+  headerMount: "[data-header-mount]",
+  headerTemplate: "#mpr-header-template",
 });
 
 export const COPY = Object.freeze({
