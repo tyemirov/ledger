@@ -34,13 +34,7 @@ const GLOBAL_CONFIG_KEYS = Object.freeze([
  * @returns {Promise<DemoConfig>}
  */
 export async function loadDemoConfig(baseUrlHint) {
-  const runtimeOrigin =
-    typeof window !== "undefined" && window.location
-      ? window.location.origin
-      : "";
-  const fallbackBase = normalizeBaseUrl(
-    baseUrlHint || runtimeOrigin || DEFAULT_TAUTH_BASE_URL,
-  );
+  const fallbackBase = normalizeBaseUrl(baseUrlHint || DEFAULT_TAUTH_BASE_URL);
   const defaults = {
     baseUrl: fallbackBase,
     siteId: DEFAULT_SITE_ID,
