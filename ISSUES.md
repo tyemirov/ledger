@@ -95,6 +95,9 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 ## BugFixes (300–399)
 
+- [ ] [LG-307] Demo UI goes blank after login; ledger flows inaccessible.
+    - Observed blank page post-auth, spend button not usable; needs UI bootstrap and ledger flow verification.
+
 - [x] [LG-300] The demo stack was renamed; all references should use the `demo/` paths.
     - Updated documentation and scripts to drop the old name; Playwright script now points to `demo/tests`.
     - Fixed `demo/docker-compose.yml` to reference `demo/backend/Dockerfile` and adjusted that Dockerfile to build from `./demo/backend/cmd/walletapi`.
