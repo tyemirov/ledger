@@ -9,7 +9,7 @@ coverage.out
 *.db
 node_modules/
 test-results/
-*.png
+# *.png
 
 docs/mpr-ui
 docs/TAuth
