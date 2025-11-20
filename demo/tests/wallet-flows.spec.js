@@ -283,93 +283,52 @@ function walletSnapshot(state) {
 
   await page.goto(`${baseUrl}/index.html`, { waitUntil: "networkidle" });
 
-  await page.evaluate(() => {
-    // @ts-ignore
-    if (window.Alpine && typeof window.Alpine.start === "function") {
-      // @ts-ignore
-      window.Alpine.start();
-    }
+  // Wait for spend control to appear; fail on blank UI.
+  const spendButton = page.getByRole("button", { name: "Spend 5 coins" });
+  await spendButton.waitFor({ timeout: 30000 });
+
+  // Expect initial balances to show 20 coins.
+  await page.waitForFunction(() => {
+    const metrics = Array.from(document.querySelectorAll(".wallet-metric strong"));
+    return metrics.some((node) => node.textContent && node.textContent.includes("20"));
   });
 
-  await page.evaluate(async () => {
-    if (typeof window.LedgerDemo === "function") {
-      const store = window.LedgerDemo();
-      if (store && typeof store.init === "function") {
-        await store.init();
-      }
-      // Expose for debugging.
-      // @ts-ignore
-      window.__demoStore = store;
-    }
-  });
-
-  await page.waitForTimeout(500);
-  const debugSnapshot = await page.evaluate(() => {
-    // @ts-ignore
-    const store = window.__demoStore;
-    return {
-      hasStore: !!store,
-      wallet: store ? store.wallet : null,
-      authState: store ? store.authState : null,
-      statusMessage: store ? store.statusMessage : null,
-    };
-  });
-  // eslint-disable-next-line no-console
-  console.log("debugSnapshot", debugSnapshot);
-
-  // Spend 4 times to reach zero via store.
-  await page.evaluate(async () => {
-    // @ts-ignore
-    const store = window.__demoStore;
-    for (let i = 0; i < 4; i++) {
-      await store.spendWalletCoins();
-    }
-  });
-
-  // Fifth spend -> insufficient.
-  const insufficient = await page.evaluate(async () => {
-    // @ts-ignore
-    const store = window.__demoStore;
-    await store.spendWalletCoins();
-    return {
-      banner: store.banner,
-      wallet: store.wallet,
-    };
-  });
-  console.log("insufficient", insufficient);
-  if (!insufficient.banner || insufficient.banner.tone !== "error") {
-    throw new Error("Expected insufficient funds banner after 5th spend");
-  }
-  if (insufficient.wallet.balance.availableCoins !== 0) {
-    throw new Error("Balance should be zero after four spends");
+  // Spend 4 times to reach zero.
+  for (let i = 0; i < 4; i++) {
+    await spendButton.click();
   }
 
-  // Purchase 10 coins.
-  await page.evaluate(async () => {
-    // @ts-ignore
-    const store = window.__demoStore;
-    store.selectPurchaseAmount(10);
-    await store.purchaseWalletCoins();
+  await page.waitForFunction(() => {
+    const metrics = Array.from(document.querySelectorAll(".wallet-metric strong"));
+    return metrics.some((node) => node.textContent && node.textContent.includes("0 coins"));
   });
 
-  // Spend twice to reach zero and capture final state.
-  const finalSnapshot = await page.evaluate(async () => {
-    // @ts-ignore
-    const store = window.__demoStore;
-    await store.spendWalletCoins();
-    await store.spendWalletCoins();
-    return {
-      wallet: store.wallet,
-      zeroNotice: store.zeroBalanceNotice,
-    };
+  // Fifth spend should prompt insufficient funds banner.
+  await spendButton.click();
+  await page.waitForFunction(() => {
+    const banner = document.querySelector(".banner--error .banner__title");
+    return banner && banner.textContent && banner.textContent.includes("Insufficient");
   });
-  console.log("finalSnapshot", finalSnapshot);
-  if (finalSnapshot.wallet.balance.availableCoins !== 0) {
-    throw new Error("Final balance expected to be zero after top-up and two spends");
-  }
-  if (!finalSnapshot.zeroNotice) {
-    throw new Error("Zero-balance notice should be visible");
-  }
+
+  // Purchase 10 coins and verify.
+  await page.getByRole("button", { name: "10 coins" }).click();
+  await page.getByRole("button", { name: "Buy coins" }).click();
+  await page.waitForFunction(() => {
+    const metrics = Array.from(document.querySelectorAll(".wallet-metric strong"));
+    return metrics.some((node) => node.textContent && node.textContent.includes("10 coins"));
+  });
+
+  // Spend twice to hit zero and see zero-balance notice.
+  await spendButton.click();
+  await spendButton.click();
+  await page.waitForFunction(() => {
+    const metrics = Array.from(document.querySelectorAll(".wallet-metric strong"));
+    return metrics.some((node) => node.textContent && node.textContent.includes("0 coins"));
+  });
+  await page.waitForFunction(() => {
+    const notice = document.querySelector(".banner--warning");
+    return notice && notice.textContent && notice.textContent.includes("Balance is zero");
+  });
 
   await browser.close();
   server.close();
