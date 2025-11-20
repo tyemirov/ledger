@@ -115,37 +115,6 @@ async function withBrowser(fn) {
   }
 }
 
-/**
- * Seeds demo config and auth helpers before the app scripts run.
- * @param {import('playwright').Page} page
- * @returns {Promise<void>}
- */
-async function seedAuthGlobals(page) {
-  await page.addInitScript(({ profile, siteId }) => {
-    window.demoConfig = {
-      baseUrl: "http://localhost:8080",
-      siteId,
-      loginPath: "/auth/google",
-      logoutPath: "/auth/logout",
-      noncePath: "/auth/nonce",
-      authClientUrl: "http://localhost:8080/static/auth-client.js",
-    };
-    window.__authSignedOut = false;
-    window.getCurrentUser = () => (window.__authSignedOut ? null : profile);
-    window.logout = async () => {
-      window.__authSignedOut = true;
-    };
-    window.apiFetch = (input, init) => fetch(input, init);
-    window.initAuthClient = ({ onAuthenticated, onUnauthenticated } = {}) => {
-      if (window.__authSignedOut) {
-        onUnauthenticated && onUnauthenticated();
-        return;
-      }
-      onAuthenticated && onAuthenticated(profile);
-    };
-  }, { profile, siteId: DEMO_SITE_ID });
-}
-
 async function main() {
   const server = await startStaticServer();
   const cors = corsHeaders(server.port);
@@ -159,7 +128,6 @@ async function main() {
       // eslint-disable-next-line no-console
       console.log(`[console:${message.type()}] ${message.text()}`);
     });
-    await seedAuthGlobals(page);
 
     // Stub TAuth config and helper endpoints.
     await page.route("http://localhost:8080/demo/config.js", (route) => {
@@ -181,8 +149,9 @@ async function main() {
       });
     });
 
-    await page.route("http://localhost:8080/static/auth-client.js", (route) =>
-      route.fulfill({
+    await page.route("http://localhost:8080/static/auth-client.js", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return route.fulfill({
         status: 200,
         contentType: "application/javascript",
         body: `
@@ -191,7 +160,7 @@ async function main() {
             window.__authSignedOut = false;
             window.getCurrentUser = () => (window.__authSignedOut ? null : profile);
             window.logout = async () => { window.__authSignedOut = true; };
-            window.apiFetch = (input, init) => fetch(input, init);
+            window.apiFetch = (input, init = {}) => fetch(input, { ...init, credentials: "include" });
             window.initAuthClient = ({ onAuthenticated, onUnauthenticated } = {}) => {
               if (window.__authSignedOut) {
                 onUnauthenticated && onUnauthenticated();
@@ -200,26 +169,41 @@ async function main() {
               onAuthenticated && onAuthenticated(profile);
             };
           })();`,
-      }),
-    );
+      });
+    });
 
-    await page.route("http://localhost:8080/auth/nonce", (route) =>
-      route.fulfill({
+    let issuedNonce = null;
+
+    await page.route("http://localhost:8080/auth/nonce", (route) => {
+      issuedNonce = "demo-nonce";
+      return route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ nonce: "demo-nonce" }),
-        headers: cors,
-      }),
-    );
+        body: JSON.stringify({ nonce: issuedNonce }),
+        headers: {
+          ...cors,
+          "Set-Cookie": [`tauth_nonce=${issuedNonce}; Path=/auth; HttpOnly`],
+        },
+      });
+    });
 
-    await page.route("http://localhost:8080/auth/google", (route) =>
-      route.fulfill({
+    await page.route("http://localhost:8080/auth/google", (route) => {
+      const cookies = route.request().headers()["cookie"] || "";
+      if (!issuedNonce || !cookies.includes(`tauth_nonce=${issuedNonce}`)) {
+        return route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "nonce_mismatch" }),
+          headers: cors,
+        });
+      }
+      return route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(profile),
         headers: cors,
-      }),
-    );
+      });
+    });
 
     await page.route("https://accounts.google.com/gsi/client", (route) =>
       route.fulfill({
@@ -340,133 +324,17 @@ async function main() {
       waitUntil: "networkidle",
     });
 
-    await page.addScriptTag({
-      url: "https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js",
-    });
-    await page.waitForFunction(() => typeof window.Alpine !== "undefined");
-    await page.evaluate(() => {
-      // @ts-ignore
-      window.Alpine.start();
-    });
+    await page.waitForFunction(() => {
+      const metric = document.querySelector(".wallet-summary strong");
+      return metric && metric.textContent && metric.textContent.includes("20");
+    }, { timeout: 30000 });
 
-    await page.evaluate(async () => {
-      const store = window.LedgerDemo ? window.LedgerDemo() : null;
-      if (!store || typeof store.init !== "function") {
-        return;
-      }
-      await store.init();
-      if (!store.wallet) {
-        store.wallet = {
-          balance: {
-            totalCents: 2000,
-            availableCents: 2000,
-            totalCoins: 20,
-            availableCoins: 20,
-          },
-          entries: [],
-        };
-      }
-      if (store.wallet) {
-        const status = document.querySelector(".status-pill");
-        if (status) {
-          status.textContent = "Wallet ready";
-        }
-        const card = document.querySelector(".wallet-card");
-        const summary =
-          document.querySelector(".wallet-summary") ||
-          (card
-            ? card.appendChild(
-                Object.assign(document.createElement("div"), {
-                  className: "wallet-summary",
-                }),
-              )
-            : null);
-        if (summary) {
-          summary.innerHTML = `
-            <div class="wallet-metric">
-              <span>Total coins</span>
-              <strong>${store.wallet.balance.totalCoins}</strong>
-            </div>
-            <div class="wallet-metric">
-              <span>Available coins</span>
-              <strong>${store.wallet.balance.availableCoins}</strong>
-            </div>
-          `;
-        }
-      }
-    });
-
-    const metricText = await page.evaluate(
-      () => document.querySelector(".wallet-summary strong")?.textContent || null,
-    );
-    // eslint-disable-next-line no-console
-    console.log("metric before wait", metricText);
-
-    const introspection = await page.evaluate(() => ({
-      hasLedgerDemo: typeof window.LedgerDemo === "function",
-      hasInitAuth: typeof window.initAuthClient === "function",
-      headerExists: !!document.querySelector("mpr-header"),
-      alpine: typeof window.Alpine !== "undefined",
-      statusText:
-        document.querySelector(".status-pill")?.textContent?.trim() || null,
-      bannerText:
-        document.querySelector(".banner__detail")?.textContent?.trim() || null,
-    }));
-    // eslint-disable-next-line no-console
-    console.log("introspection", introspection);
+    await page.reload({ waitUntil: "networkidle" });
 
     await page.waitForFunction(() => {
       const metric = document.querySelector(".wallet-summary strong");
       return metric && metric.textContent && metric.textContent.includes("20");
-    });
-
-    await page.reload({ waitUntil: "networkidle" });
-
-    await page.evaluate(async () => {
-      const store = window.LedgerDemo ? window.LedgerDemo() : null;
-      if (!store || typeof store.init !== "function") {
-        return;
-      }
-      await store.init();
-      if (!store.wallet) {
-        store.wallet = {
-          balance: {
-            totalCents: 2000,
-            availableCents: 2000,
-            totalCoins: 20,
-            availableCoins: 20,
-          },
-          entries: [],
-        };
-      }
-      const card = document.querySelector(".wallet-card");
-      const summary =
-        document.querySelector(".wallet-summary") ||
-        (card
-          ? card.appendChild(
-              Object.assign(document.createElement("div"), {
-                className: "wallet-summary",
-              }),
-            )
-          : null);
-      if (summary && store.wallet) {
-        summary.innerHTML = `
-          <div class="wallet-metric">
-            <span>Total coins</span>
-            <strong>${store.wallet.balance.totalCoins}</strong>
-          </div>
-          <div class="wallet-metric">
-            <span>Available coins</span>
-            <strong>${store.wallet.balance.availableCoins}</strong>
-          </div>
-        `;
-      }
-    });
-
-    await page.waitForFunction(() => {
-      const metric = document.querySelector(".wallet-summary strong");
-      return metric && metric.textContent && metric.textContent.length > 0;
-    });
+    }, { timeout: 30000 });
   });
 
   server.close();

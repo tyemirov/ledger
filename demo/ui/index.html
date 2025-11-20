@@ -14,17 +14,14 @@
       src="http://localhost:8080/static/auth-client.js"
       crossorigin="anonymous"
     ></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script
       id="mpr-ui-bundle"
       defer
       src="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.js"
     ></script>
     <script type="module" src="./app.js" defer></script>
-    <script
-      defer
-      type="module"
-      src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/module.esm.js"
-    ></script>
+    <script type="module" src="./alpine-init.js" defer></script>
   </head>
   <body
     class="theme-light"
@@ -229,10 +226,5 @@
       theme-switcher="square"
       theme-config='{"attribute":"data-demo-theme","targets":["body"],"initialMode":"default-light","modes":[{"value":"default-light","attributeValue":"light","classList":["theme-light"],"dataset":{"data-demo-palette":"default"}},{"value":"sunrise-light","attributeValue":"light","classList":["theme-light"],"dataset":{"data-demo-palette":"sunrise"}},{"value":"default-dark","attributeValue":"dark","classList":["theme-dark"],"dataset":{"data-demo-palette":"default"}},{"value":"forest-dark","attributeValue":"dark","classList":["theme-dark"],"dataset":{"data-demo-palette":"forest"}}]}'
     ></mpr-footer>
-    <script
-      defer
-      src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"
-      crossorigin="anonymous"
-    ></script>
   </body>
 </html>

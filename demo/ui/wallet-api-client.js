@@ -106,7 +106,15 @@ function createRequest(baseUrl) {
     if (!options.method) {
       options.method = "GET";
     }
-    const response = await fetchImpl(url, options);
+    let response;
+    try {
+      response = await fetchImpl(url, options);
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new HttpError(0, "network_error");
+      }
+      throw error;
+    }
     if (!response.ok) {
       throw new HttpError(response.status, await extractErrorMessage(response));
     }

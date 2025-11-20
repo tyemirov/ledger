@@ -182,16 +182,21 @@ function createLedgerDemo() {
           COPY.walletReadyDetail
         );
       } catch (error) {
-        if (error instanceof HttpError && error.status === 401) {
-          this.handleUnauthenticated();
-          return;
+        if (error instanceof HttpError) {
+          if (error.status === 401) {
+            this.handleUnauthenticated();
+            return;
+          }
+          if (error.status === 0) {
+            this.setBanner(
+              "error",
+              COPY.apiErrorTitle,
+              "Network error reaching demo API. Verify demoapi is running on http://localhost:9090 and CORS allows this origin."
+            );
+            return;
+          }
         }
-        this.errorMessage = formatError(error);
-        this.setBanner(
-          "error",
-          COPY.walletErrorTitle,
-          COPY.walletErrorDetail
-        );
+        this.setBanner("error", COPY.walletErrorTitle, formatError(error));
       } finally {
         this.isInitializing = false;
       }
@@ -222,6 +227,12 @@ function createLedgerDemo() {
       } catch (error) {
         if (error instanceof HttpError && error.status === 401) {
           this.handleUnauthenticated();
+        } else if (error instanceof HttpError && error.status === 0) {
+          this.setBanner(
+            "error",
+            COPY.apiErrorTitle,
+            "Network error reaching demo API. Confirm demoapi is listening on http://localhost:9090."
+          );
         } else {
           this.setBanner("error", COPY.apiErrorTitle, formatError(error));
         }
@@ -250,6 +261,12 @@ function createLedgerDemo() {
       } catch (error) {
         if (error instanceof HttpError && error.status === 401) {
           this.handleUnauthenticated();
+        } else if (error instanceof HttpError && error.status === 0) {
+          this.setBanner(
+            "error",
+            COPY.apiErrorTitle,
+            "Network error reaching demo API. Confirm demoapi is listening on http://localhost:9090."
+          );
         } else {
           this.setBanner("error", COPY.apiErrorTitle, formatError(error));
         }
@@ -315,9 +332,6 @@ function createLedgerDemo() {
       return entry.metadataText || "—";
     },
     statusTitle() {
-      if (this.errorMessage) {
-        return COPY.authUnavailableTitle;
-      }
       if (this.authState === "authenticated") {
         return COPY.walletReadyTitle;
       }
@@ -327,9 +341,6 @@ function createLedgerDemo() {
       return "Signed out";
     },
     statusDetail() {
-      if (this.errorMessage) {
-        return this.errorMessage;
-      }
       if (this.authState === "authenticated") {
         return COPY.signedInDetail;
       }

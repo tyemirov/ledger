@@ -24,7 +24,9 @@ const GLOBAL_CONFIG_KEYS = Object.freeze([
   "demoConfig",
   "tauthDemoConfig",
   "tauthConfig",
+  "__TAUTH_DEMO_CONFIG",
   "__TAUTH_CONFIG__",
+  "__TAUTH_DEMO_CONFIG__",
   "mprDemoConfig",
 ]);
 
@@ -39,14 +41,15 @@ export async function loadDemoConfig(baseUrlHint) {
     baseUrl: fallbackBase,
     siteId: DEFAULT_SITE_ID,
     loginPath: LOGIN_PATH,
-    logoutPath: LOGOUT_PATH,
-    noncePath: NONCE_PATH,
-    authClientUrl: `${fallbackBase}${AUTH_CLIENT_PATH}`,
+  logoutPath: LOGOUT_PATH,
+  noncePath: NONCE_PATH,
+  authClientUrl: `${fallbackBase}${AUTH_CLIENT_PATH}`,
   };
   const scriptConfig = await loadConfigScript(defaults.baseUrl);
+  const safeScriptConfig = scriptConfig || {};
   const merged = {
     ...defaults,
-    ...scriptConfig,
+    ...safeScriptConfig,
   };
   merged.siteId = normalizeSiteId(merged.siteId);
   merged.baseUrl = normalizeBaseUrl(merged.baseUrl || defaults.baseUrl);
@@ -66,13 +69,10 @@ async function loadConfigScript(baseUrl) {
   try {
     await injectScript(scriptUrl);
   } catch {
-    return {};
+    return null;
   }
   const config = readConfigFromWindow();
-  if (!config) {
-    return {};
-  }
-  return config;
+  return config || {};
 }
 
 /**
@@ -155,6 +155,15 @@ function normalizeConfigShape(raw) {
           : undefined;
   if (typeof authClientUrlValue === "string") {
     normalized.authClientUrl = authClientUrlValue;
+  }
+  const googleClientIdValue =
+    typeof candidate.googleClientId === "string"
+      ? candidate.googleClientId
+      : typeof candidate.google_client_id === "string"
+        ? candidate.google_client_id
+        : undefined;
+  if (typeof googleClientIdValue === "string") {
+    normalized.siteId = normalizeSiteId(googleClientIdValue);
   }
   return normalized;
 }
