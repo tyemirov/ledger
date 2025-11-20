@@ -113,13 +113,10 @@ function createLedgerDemo() {
     purchaseCoins: PURCHASE_PRESETS[0],
     purchaseOptions: PURCHASE_PRESETS,
     async init() {
-      const header = document.querySelector(SELECTORS.header);
-      const baseHint =
-        (header && header.dataset && header.dataset.tauthBaseUrl) ||
-        DEFAULT_TAUTH_BASE_URL;
+      const baseHint = resolveHeaderBaseUrl();
       try {
         this.config = await loadDemoConfig(baseHint);
-        applyHeaderConfig(header, this.config);
+        renderHeader(this.config);
       } catch (error) {
         this.authState = "error";
         this.errorMessage =
@@ -370,13 +367,54 @@ function createLedgerDemo() {
 }
 
 /**
+ * @returns {string}
+ */
+function resolveHeaderBaseUrl() {
+  const header = document.querySelector(SELECTORS.header);
+  const headerValue = readDatasetValue(header, "tauthBaseUrl");
+  const bodyValue = readDatasetValue(document.body, "tauthBaseUrl");
+  const candidate = headerValue || bodyValue;
+  const trimmed = candidate.trim();
+  if (!trimmed.length) {
+    return DEFAULT_TAUTH_BASE_URL;
+  }
+  return trimmed;
+}
+
+/**
+ * @param {DemoConfig} config
+ * @returns {HTMLElement}
+ */
+function renderHeader(config) {
+  const existing = document.querySelector(SELECTORS.header);
+  if (existing instanceof HTMLElement) {
+    applyHeaderConfig(existing, config);
+    return existing;
+  }
+  throw new Error("mpr-header element is missing; cannot render header.");
+}
+
+/**
+ * @param {Element | null | undefined} element
+ * @param {string} key
+ * @returns {string}
+ */
+function readDatasetValue(element, key) {
+  if (!(element instanceof HTMLElement)) {
+    return "";
+  }
+  const value = element.dataset ? element.dataset[key] : undefined;
+  return typeof value === "string" ? value : "";
+}
+
+/**
  * @param {HTMLElement | null} header
  * @param {DemoConfig} config
  * @returns {void}
  */
 function applyHeaderConfig(header, config) {
-  if (!header) {
-    return;
+  if (!(header instanceof HTMLElement)) {
+    throw new Error("mpr-header element is missing; cannot apply config.");
   }
   header.setAttribute("site-id", config.siteId);
   header.setAttribute("base-url", config.baseUrl);

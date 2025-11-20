@@ -7,6 +7,8 @@ export const AUTH_CLIENT_PATH = "/static/auth-client.js";
 export const LOGIN_PATH = "/auth/google";
 export const LOGOUT_PATH = "/auth/logout";
 export const NONCE_PATH = "/auth/nonce";
+export const DEFAULT_SITE_ID =
+  "991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com";
 
 export const TRANSACTION_COINS = 5;
 export const BOOTSTRAP_COINS = 20;

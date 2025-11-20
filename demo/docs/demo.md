@@ -102,3 +102,14 @@ When you want the full ledger + demoapi + UI flow without referencing files outs
    docker compose up --build
    ```
 3. Visit `http://localhost:8000` (UI), `http://localhost:9090/api/wallet` (demoapi), `http://localhost:8080` (TAuth), and `http://localhost:50051` (ledger gRPC). Stop with `docker compose down`.
+
+## Automated UI Check (no manual clicking)
+
+- Install Playwright once (at repo root): `npm install --no-save playwright@1.41.2`
+- Run the stubbed auth + wallet flow without touching the mouse:
+
+  ```bash
+  node demo/tests/auth-refresh.spec.js
+  ```
+
+  The script spins up a static server for `demo/ui`, stubs TAuth + wallet API endpoints, and asserts the header/UI stay authenticated across a reload (refresh-token path). It’s purely local—no Google sign-in required.

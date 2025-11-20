@@ -4,6 +4,7 @@ import {
   AUTH_CLIENT_PATH,
   CONFIG_SCRIPT_PATH,
   DEFAULT_TAUTH_BASE_URL,
+  DEFAULT_SITE_ID,
   LOGIN_PATH,
   LOGOUT_PATH,
   NONCE_PATH,
@@ -36,7 +37,7 @@ export async function loadDemoConfig(baseUrlHint) {
   const fallbackBase = normalizeBaseUrl(baseUrlHint || DEFAULT_TAUTH_BASE_URL);
   const defaults = {
     baseUrl: fallbackBase,
-    siteId: "",
+    siteId: DEFAULT_SITE_ID,
     loginPath: LOGIN_PATH,
     logoutPath: LOGOUT_PATH,
     noncePath: NONCE_PATH,
@@ -47,11 +48,7 @@ export async function loadDemoConfig(baseUrlHint) {
     ...defaults,
     ...scriptConfig,
   };
-  if (!merged.siteId) {
-    throw new Error(
-      "siteId missing in /demo/config.js; set APP_GOOGLE_WEB_CLIENT_ID in TAuth and expose it via the config script."
-    );
-  }
+  merged.siteId = normalizeSiteId(merged.siteId);
   merged.baseUrl = normalizeBaseUrl(merged.baseUrl || defaults.baseUrl);
   merged.authClientUrl =
     typeof merged.authClientUrl === "string" && merged.authClientUrl.trim().length > 0
@@ -119,7 +116,7 @@ function normalizeConfigShape(raw) {
         ? candidate.site_id
         : undefined;
   if (typeof siteIdValue === "string") {
-    normalized.siteId = siteIdValue;
+    normalized.siteId = normalizeSiteId(siteIdValue);
   }
   const loginPathValue =
     typeof candidate.loginPath === "string"
@@ -160,6 +157,18 @@ function normalizeConfigShape(raw) {
     normalized.authClientUrl = authClientUrlValue;
   }
   return normalized;
+}
+
+/**
+ * @param {string | undefined} value
+ * @returns {string}
+ */
+function normalizeSiteId(value) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (trimmed.length > 0) {
+    return trimmed;
+  }
+  return DEFAULT_SITE_ID;
 }
 
 /**

@@ -11,6 +11,11 @@
     <link rel="stylesheet" href="./styles.css" />
     <script
       defer
+      src="http://localhost:8080/static/auth-client.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      defer
       src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/module.esm.js"
       type="module"
     ></script>
@@ -30,6 +35,7 @@
     class="theme-light"
     data-demo-palette="default"
     data-api-base-url="http://localhost:9090"
+    data-tauth-base-url="http://localhost:8080"
   >
     <mpr-header
       id="auth-header"
@@ -40,7 +46,7 @@
         { "label": "Demo guide", "href": "https://github.com/tyemirov/ledger/blob/master/demo/docs/demo.md" },
         { "label": "TAuth usage", "href": "https://github.com/tyemirov/ledger/blob/master/docs/TAuth/usage.md" }
       ]'
-      site-id=""
+      site-id="991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com"
       base-url="http://localhost:8080"
       data-tauth-base-url="http://localhost:8080"
       login-path="/auth/google"
