@@ -12,3 +12,8 @@ test-results/
 docs/mpr-ui
 docs/TAuth
 docs/workflows
+# Managed by gix gitignore workflow
+.DS_Store
+qodana.yaml
+.idea/
+bin/
