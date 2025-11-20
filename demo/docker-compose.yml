@@ -3,7 +3,7 @@ services:
     profiles: ["demo"]
     build:
       context: ..
-      dockerfile: ./demo/Dockerfile.ledgerd
+      dockerfile: Dockerfile
     image: ledger-ledgerd:latest
     container_name: ledger-ledgerd
     env_file:
