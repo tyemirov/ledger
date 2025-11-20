@@ -6,7 +6,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
 
 1. **ledgerd** (`cmd/ledger`) – append-only ledger exposed via gRPC on `:50051` (plaintext; host and container).
 2. **TAuth** (`tools/TAuth`) – Google Sign-In + JWT session issuer on `:8080`.
-3. **demoapi** (`cmd/demoapi`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
+3. **demoapi** (`demo/backend/cmd/demoapi`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
 4. **ghttp** (`ghcr.io/temirov/ghttp`) – static server for `demo/ui` on `:8000`.
 
 ## Manual Run (Go toolchain)
@@ -30,6 +30,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
    ```
 3. **demoapi** (signing key, issuer, cookie name, and timeout must match TAuth)
    ```bash
+   cd demo/backend
    DEMOAPI_LISTEN_ADDR=:9090 \
    DEMOAPI_LEDGER_ADDR=localhost:50051 \
    DEMOAPI_LEDGER_INSECURE=true \
@@ -102,7 +103,7 @@ For a lightweight login-only check (no ledger or demoapi dependencies), reuse th
 
 ## Self-Contained End-to-End Demo from `demo/`
 
-When you want the full ledger + demoapi + UI flow without referencing files outside `demo/`, use the bundled Dockerfiles and compose file in that directory. All images are either built from public sources (ledger/demoapi via Go module download) or pulled from GHCR/CDN.
+When you want the full ledger + demoapi + UI flow without referencing files outside `demo/`, use the bundled Dockerfiles and compose file in that directory. The Dockerfiles build both binaries from the checked-out repository (with `replace` directives), while ghttp/TAuth images continue to come from GHCR.
 
 1. Populate the environment files as described above.
 2. Launch the demo profile (builds ledgerd/demoapi from the Dockerfiles in `demo/` and pulls TAuth + ghttp from GHCR):

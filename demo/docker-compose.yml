@@ -2,8 +2,8 @@ services:
   ledger:
     profiles: ["demo"]
     build:
-      context: .
-      dockerfile: ./Dockerfile.ledgerd
+      context: ..
+      dockerfile: ./demo/Dockerfile.ledgerd
     image: ledger-ledgerd:latest
     container_name: ledger-ledgerd
     env_file:
@@ -27,8 +27,8 @@ services:
   demoapi:
     profiles: ["demo"]
     build:
-      context: .
-      dockerfile: ./Dockerfile.demoapi
+      context: ..
+      dockerfile: ./demo/Dockerfile.demoapi
     image: ledger-demoapi:latest
     container_name: ledger-demoapi
     env_file:

@@ -24,7 +24,7 @@
 Components:
 1. **Ledger gRPC server** (`cmd/ledger`, existing) – stores append-only entries in SQLite/Postgres. We map `1 coin = 100 cents` so 5 coins = 500 cents and the initial 20 coins grant = 2,000 cents (integer math only).
 2. **TAuth** (`tools/TAuth`) – verifies Google Sign-In, issues JWT-backed cookies, exposes `/auth/*`, `/me`, `/static/auth-client.js`. Configure with `APP_ENABLE_CORS=true` and `APP_CORS_ALLOWED_ORIGINS=http://localhost:8000` so the UI origin can exchange cookies.
-3. **Demo transaction API** (new Go binary under `cmd/demoapi` + `internal/demoapi`) – HTTP/JSON façade that validates TAuth cookies, applies the "5 coins per transaction" rules, and talks to the ledger via the generated gRPC client (`api/credit/v1`).
+3. **Demo transaction API** (new Go binary under `demo/backend/cmd/demoapi` + `demo/backend/internal/demoapi`) – HTTP/JSON façade that validates TAuth cookies, applies the "5 coins per transaction" rules, and talks to the ledger via the generated gRPC client (`api/credit/v1`).
 4. **UI bundle** (static assets under `demo/ui/`) – HTML/CSS/JS referencing the CDN-hosted `mpr-ui.css`/`mpr-ui.js`, Alpine bootstrap per docs, the TAuth `auth-client.js`, and GIS script. Served by `ghttp --directory demo/ui 8000`.
 
 ## Component Responsibilities & Integration Details
@@ -49,7 +49,7 @@ Components:
   - Use the provided Gin middleware or wrap it in `net/http` middleware to extract claims (user id/email/avatar/roles) before hitting business logic.
 
 ### Demo Transaction API (new)
-- Implement under `cmd/demoapi/main.go` using Cobra+Viper (mirrors `cmd/ledger`). Key config:
+- Implement under `demo/backend/cmd/demoapi/main.go` using Cobra/Viper. Key config:
   - `DEMOAPI_LISTEN_ADDR` (HTTP port, default `:9090`).
   - `DEMOAPI_TAUTH_BASE_URL` (default `http://localhost:8080`) to reuse in documentation/responses.
   - `DEMOAPI_JWT_SIGNING_KEY` + `DEMOAPI_JWT_ISSUER` to set up the session validator.
@@ -102,7 +102,7 @@ Components:
 
 ## Implementation Breakdown for LG-101
 1. **Backend scaffolding** – create `internal/demoapi` with:
-   - Configuration loader (Viper) + `cmd/demoapi/main.go` entrypoint.
+   - Configuration loader (Viper) + `demo/backend/cmd/demoapi/main.go` entrypoint.
    - Session middleware using `sessionvalidator`.
    - gRPC client wiring (`grpc.WithTransportCredentials(insecure.NewCredentials())` for local dev, allow TLS later).
    - HTTP handlers per table above with smart constructors for request payloads and domain-level validation (positive coins, multiples of 5, metadata JSON via `credit.MetadataJSON`).
@@ -120,9 +120,9 @@ Components:
 - Manual demo script (to be written in LG-101 docs) walks through: login → auto-grant 20 coins → click `Transact` 4 times (success, success, success, failure) → `Buy Coins (10)` → `Transact` twice to hit zero.
 
 ## Deliverables for Implementing LG-101
-- `cmd/demoapi` binary + supporting `internal/demoapi/...` packages.
+- `demo/backend/cmd/demoapi` binary + supporting `demo/backend/internal/demoapi/...` packages.
 - Static UI assets under `demo/ui/` with `mpr-ui` components + JS glue.
-- `demo/docker-compose.yml` (or instructions for running binaries manually) plus `.env.demoapi.example` capturing required env vars.
+- `demo/docker-compose.yml` (or instructions for running binaries manually) plus `demo/.env.demoapi.example` capturing required env vars.
 - Documentation snippet (README section or `docs/demo.md`) that references this plan, lists ports, and explains how to run the demo.
 - Integration tests verifying ledger balances for the three required scenarios.
 

@@ -16,3 +16,4 @@ docs/TAuth
 docs/workflows
 !demo/.env.ledgersvc
 !demo/.env.ledgersvc.example
+!demo/.env.demoapi.example

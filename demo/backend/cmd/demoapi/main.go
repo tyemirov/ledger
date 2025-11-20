@@ -7,7 +7,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/MarkoPoloResearchLab/ledger/internal/demoapi"
+	"github.com/MarkoPoloResearchLab/ledger/demo/backend/internal/demoapi"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

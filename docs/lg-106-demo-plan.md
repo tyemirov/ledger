@@ -8,7 +8,7 @@
 
 ## Current State and Gaps
 - Ledger service (`cmd/ledger`) is present; Docker (`demo/docker-compose.yml`) runs it on port `7000` (plaintext gRPC via SQLite).
-- Demo API exists (`cmd/demoapi` + `internal/demoapi`), already exposing `/api/session`, `/api/bootstrap`, `/api/wallet`, `/api/transactions`, `/api/purchases` with constants matching the required flows (5-coin spend, 20-coin bootstrap, 5-coin purchase increments). Integration tests cover the spend/insufficient/purchase paths.
+- Demo API exists (`demo/backend/cmd/demoapi` + `demo/backend/internal/demoapi`), already exposing `/api/session`, `/api/bootstrap`, `/api/wallet`, `/api/transactions`, `/api/purchases` with constants matching the required flows (5-coin spend, 20-coin bootstrap, 5-coin purchase increments). Integration tests cover the spend/insufficient/purchase paths.
 - TAuth is assumed via the published image (`ghcr.io/tyemirov/tauth:latest`); `.env.tauth.example` in `demo/` keeps the local configuration aligned with production defaults.
 - `ghttp` (under `tools/ghttp`) serves the `demo/ui` bundle, which now houses the ledger demo UI described in this plan.
 - Docs in `docs/TAuth/usage.md` and `docs/mpr-ui/*` describe the auth flow, script ordering, and declarative component usage; the plan must align with those contracts.
@@ -64,7 +64,7 @@
 
 ## Orchestration and Configuration
 - Keep `.env.tauth.example` under `demo/` aligned with `docs/TAuth/usage.md` (`APP_GOOGLE_WEB_CLIENT_ID`, `APP_JWT_SIGNING_KEY`, `APP_COOKIE_DOMAIN`, `APP_ENABLE_CORS=true`, `APP_CORS_ALLOWED_ORIGINS=http://localhost:8000`, `APP_DEV_INSECURE_HTTP=true`, `APP_DATABASE_URL=sqlite:///data/tauth.db`).
-- Reuse `.env.demoapi.example` for the demo API; ensure `DEMOAPI_JWT_SIGNING_KEY` matches TAuth and `DEMOAPI_ALLOWED_ORIGINS=http://localhost:8000`.
+- Reuse `demo/.env.demoapi.example` for the demo API; ensure `DEMOAPI_JWT_SIGNING_KEY` matches TAuth and `DEMOAPI_ALLOWED_ORIGINS=http://localhost:8000`.
 - Ensure ledgerd picks up `.env.ledgersvc` (SQLite path and listen addr) or Compose defaults.
 - The UI reads the demo API origin from `<body data-api-base-url>` (defaults to `http://localhost:9090`); template or override that attribute if the API is proxied elsewhere.
 - Update `demo/docker-compose.yml` to mount the new `demo/ui` assets, point ghttp at that directory, and keep port mappings (`8000` UI, `8080` TAuth, `9090` demoapi, `7000` ledger).
@@ -78,5 +78,5 @@
 ## Delivery Steps
 1. Scaffold `demo/ui` with declarative HTML/CSS/JS per `docs/mpr-ui/demo/`, wired to TAuth and backend endpoints, plus strict JSON parsing and error states.
 2. Add client helpers (`walletApiClient.js`) and Alpine stores in `app.js` to sequence auth → bootstrap → wallet fetch → spend/purchase flows.
-3. Create `.env.tauth.example` and ensure `.env.demoapi.example`/`.env.ledgersvc` stay aligned; update `demo/docker-compose.yml` and README/demo docs with run instructions.
+3. Create `.env.tauth.example` and ensure `demo/.env.demoapi.example`/`.env.ledgersvc` stay aligned; update `demo/docker-compose.yml` and README/demo docs with run instructions.
 4. Extend or add automated tests (Playwright and any API deltas), then run `make fmt && make lint && make test` before shipping.

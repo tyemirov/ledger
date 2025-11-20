@@ -1,14 +1,15 @@
 # build stage
 FROM golang:1.25-alpine AS build
-ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+WORKDIR /app
 RUN apk add --no-cache git
-RUN go install github.com/MarkoPoloResearchLab/ledger/cmd/ledger@latest
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/ledgerd ./cmd/ledger
 
 # runtime stage
 FROM alpine:3.20
 WORKDIR /srv
 RUN apk add --no-cache ca-certificates
-COPY --from=build /go/bin/ledger /srv/ledgerd
+COPY --from=build /out/ledgerd /srv/ledgerd
 ENV GRPC_LISTEN_ADDR=:50051
 EXPOSE 50051
 USER root
