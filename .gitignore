@@ -9,6 +9,6 @@ node_modules/
 test-results/
 *.png
 
-docs/mpr-ui/
-docs/TAuth/
+docs/mpr-ui
+docs/TAuth
 docs/workflows
