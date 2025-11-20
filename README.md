@@ -1,4 +1,4 @@
-# Credit Service
+# Ledger Service
 
 A standalone **gRPC-based virtual credits ledger** written in Go.
 Provides core operations for granting, reserving, spending, capturing, and releasing virtual currency (e.g., promotional credits, in-app balances).
@@ -27,7 +27,7 @@ It is intentionally **application-agnostic** — you decide when and why credits
         |
         |  gRPC
         v
- [Credit Service]  <--->  PostgreSQL
+ [Ledger Service]  <--->  PostgreSQL
 ```
 
 * `internal/credit` – core domain logic (ledger)
@@ -50,8 +50,8 @@ It is intentionally **application-agnostic** — you decide when and why credits
 Clone the repository:
 
 ```bash
-git clone https://github.com/yourorg/creditsvc.git
-cd creditsvc
+git clone https://github.com/yourorg/ledger.git
+cd ledger
 ```
 
 Install dependencies:
@@ -82,7 +82,7 @@ Environment variables:
 | Variable           | Default                                                              | Description                  |
 | ------------------ | -------------------------------------------------------------------- | ---------------------------- |
 | `DATABASE_URL`     | `sqlite:///tmp/ledger.db`                                             | Database connection string (supports `postgres://...` or `sqlite:///path.db`) |
-| `GRPC_LISTEN_ADDR` | `:7000`                                                              | gRPC server listen address   |
+| `GRPC_LISTEN_ADDR` | `:50051`                                                             | gRPC server listen address (plaintext) |
 
 ---
 
@@ -90,8 +90,8 @@ Environment variables:
 
 ```bash
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/credit?sslmode=disable \
-GRPC_LISTEN_ADDR=:7000 \
-go run ./cmd/creditd
+GRPC_LISTEN_ADDR=:50051 \
+go run ./cmd/ledger
 ```
 
 ---
@@ -103,7 +103,7 @@ Below are example calls using [`grpcurl`](https://github.com/fullstorydev/grpcur
 ### Check balance
 
 ```bash
-grpcurl -plaintext -d '{"user_id":"user123"}' localhost:7000 credit.v1.CreditService/GetBalance
+grpcurl -plaintext -d '{"user_id":"user123"}' localhost:50051 credit.v1.CreditService/GetBalance
 ```
 
 Response:
@@ -124,7 +124,7 @@ grpcurl -plaintext -d '{
   "idempotency_key":"grant-1",
   "expires_at_unix_utc":0,
   "metadata_json":"{\"reason\":\"signup_bonus\"}"
-}' localhost:7000 credit.v1.CreditService/Grant
+}' localhost:50051 credit.v1.CreditService/Grant
 ```
 
 ### Reserve credit
@@ -136,7 +136,7 @@ grpcurl -plaintext -d '{
   "reservation_id":"order-555",
   "idempotency_key":"reserve-1",
   "metadata_json":"{\"order_id\":555}"
-}' localhost:7000 credit.v1.CreditService/Reserve
+}' localhost:50051 credit.v1.CreditService/Reserve
 ```
 
 ### Capture reservation
@@ -148,7 +148,7 @@ grpcurl -plaintext -d '{
   "idempotency_key":"capture-1",
   "amount_cents":500,
   "metadata_json":"{\"order_id\":555}"
-}' localhost:7000 credit.v1.CreditService/Capture
+}' localhost:50051 credit.v1.CreditService/Capture
 ```
 
 ### Release reservation
@@ -159,7 +159,7 @@ grpcurl -plaintext -d '{
   "reservation_id":"order-555",
   "idempotency_key":"release-1",
   "metadata_json":"{\"order_id\":555}"
-}' localhost:7000 credit.v1.CreditService/Release
+}' localhost:50051 credit.v1.CreditService/Release
 ```
 
 ### Spend without reservation
@@ -170,7 +170,7 @@ grpcurl -plaintext -d '{
   "amount_cents": 200,
   "idempotency_key":"spend-1",
   "metadata_json":"{\"action\":\"purchase\"}"
-}' localhost:7000 credit.v1.CreditService/Spend
+}' localhost:50051 credit.v1.CreditService/Spend
 ```
 
 ### List ledger entries
@@ -180,7 +180,7 @@ grpcurl -plaintext -d '{
   "user_id":"user123",
   "before_unix_utc": 1893456000,
   "limit": 20
-}' localhost:7000 credit.v1.CreditService/ListEntries
+}' localhost:50051 credit.v1.CreditService/ListEntries
 ```
 
 ---
@@ -196,7 +196,7 @@ make test  # executes go test with >=80% coverage enforcement for internal packa
 make ci    # runs fmt + lint + test
 ```
 
-Docker Compose reads configuration from `.env.creditsvc`, so the container runtime matches the CLI flag/environment setup.
+Docker Compose reads configuration from `.env.ledgersvc`, so the container runtime matches the CLI flag/environment setup.
 
 ---
 
@@ -208,10 +208,11 @@ The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite://
 
 ## Demo Application
 
-Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the new HTTP façade (`cmd/demoapi`), creditd, and the static UI (`demo/ui`) via `docker-compose.demo.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows.
+Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the HTTP façade (`cmd/demoapi`), ledgerd, and the static UI (`demo/ui`) via the single compose file in `demo/docker-compose.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows.
 
-- `docker-compose.demo.yml` publishes creditd on host port `7700` (the container still listens on `7000`) to avoid macOS Control Center occupying `7000`; adjust the mapping if your host needs a different port.
+- `demo/docker-compose.yml` exposes ledgerd on host port `7000` (container also on `7000`, plaintext) when you run the `demo` profile.
 - `demo/ui/index.html` loads `http://localhost:8080/demo/config.js`, so the `<mpr-header>` automatically consumes the Google OAuth Web Client ID configured in `demo/.env.tauth`. You no longer have to edit the HTML file when rotating credentials—update the env file and restart the stack.
+- The `<body data-api-base-url>` attribute in `demo/ui/index.html` defaults to `http://localhost:9090`. Update it (or serve the HTML with a templated value) when the demo API lives on another origin or behind a proxy.
 
 ---
 

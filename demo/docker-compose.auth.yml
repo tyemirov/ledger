@@ -1,0 +1,24 @@
+services:
+  tauth:
+    image: ghcr.io/tyemirov/tauth:latest
+    container_name: ledger-tauth-login
+    env_file:
+      - ./.env.tauth
+    volumes:
+      - tauth_login_data:/data
+    ports:
+      - "8080:8080"
+
+  ghttp:
+    image: ghcr.io/temirov/ghttp:latest
+    container_name: ledger-ghttp-login
+    command: ["--directory", "/data", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ui:/data:ro
+    depends_on:
+      - tauth
+
+volumes:
+  tauth_login_data:

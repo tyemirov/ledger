@@ -51,7 +51,7 @@ func newRootCommand() *cobra.Command {
 	}
 
 	cmd.Flags().String(flagListenAddr, "", "HTTP listen address (required)")
-	cmd.Flags().String(flagLedgerAddr, "", "creditd gRPC address (required)")
+	cmd.Flags().String(flagLedgerAddr, "", "ledgerd gRPC address (required)")
 	cmd.Flags().Bool(flagLedgerInsecure, false, "set true when connecting to an insecure ledger endpoint (required)")
 	cmd.Flags().Duration(flagLedgerTimeout, 0, "ledger RPC timeout (e.g. 3s, required)")
 	cmd.Flags().String(flagAllowedOrigins, "", "comma-separated list of allowed CORS origins (required)")

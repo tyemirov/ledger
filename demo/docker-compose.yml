@@ -1,0 +1,69 @@
+services:
+  ledger:
+    profiles: ["demo"]
+    build:
+      context: .
+      dockerfile: ./Dockerfile.ledgerd
+    image: ledger-ledgerd:latest
+    container_name: ledger-ledgerd
+    env_file:
+      - ./.env.ledgersvc
+    volumes:
+      - ledger_data:/srv/data
+    ports:
+      - "7000:7000"
+
+  tauth:
+    profiles: ["demo", "auth"]
+    image: ghcr.io/tyemirov/tauth:latest
+    container_name: ledger-tauth
+    env_file:
+      - ./.env.tauth
+    volumes:
+      - tauth_data:/data
+    ports:
+      - "8080:8080"
+
+  demoapi:
+    profiles: ["demo"]
+    build:
+      context: .
+      dockerfile: ./Dockerfile.demoapi
+    image: ledger-demoapi:latest
+    container_name: ledger-demoapi
+    env_file:
+      - ./.env.demoapi
+    depends_on:
+      - ledger
+      - tauth
+    ports:
+      - "9090:9090"
+
+  web-demo:
+    profiles: ["demo"]
+    image: ghcr.io/temirov/ghttp:latest
+    container_name: ledger-ghttp
+    command: ["--directory", "/data", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ui:/data:ro
+    depends_on:
+      - demoapi
+      - tauth
+
+  web-auth:
+    profiles: ["auth"]
+    image: ghcr.io/temirov/ghttp:latest
+    container_name: ledger-ghttp-auth
+    command: ["--directory", "/data", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ui:/data:ro
+    depends_on:
+      - tauth
+
+volumes:
+  ledger_data:
+  tauth_data:

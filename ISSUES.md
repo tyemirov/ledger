@@ -32,7 +32,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
     3. Wire ledger service to operate with transactions as described above
     
     
-    - 2025-11-17: Authored `docs/lg-100-demo-plan.md`, outlining the multi-service architecture (TAuth + demo HTTP API + creditd + ghttp) plus the UI/backend tasks, endpoints, and testing strategy required for LG-101.
+    - 2025-11-17: Authored `docs/lg-100-demo-plan.md`, outlining the multi-service architecture (TAuth + demo HTTP API + ledgerd + ghttp) plus the UI/backend tasks, endpoints, and testing strategy required for LG-101.
 
 - [x] [LG-101] Build the demo transaction API service described in `docs/lg-100-demo-plan.md`.
     - Added `demo/backend/cmd/walletapi` + `demo/backend/internal/walletapi` with Cobra/Viper config, zap logging, CORS, and TAuth session validation plus an insecure gRPC dialer for local development.
@@ -45,7 +45,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
     - Used the auth-client callbacks to bootstrap the wallet, fetch balances, and call the new API endpoints with credentialed fetch helpers.
 
 - [x] [LG-103] Provide hosting/orchestration and local tooling for the demo stack (`docs/lg-100-demo-plan.md` “Hosting with ghttp” + “Local Orchestration / Compose”).
-    - Added `demo/backend/Dockerfile`, `demo/backend/.env.walletapi.example`, `demo/.env.tauth.example`, and `demo/docker-compose.yml` so contributors can run creditd, TAuth, walletapi, and ghttp together.
+    - Added `demo/backend/Dockerfile`, `demo/backend/.env.walletapi.example`, `demo/.env.tauth.example`, and `demo/docker-compose.yml` so contributors can run ledgerd, TAuth, walletapi, and ghttp together.
     - Documented the ghttp workflow plus the compose steps (including env copies) in `docs/demo.md` and linked the section from README.
 
 - [x] [LG-104] Add integration tests, CI wiring, and documentation from the “Implementation Breakdown” + “Validation & Monitoring Strategy” sections of `docs/lg-100-demo-plan.md`.
@@ -58,13 +58,13 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
     - Implement a front-end config bootstrapper: fetch `/demo/config.js` from TAuth before initializing `mpr-ui`, set `<mpr-header site-id>` dynamically, and refuse to load when the response is absent. All other endpoints (login/logout/nonce) must be bound via attributes instead of hardcoded constants.
     - Build a shared `demo/frontend/walletApiClient.js` helper that wraps `fetch` to the backend service with `credentials: 'include'` and typed error handling. Methods: `fetchSession`, `bootstrapWallet`, `getWallet`, `spendCoins`, `purchaseCoins`. Each returns parsed JSON typed per LG-100 invariants (coins as integers, ledger entries with timestamps).
     - Port the LG-100 flows into `app.js`: maintain Alpine stores for auth, wallet, transactions, and status banners; disable buttons while network calls are pending; display ledger history and zero-balance warnings exactly as the plan requires. No default values—if a response is missing required fields, throw and surface an unrecoverable banner.
-    - Compose a dedicated Dockerfile + docker-compose overlay under `demo/` so contributors can run `creditd`, the new wallet API, TAuth, and a static file server (ghttp) from one command. Ensure `.env` samples (e.g., `.env.walletapi`, `.env.tauth`) live inside `demo/` and are the only source of runtime configuration.
+    - Compose a dedicated Dockerfile + docker-compose overlay under `demo/` so contributors can run `ledgerd`, the new wallet API, TAuth, and a static file server (ghttp) from one command. Ensure `.env` samples (e.g., `.env.walletapi`, `.env.tauth`) live inside `demo/` and are the only source of runtime configuration.
     - Add Playwright coverage under `demo/tests/` that drives the new front end end-to-end. Write a stub server (similar to the existing root-level harness) to intercept `/demo/config.js`, `/static/auth-client.js`, GIS, and the wallet API endpoints so the four mandatory scenarios (sign-in prompt, successful spend, insufficient funds, purchase replenishment) and the zero-balance banner are asserted. Wire these tests into `make test`.
     - Update repository docs (`README.md`, `docs/demo.md`, and `docs/lg-100-demo-plan.md` if necessary) to point to the new `demo/` workflow, including the commands for building/running the Docker stack and executing the Playwright suite.
 
-- [ ] [LG-106] Prepare a demo of a web app which uses ledger backend for transactions. A deliverable is a plan of execution.
-    - Rely on mpr-ui for the backend. Use a header and a footer. Use mpr-ui declarative syntax
-    - Rely on TAuth for authentication. Usge TAuth. Mimic the demo
+- [x] [LG-106] Prepare a demo of a web app which uses ledger backend for transactions. 
+    - Rely on mpr-ui for the front-end. Use a header and a footer. Use mpr-ui declarative syntax
+    - Rely on TAuth for authentication. Usge TAuth. Mimic the demo that mpr-ui provides under @docs/mpr-ui/demo
     - Have a simple case of 
     transaction button that takes 5 units of virtual currency
     1. enough funds -- transaction succeed
@@ -73,18 +73,24 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
     A single button which says transact with a virtual currency be 5 coins per transaction. A user gets 20 coins when an account is created. A user can buy coins at any time. once the coins are depleded, a user can no longwer transact untill a user obtains the coins
 
-    The architecture shall be -- a backend that supports TAuth authentication by accepting the JWTs and verifying them against google service
+    The architecture shall be -- a backend that supports TAuth authentication (uses a client that TAuth exposes) by accepting the JWTs and verifying them against google service
     a backend service that integrates with Ledger and verifies that the use has sufficient balance for the transactions
-    a web service, ghhtp, that serves the stand alone front end
+    a web service that serves the stand alone front end (if we need to combine multiple services we may need to use nginx)
 
-    Find dependencies under tools folder and read their documentation and code to understand the integration. be specific in the produced plan on the intehration path forward
-    
-    Read the docs and follow the docs under docs/TAuth/usage.md and docs/mpr-ui/custom-elements.md, docs/mpr-ui/demo-index-auth.md, @docs/mpr-ui/demo/.
+    Find dependencies documentation and code to understand the integration under docs/. Read the docs and follow the docs under docs/TAuth/usage.md and docs/mpr-ui/custom-elements.md, docs/mpr-ui/demo-index-auth.md, @docs/mpr-ui/demo/.
 
     1. Build a demo page that copies the @docs/mpr-ui/demo
     2. Add ledger service to the docker orchestration
     3. Wire ledger service to operate with transactions as described above
 
+    The deliverables are:
+    a stand-alone demo folder that contains
+    1. new demo app front-end and backend
+    2. docker-compose orchestration of all the dependent services
+
+    Restrictions: no file-level references can be made outside of the demo/ folder
+    - 2025-11-20: Implemented the wallet UI under `demo/ui/` (Alpine stores + `wallet-api-client.js`) with Spend/Purchase controls, ledger history, zero-balance/insufficient banners, and updated docs (`README.md`, `docs/demo.md`, `docs/lg-106-demo-plan.md`). The UI now reads the demo API origin from `data-api-base-url` and the Compose workflows exercise all three LG-106 scenarios.
+    
 ## Improvements (200–299)
 
 ## BugFixes (300–399)
@@ -94,7 +100,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
     - Fixed `demo/docker-compose.yml` to reference `demo/backend/Dockerfile` and adjusted that Dockerfile to build from `./demo/backend/cmd/walletapi`.
     - `docker compose -f demo/docker-compose.yml config` now resolves without path errors; `make test` (Go + Playwright) passes.
 
-- [ ] [LG-301] I am unable to log into demo. Fix the login first with complete disregard to ledger server (remove all ledger-related functionality and just ensure we have a stable login).
+- [x] [LG-301] I am unable to log into demo. Fix the login first with complete disregard to ledger server (remove all ledger-related functionality and just ensure we have a stable login).
 Read the docs and follow the docs under docs/TAuth/usage.md and docs/mpr-ui/custom-elements.md, docs/mpr-ui/demo-index-auth.md, @docs/mpr-ui/demo/.
 
 Deliver the page that allows a user to log-in and stay logged in after the page refresh. Copy the demo from docs/mpr-ui/demo/ and use it as a start.
@@ -122,6 +128,8 @@ ledger-tauth      | {"level":"info","ts":1763594490.473501,"caller":"server/main
 ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:30 +0000] "POST /auth/nonce HTTP/1.1" 404 18 "http://localhost:8000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
 ledger-tauth      | {"level":"info","ts":1763594490.4974575,"caller":"server/main.go:297","msg":"http","method":"POST","path":"/nonce","status":404,"ip":"192.168.65.1","elapsed":0.000044506}
 ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:30 +0000] "POST /auth/nonce HTTP/1.1" 404 18 "http://localhost:8000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0" "-"
+
+    - 2025-11-19: Added `demo/ui/` auth-only page that loads TAuth config from `/demo/config.js`, points `<mpr-header>` at `http://localhost:8080`, and initializes `auth-client.js` dynamically so `/auth/nonce` requests hit TAuth instead of the static host. Included `.env.tauth.example` plus compose profiles in `demo/docker-compose.yml` so contributors can run either the auth-only flow (`--profile auth`) or the full demo (`--profile demo`) using a single file with only internet-sourced dependencies.
 ```
 
 ## Maintenance (400–499)
@@ -130,7 +138,7 @@ ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:30 +0000] "POST /auth/no
     - 2024-11-25 audit summary:
         - Domain logic violates POLICY invariants: operations accept raw primitives without smart constructors or edge validation (`internal/credit/types.go`, `internal/grpcserver/server.go`), timestamps default to zero in `NewService`, and `ListEntries`/`Balance` create accounts on read.
         - Reservation flows are incorrect: holds are never reversed (capture/release only check existence and write zero entries), `reservation_id` is not unique in `db/migrations.sql`, and limits/defaults for listing are unbounded, allowing stale holds to permanently lock funds.
-        - Operational drift: duplicate stores (gorm vs pgx) with the binary pinned to GORM + AutoMigrate (`cmd/credit/main.go`), no tests of any kind (`go test ./...` reports “[no test files]”), Docker lacks the mandated `.env.creditsvc`, and the distroless runtime runs as non-root (`Dockerfile`).
+        - Operational drift: duplicate stores (gorm vs pgx) with the binary pinned to GORM + AutoMigrate (`cmd/ledger/main.go`), no tests of any kind (`go test ./...` reports “[no test files]”), Docker lacks the mandated `.env.ledgersvc`, and the distroless runtime runs as non-root (`Dockerfile`).
         - Error handling/logging gaps: no contextual wrapping, gRPC leaks raw error strings, zap/Viper/Cobra are absent, metadata/JSON/idempotency fields are never validated, and limits/metadata can break SQL.
     - Refactoring plan:
         - Introduce domain constructors/value objects (UserID, ReservationID, IdempotencyKey, Money) and enforce validation in the gRPC edge before calling the service.
@@ -150,15 +158,15 @@ ledger-web        | 192.168.65.1 - - [19/Nov/2025:23:21:30 +0000] "POST /auth/no
 - [x] [LG-403] Consolidate persistence + runtime wiring.
     - Remove the runtime GORM dependency, standardize on the pgx store, and expose configuration via Cobra/Viper with env/flag parity.
     - Add structured logging with zap and wrap errors with operation + subject codes before surfacing them to gRPC.
-    - Delete AutoMigrate from `cmd/credit`, ensure migrations remain SQL-first, and verify startup gracefully handles dependency errors.
-    - 2024-11-25: Deleted the unused GORM store, rewired `cmd/credit` to use pgstore exclusively with Cobra/Viper config handling, added zap-powered logging plus graceful shutdown, and kept Docker/env compatibility intact (SQL migrations remain source of truth).
+    - Delete AutoMigrate from `cmd/ledger`, ensure migrations remain SQL-first, and verify startup gracefully handles dependency errors.
+    - 2024-11-25: Deleted the unused GORM store, rewired `cmd/ledger` to use pgstore exclusively with Cobra/Viper config handling, added zap-powered logging plus graceful shutdown, and kept Docker/env compatibility intact (SQL migrations remain source of truth).
 - [x] [LG-404] Testing, CI, and container compliance.
     - Author black-box integration tests covering grant/reserve/capture/release/spend/list flows plus store-specific tests for pagination and idempotency.
     - Wire `make test`, `make lint`, and `make ci` (or equivalent) to run gofmt/go vet/staticcheck/ineffassign + coverage enforcement per POLICY.
-    - Align Docker assets with AGENTS.DOCKER: add `.env.creditsvc`, reference it from docker-compose, ensure containers run as root, and document the workflow.
-    - 2024-11-25: Added Makefile targets (`fmt`, `lint`, `test`, `ci`) that run gofmt/vet/staticcheck/ineffassign with an 80% coverage gate on the internal domain package, expanded the service tests to cover balance/grant/spend/list flows, introduced `.env.creditsvc` with docker-compose env_file wiring, switched the runtime image to rootful Debian, and documented the tooling workflow in README.
+    - Align Docker assets with AGENTS.DOCKER: add `.env.ledgersvc`, reference it from docker-compose, ensure containers run as root, and document the workflow.
+    - 2024-11-25: Added Makefile targets (`fmt`, `lint`, `test`, `ci`) that run gofmt/vet/staticcheck/ineffassign with an 80% coverage gate on the internal domain package, expanded the service tests to cover balance/grant/spend/list flows, introduced `.env.ledgersvc` with docker-compose env_file wiring, switched the runtime image to rootful Debian, and documented the tooling workflow in README.
 - [x] [LG-405] Switch to sqlite from postgres. Prepare the code that allows to pass the DB URIL sufficient for the GORM to either use a postgres or sqlite driver. ensure that the sqlite driver doesnt require GCO
-    - 2024-11-25: Reintroduced the GORM store with reservation support, added a CGO-free SQLite driver alongside the Postgres driver, taught `creditd` to parse the `DATABASE_URL` and pick the right driver (defaulting to SQLite with AutoMigrate), simplified Docker to a single service storing data in an `.env.creditsvc`-defined SQLite path, and updated README/documentation accordingly.
+    - 2024-11-25: Reintroduced the GORM store with reservation support, added a CGO-free SQLite driver alongside the Postgres driver, taught `ledgerd` to parse the `DATABASE_URL` and pick the right driver (defaulting to SQLite with AutoMigrate), simplified Docker to a single service storing data in an `.env.ledgersvc`-defined SQLite path, and updated README/documentation accordingly.
 
 - [x] [LG-406] Establish github workflows for testing and docker image release. Use an example under @docs/workflow for inspiration
 

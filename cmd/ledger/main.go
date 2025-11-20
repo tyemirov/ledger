@@ -31,7 +31,7 @@ const (
 	configKeyDatabaseURL  = "database_url"
 	configKeyListenAddr   = "listen_addr"
 	defaultDatabaseURL    = "sqlite:///tmp/ledger.db"
-	defaultGRPCListenAddr = ":7000"
+	defaultGRPCListenAddr = ":50051"
 )
 
 type runtimeConfig struct {
@@ -42,7 +42,7 @@ type runtimeConfig struct {
 func main() {
 	cmd := newRootCommand()
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "creditd: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ledgerd: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -50,8 +50,8 @@ func main() {
 func newRootCommand() *cobra.Command {
 	cfg := &runtimeConfig{}
 	cmd := &cobra.Command{
-		Use:           "creditd",
-		Short:         "Credit ledger gRPC server",
+		Use:           "ledgerd",
+		Short:         "Ledger service gRPC server",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
@@ -126,7 +126,7 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 	clock := func() int64 { return time.Now().UTC().Unix() }
 	creditService, err := credit.NewService(store, clock)
 	if err != nil {
-		return fmt.Errorf("credit service init: %w", err)
+		return fmt.Errorf("ledger service init: %w", err)
 	}
 
 	lis, err := net.Listen("tcp", cfg.ListenAddr)

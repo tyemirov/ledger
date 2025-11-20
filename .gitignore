@@ -1,6 +1,8 @@
 tools/
 .env
 .env.*
+!.env.ledgersvc
+!.env.ledgersvc.example
 
 PLAN.md
 coverage.out
@@ -12,3 +14,5 @@ test-results/
 docs/mpr-ui
 docs/TAuth
 docs/workflows
+!demo/.env.ledgersvc
+!demo/.env.ledgersvc.example

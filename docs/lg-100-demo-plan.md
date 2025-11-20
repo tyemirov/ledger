@@ -11,7 +11,7 @@
 ```
 +-------------+        +----------------------+        +------------------+
 |  ghttp      |        | demo transaction API |        | ledger gRPC svc  |
-| serves UI   |<------>| (new HTTP service)   |<------>| cmd/credit       |
+| serves UI   |<------>| (new HTTP service)   |<------>| cmd/ledger       |
 +-------------+        +----------------------+        +------------------+
         ^                        ^   ^                          ^
         |                        |   |                          |
@@ -22,15 +22,15 @@
                              TAuth (tools/TAuth)
 ```
 Components:
-1. **Ledger gRPC server** (`cmd/credit`, existing) – stores append-only entries in SQLite/Postgres. We map `1 coin = 100 cents` so 5 coins = 500 cents and the initial 20 coins grant = 2,000 cents (integer math only).
+1. **Ledger gRPC server** (`cmd/ledger`, existing) – stores append-only entries in SQLite/Postgres. We map `1 coin = 100 cents` so 5 coins = 500 cents and the initial 20 coins grant = 2,000 cents (integer math only).
 2. **TAuth** (`tools/TAuth`) – verifies Google Sign-In, issues JWT-backed cookies, exposes `/auth/*`, `/me`, `/static/auth-client.js`. Configure with `APP_ENABLE_CORS=true` and `APP_CORS_ALLOWED_ORIGINS=http://localhost:8000` so the UI origin can exchange cookies.
 3. **Demo transaction API** (new Go binary under `cmd/demoapi` + `internal/demoapi`) – HTTP/JSON façade that validates TAuth cookies, applies the "5 coins per transaction" rules, and talks to the ledger via the generated gRPC client (`api/credit/v1`).
 4. **UI bundle** (static assets under `demo/ui/`) – HTML/CSS/JS referencing the CDN-hosted `mpr-ui.css`/`mpr-ui.js`, Alpine bootstrap per docs, the TAuth `auth-client.js`, and GIS script. Served by `ghttp --directory demo/ui 8000`.
 
 ## Component Responsibilities & Integration Details
 
-### Ledger gRPC (`cmd/credit`)
-- Run `creditd` via `DATABASE_URL=sqlite:///tmp/demo-ledger.db GRPC_LISTEN_ADDR=:7000 creditd`.
+### Ledger gRPC (`cmd/ledger`)
+- Run `ledgerd` via `DATABASE_URL=sqlite:///tmp/demo-ledger.db GRPC_LISTEN_ADDR=:50051 ledgerd`.
 - Operations that the demo backend will call:
   - `Grant(user_id, amount_cents=2000, idempotency_key=bootstrap:<user>)` to seed new accounts.
   - `Spend(user_id, amount_cents=500, idempotency_key=spend:<uuid>)` whenever the user clicks the 5-coin button.
@@ -49,11 +49,11 @@ Components:
   - Use the provided Gin middleware or wrap it in `net/http` middleware to extract claims (user id/email/avatar/roles) before hitting business logic.
 
 ### Demo Transaction API (new)
-- Implement under `cmd/demoapi/main.go` using Cobra+Viper (mirrors `cmd/credit`). Key config:
+- Implement under `cmd/demoapi/main.go` using Cobra+Viper (mirrors `cmd/ledger`). Key config:
   - `DEMOAPI_LISTEN_ADDR` (HTTP port, default `:9090`).
   - `DEMOAPI_TAUTH_BASE_URL` (default `http://localhost:8080`) to reuse in documentation/responses.
   - `DEMOAPI_JWT_SIGNING_KEY` + `DEMOAPI_JWT_ISSUER` to set up the session validator.
-  - `DEMOAPI_LEDGER_ADDR` for the gRPC endpoint (default `localhost:7000`).
+  - `DEMOAPI_LEDGER_ADDR` for the gRPC endpoint (default `localhost:50051`).
 - Wire a shared `grpc.ClientConn` to `creditv1.NewCreditServiceClient` with unary interceptors for logging/timeouts.
 - Expose the following HTTP endpoints (all JSON, served after the auth middleware):
 
@@ -93,8 +93,8 @@ Components:
 - Serve the UI directory via `ghttp --directory demo/ui 8000` (adds markdown rendering and zap logs for free). This keeps front-end static and origin-isolated from the APIs.
 
 ### Local Orchestration / Compose
-- Add `docker-compose.demo.yml` with services:
-  - `ledger`: runs `creditd` with SQLite volume `./tmp/data:/app/data`.
+- Add a single `demo/docker-compose.yml` with services:
+  - `ledger`: runs `ledgerd` with SQLite volume `./tmp/data:/app/data`.
   - `tauth`: builds from `tools/TAuth` or pulls published image; loads `.env.tauth`.
   - `demoapi`: builds from the repo, depends on ledger + tauth, shares `APP_JWT_SIGNING_KEY`.
   - `ghttp`: uses `ghcr.io/temirov/ghttp:latest`, mounts `demo/ui`, serves on `8000`.
@@ -122,7 +122,7 @@ Components:
 ## Deliverables for Implementing LG-101
 - `cmd/demoapi` binary + supporting `internal/demoapi/...` packages.
 - Static UI assets under `demo/ui/` with `mpr-ui` components + JS glue.
-- `docker-compose.demo.yml` (or instructions for running binaries manually) plus `.env.demoapi.example` capturing required env vars.
+- `demo/docker-compose.yml` (or instructions for running binaries manually) plus `.env.demoapi.example` capturing required env vars.
 - Documentation snippet (README section or `docs/demo.md`) that references this plan, lists ports, and explains how to run the demo.
 - Integration tests verifying ledger balances for the three required scenarios.
 
