@@ -113,3 +113,9 @@ When you want the full ledger + demoapi + UI flow without referencing files outs
   ```
 
   The script spins up a static server for `demo/ui`, stubs TAuth + wallet API endpoints, and asserts the header/UI stay authenticated across a reload (refresh-token path). It’s purely local—no Google sign-in required.
+
+## Google OAuth setup (live login)
+
+- Set `.env.tauth` to the Web client ID `991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com` (reference client). Restart TAuth so `/demo/config.js` serves this `siteId`.
+- In the Google console, ensure Authorized JavaScript origins include exactly the UI origin you load: `http://localhost:8000` (add `http://127.0.0.1:8000` if you use it). Missing origins cause GIS to drop the nonce and TAuth will reject `/auth/google` with `nonce_mismatch`.
+- Keep script order in `demo/ui/index.html`: mpr-ui.css + styles → TAuth `auth-client.js` → `mpr-ui.js` → GIS → `app.js` → Alpine. A missing or invalid client ID in `/demo/config.js` will surface a GIS error in the console—fix the env/config before retrying login.
