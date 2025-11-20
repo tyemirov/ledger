@@ -128,7 +128,10 @@ function createLedgerDemo() {
       try {
         await ensureAuthClient(this.config.authClientUrl);
       } catch (error) {
-        installAuthFallback();
+        this.authState = "error";
+        this.errorMessage =
+          error instanceof Error ? error.message : COPY.authClientMissing;
+        return;
       }
       this.bootstrapAuthClient();
     },
@@ -521,35 +524,6 @@ function formatError(error) {
     return error;
   }
   return COPY.apiErrorDetail;
-}
-
-function installAuthFallback() {
-  if (typeof window.initAuthClient !== "function") {
-    window.initAuthClient = ({ onAuthenticated, onUnauthenticated } = {}) => {
-      const profile = {
-        user_id: "demo-user",
-        display: "Demo User",
-        user_email: "demo@example.com",
-        avatar_url: "",
-        roles: ["user"],
-        expires: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-      };
-      if (typeof onAuthenticated === "function") {
-        onAuthenticated(profile);
-      } else if (typeof onUnauthenticated === "function") {
-        onUnauthenticated();
-      }
-    };
-  }
-  if (typeof window.apiFetch !== "function") {
-    window.apiFetch = (...args) => window.fetch(...args);
-  }
-  if (typeof window.getCurrentUser !== "function") {
-    window.getCurrentUser = () => null;
-  }
-  if (typeof window.logout !== "function") {
-    window.logout = async () => {};
-  }
 }
 
 window.LedgerDemo = LedgerDemo;
