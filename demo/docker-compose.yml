@@ -28,7 +28,7 @@ services:
     profiles: ["demo"]
     build:
       context: ..
-      dockerfile: ./demo/Dockerfile.demoapi
+      dockerfile: ./demo/Dockerfile
     image: ledger-demoapi:latest
     container_name: ledger-demoapi
     env_file:
