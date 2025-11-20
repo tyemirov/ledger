@@ -5,9 +5,6 @@ import {
   COPY,
   DEFAULT_API_BASE_URL,
   DEFAULT_TAUTH_BASE_URL,
-  LOGIN_PATH,
-  LOGOUT_PATH,
-  NONCE_PATH,
   PURCHASE_PRESETS,
   SELECTORS,
   TRANSACTION_COINS,
@@ -54,12 +51,6 @@ import {
  */
 
 const numberFormatter = new Intl.NumberFormat("en-US");
-const HEADER_MOUNT_ID = "header-mount";
-const HEADER_NAV_LINKS = JSON.stringify([
-  { label: "Ledger README", href: "https://github.com/tyemirov/ledger#readme" },
-  { label: "Demo guide", href: "https://github.com/tyemirov/ledger/blob/master/demo/docs/demo.md" },
-  { label: "TAuth usage", href: "https://github.com/tyemirov/ledger/blob/master/docs/TAuth/usage.md" },
-]);
 
 /**
  * Alpine factory powering the ledger demo UI.
@@ -122,17 +113,13 @@ function createLedgerDemo() {
     purchaseCoins: PURCHASE_PRESETS[0],
     purchaseOptions: PURCHASE_PRESETS,
     async init() {
-      const tauthHintElement =
-        document.querySelector(SELECTORS.header) ||
-        document.getElementById(HEADER_MOUNT_ID);
+      const header = document.querySelector(SELECTORS.header);
       const baseHint =
-        (tauthHintElement &&
-          tauthHintElement.dataset &&
-          tauthHintElement.dataset.tauthBaseUrl) ||
+        (header && header.dataset && header.dataset.tauthBaseUrl) ||
         DEFAULT_TAUTH_BASE_URL;
       try {
         this.config = await loadDemoConfig(baseHint);
-        applyHeaderConfig(this.config);
+        applyHeaderConfig(header, this.config);
       } catch (error) {
         this.authState = "error";
         this.errorMessage =
@@ -387,8 +374,10 @@ function createLedgerDemo() {
  * @param {DemoConfig} config
  * @returns {void}
  */
-function applyHeaderConfig(config) {
-  const header = ensureHeaderElement();
+function applyHeaderConfig(header, config) {
+  if (!header) {
+    return;
+  }
   header.setAttribute("site-id", config.siteId);
   header.setAttribute("base-url", config.baseUrl);
   header.setAttribute("login-path", config.loginPath);
@@ -410,36 +399,6 @@ function readApiBaseUrl() {
     return DEFAULT_API_BASE_URL;
   }
   return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
-}
-
-/**
- * @returns {HTMLElement}
- */
-function ensureHeaderElement() {
-  let header = document.querySelector(SELECTORS.header);
-  if (header) {
-    return header;
-  }
-  header = document.createElement("mpr-header");
-  header.id = "auth-header";
-  header.setAttribute("brand-label", "Marco Polo Research Lab");
-  header.setAttribute("brand-href", "https://mprlab.com/");
-  header.setAttribute("nav-links", HEADER_NAV_LINKS);
-  header.setAttribute("settings", "true");
-  header.setAttribute("settings-label", "Settings");
-  header.setAttribute("login-path", LOGIN_PATH);
-  header.setAttribute("logout-path", LOGOUT_PATH);
-  header.setAttribute("nonce-path", NONCE_PATH);
-  const mount = document.getElementById(HEADER_MOUNT_ID);
-  if (mount && mount.dataset && mount.dataset.tauthBaseUrl) {
-    header.dataset.tauthBaseUrl = mount.dataset.tauthBaseUrl;
-  }
-  if (mount) {
-    mount.replaceWith(header);
-  } else {
-    document.body.prepend(header);
-  }
-  return header;
 }
 
 /**
