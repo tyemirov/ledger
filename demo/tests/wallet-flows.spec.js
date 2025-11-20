@@ -256,6 +256,10 @@ function walletSnapshot(state) {
     // eslint-disable-next-line no-console
     console.log(`pageerror: ${error.message}`);
   });
+  page.on("pageerror", (error) => {
+    // eslint-disable-next-line no-console
+    console.log(`pageerror: ${error.message}`);
+  });
 
   // Stub GIS script loaded by mpr-ui.
   await page.route("https://accounts.google.com/gsi/client", (route) =>
