@@ -206,16 +206,6 @@ The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite://
 
 ---
 
-## Demo Application
-
-Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the HTTP façade (`demo/backend/cmd/demoapi`), ledgerd, and the static UI (`demo/ui`) via the single compose file in `demo/docker-compose.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows.
-
-- `demo/docker-compose.yml` exposes ledgerd on host port `7000` (container also on `7000`, plaintext) when you run the `demo` profile.
-- `demo/ui/index.html` loads `http://localhost:8080/demo/config.js`, so the `<mpr-header>` automatically consumes the Google OAuth Web Client ID configured in `demo/.env.tauth`. You no longer have to edit the HTML file when rotating credentials—update the env file and restart the stack.
-- The `<body data-api-base-url>` attribute in `demo/ui/index.html` defaults to `http://localhost:9090`. Update it (or serve the HTML with a templated value) when the demo API lives on another origin or behind a proxy.
-
----
-
 ## Notes
 
 * **Amounts** are stored as integer cents to avoid floating point errors.

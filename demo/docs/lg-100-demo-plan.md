@@ -107,7 +107,7 @@ Components:
    - gRPC client wiring (`grpc.WithTransportCredentials(insecure.NewCredentials())` for local dev, allow TLS later).
    - HTTP handlers per table above with smart constructors for request payloads and domain-level validation (positive coins, multiples of 5, metadata JSON via `credit.MetadataJSON`).
 2. **UI bundle** – craft static assets referencing `mpr-ui` components, handshake with TAuth events, and calling backend endpoints. Provide sample copy explaining the scenarios.
-3. **Orchestration** – add Compose file + docs showing how to run TAuth, ledger, demo API, and ghttp together. Document port map + env variables in README or a dedicated `docs/demo/README.md`.
+3. **Orchestration** – add Compose file + docs showing how to run TAuth, ledger, demo API, and ghttp together. Document port map + env variables in `demo/README.md` (or equivalent) so contributors stay within this directory.
 4. **Testing** –
    - Go integration tests under `internal/demoapi` using `httptest.Server` + an in-process ledger service (instantiate `credit.Service` with the SQLite store backed by `t.TempDir()` and `grpc/test/bufconn` to avoid real sockets).
    - UI smoke tests via Playwright (stretch) once LG-101 adds the front-end; scenario scripts click the button three times to observe success/failure/zero-state.
@@ -123,7 +123,7 @@ Components:
 - `demo/backend/cmd/demoapi` binary + supporting `demo/backend/internal/demoapi/...` packages.
 - Static UI assets under `demo/ui/` with `mpr-ui` components + JS glue.
 - `demo/docker-compose.yml` (or instructions for running binaries manually) plus `demo/.env.demoapi.example` capturing required env vars.
-- Documentation snippet (README section or `docs/demo.md`) that references this plan, lists ports, and explains how to run the demo.
+- Documentation snippet (e.g., `demo/README.md` or `demo/docs/demo.md`) that references this plan, lists ports, and explains how to run the demo.
 - Integration tests verifying ledger balances for the three required scenarios.
 
 Following this plan ties together every dependency under `tools/`, keeps validation at the HTTP edge (per `POLICY.md`), and gives LG-101 a concrete backlog of backend/UI tasks to implement the demo end-to-end.

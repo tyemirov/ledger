@@ -1,6 +1,6 @@
 # Demo Stack Guide
 
-This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the end-to-end wallet scenario that combines ledgerd (ledger), TAuth, the new demo API, and the static UI.
+This document mirrors `demo/docs/lg-100-demo-plan.md` and describes how to run the end-to-end wallet scenario that combines ledgerd (ledger), TAuth, the new demo API, and the static UI.
 
 ## Components
 
