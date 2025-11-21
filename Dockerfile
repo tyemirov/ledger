@@ -11,6 +11,6 @@ FROM debian:12-slim
 WORKDIR /srv
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/ledgerd /srv/ledgerd
-ENV GRPC_LISTEN_ADDR=:7000
+ENV GRPC_LISTEN_ADDR=:50051
 USER root
 CMD ["/srv/ledgerd"]

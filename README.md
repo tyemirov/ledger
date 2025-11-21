@@ -34,11 +34,11 @@ It is intentionally **application-agnostic** — you decide when and why credits
 * `internal/store/pgstore` – PostgreSQL implementation of `credit.Store`
 * `internal/grpcserver` – gRPC API bindings
 * `api/credit/v1` – protobuf definitions
-* `cmd/demo` – HTTP façade used by the demo UI; it authenticates via TAuth cookies and calls the ledger service over an internal-only gRPC address.
+* `cmd/demoapi` – HTTP façade used by the demo UI; it authenticates via TAuth cookies and calls the ledger service over an internal-only gRPC address.
 
 ### Network exposure and auth
 
-The ledger gRPC server does not implement end-user authentication. Deploy it on a private interface (loopback/cluster-internal) and front it with an HTTP gateway such as `cmd/demo` that performs session validation (TAuth) and enforces request rules. In Compose/Kubernetes, point the gateway at `ledger:50051`/`localhost:50051` on the internal network and expose only the gateway externally. Add mTLS or a JWT-validating interceptor at the gRPC layer only if future topologies require crossing trust boundaries.
+The ledger gRPC server does not implement end-user authentication. Deploy it on a private interface (loopback/cluster-internal) and front it with an HTTP gateway such as `demoapi` that performs session validation (TAuth) and enforces request rules. In Compose/Kubernetes, point the gateway at `ledger:50051`/`localhost:50051` on the internal network and expose only the gateway externally. Add mTLS or a JWT-validating interceptor at the gRPC layer only if future topologies require crossing trust boundaries.
 
 ---
 
@@ -87,7 +87,7 @@ Environment variables:
 | Variable           | Default                                                              | Description                  |
 | ------------------ | -------------------------------------------------------------------- | ---------------------------- |
 | `DATABASE_URL`     | `sqlite:///tmp/ledger.db`                                             | Database connection string (supports `postgres://...` or `sqlite:///path.db`) |
-| `GRPC_LISTEN_ADDR` | `:7000`                                                              | gRPC server listen address   |
+| `GRPC_LISTEN_ADDR` | `:50051`                                                             | gRPC server listen address   |
 
 ---
 
@@ -95,7 +95,7 @@ Environment variables:
 
 ```bash
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/credit?sslmode=disable \
-GRPC_LISTEN_ADDR=:7000 \
+GRPC_LISTEN_ADDR=:50051 \
 go run ./cmd/credit
 ```
 To build a standalone binary named `ledgerd`:
@@ -114,7 +114,7 @@ Below are example calls using [`grpcurl`](https://github.com/fullstorydev/grpcur
 ### Check balance
 
 ```bash
-grpcurl -plaintext -d '{"user_id":"user123"}' localhost:7000 credit.v1.CreditService/GetBalance
+grpcurl -plaintext -d '{"user_id":"user123"}' localhost:50051 credit.v1.CreditService/GetBalance
 ```
 
 Response:
@@ -135,7 +135,7 @@ grpcurl -plaintext -d '{
   "idempotency_key":"grant-1",
   "expires_at_unix_utc":0,
   "metadata_json":"{\"reason\":\"signup_bonus\"}"
-}' localhost:7000 credit.v1.CreditService/Grant
+}' localhost:50051 credit.v1.CreditService/Grant
 ```
 
 ### Reserve credit
@@ -147,7 +147,7 @@ grpcurl -plaintext -d '{
   "reservation_id":"order-555",
   "idempotency_key":"reserve-1",
   "metadata_json":"{\"order_id\":555}"
-}' localhost:7000 credit.v1.CreditService/Reserve
+}' localhost:50051 credit.v1.CreditService/Reserve
 ```
 
 ### Capture reservation
@@ -159,7 +159,7 @@ grpcurl -plaintext -d '{
   "idempotency_key":"capture-1",
   "amount_cents":500,
   "metadata_json":"{\"order_id\":555}"
-}' localhost:7000 credit.v1.CreditService/Capture
+}' localhost:50051 credit.v1.CreditService/Capture
 ```
 
 ### Release reservation
@@ -170,7 +170,7 @@ grpcurl -plaintext -d '{
   "reservation_id":"order-555",
   "idempotency_key":"release-1",
   "metadata_json":"{\"order_id\":555}"
-}' localhost:7000 credit.v1.CreditService/Release
+}' localhost:50051 credit.v1.CreditService/Release
 ```
 
 ### Spend without reservation
@@ -181,7 +181,7 @@ grpcurl -plaintext -d '{
   "amount_cents": 200,
   "idempotency_key":"spend-1",
   "metadata_json":"{\"action\":\"purchase\"}"
-}' localhost:7000 credit.v1.CreditService/Spend
+}' localhost:50051 credit.v1.CreditService/Spend
 ```
 
 ### List ledger entries
@@ -191,7 +191,7 @@ grpcurl -plaintext -d '{
   "user_id":"user123",
   "before_unix_utc": 1893456000,
   "limit": 20
-}' localhost:7000 credit.v1.CreditService/ListEntries
+}' localhost:50051 credit.v1.CreditService/ListEntries
 ```
 
 ---
@@ -219,9 +219,9 @@ The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite://
 
 ## Demo Application
 
-Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the new HTTP façade (`cmd/demo`), the `ledgerd` daemon, and the static UI (`demo/ui`) via `docker-compose.demo.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows.
+Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the new HTTP façade (`cmd/demoapi`), the `ledgerd` daemon, and the static UI (`demo/ui`) via `docker-compose.demo.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows.
 
-- `docker-compose.demo.yml` publishes `ledgerd` on host port `7700` (the container still listens on `7000`) to avoid macOS Control Center occupying `7000`; adjust the mapping if your host needs a different port.
+- `docker-compose.demo.yml` publishes `ledgerd` on host port `50051` (the container listens on `50051`) to follow the standard gRPC port; adjust the mapping if your host needs a different port.
 - `demo/ui/index.html` reads `demo/ui/config.js`, which picks up values from `demo/config.js` (served by ghttp) for the TAuth base URL, demo API base URL, and Google OAuth Web Client ID. Update those config files to rotate credentials; no HTML edits are required.
 
 ---

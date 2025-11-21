@@ -10,7 +10,7 @@ services:
     volumes:
       - ledger_data:/data
     ports:
-      - "7000:7000"
+      - "50051:50051"
     restart: unless-stopped
 
   tauth:

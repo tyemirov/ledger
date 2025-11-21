@@ -30,7 +30,7 @@ Components:
 ## Component Responsibilities & Integration Details
 
 ### Ledger gRPC (`cmd/credit`)
-- Run `ledgerd` via `DATABASE_URL=sqlite:///tmp/demo-ledger.db GRPC_LISTEN_ADDR=:7000 ledgerd`.
+- Run `ledgerd` via `DATABASE_URL=sqlite:///tmp/demo-ledger.db GRPC_LISTEN_ADDR=:50051 ledgerd`.
 - Operations that the demo backend will call:
   - `Grant(user_id, amount_cents=2000, idempotency_key=bootstrap:<user>)` to seed new accounts.
   - `Spend(user_id, amount_cents=500, idempotency_key=spend:<uuid>)` whenever the user clicks the 5-coin button.
