@@ -35,7 +35,7 @@ test-unit:
 test-integration:
 	go test $(INTEGRATION_TEST_PACKAGES)
 
-ci: check-format lint test-unit test-integration
+ci: check-format lint test-unit test-integration test-ui
 test-ui:
 	cd demo/ui && npm test
 
