@@ -1,9 +1,6 @@
 services:
   ledger:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ledger-ledgerd:latest
+    image: ghcr.io/tyemirov/ledgerd:latest
     container_name: ledger-ledgerd
     environment:
       - DATABASE_URL=sqlite:///data/demo-ledger.db
