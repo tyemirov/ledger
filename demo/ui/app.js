@@ -305,3 +305,9 @@ async function apiRequest(path, options) {
   }
   return response.json();
 }
+
+if (typeof window === 'object') {
+  window.__demoTestAuth = (profile) => handleAuthenticated(profile);
+  window.__demoTestRenderWallet = (wallet) => renderWallet(wallet);
+  window.__demoTestSetStatus = (message, level) => setStatus(message, level);
+}

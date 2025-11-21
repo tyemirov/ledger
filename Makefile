@@ -25,7 +25,7 @@ lint: tools
 	staticcheck $(STATICCHECK_PACKAGES)
 	ineffassign ./...
 
-test: test-unit test-integration
+test: test-unit test-integration test-ui
 
 test-unit:
 	go test $(UNIT_TEST_PACKAGES)
@@ -36,6 +36,8 @@ test-integration:
 	go test $(INTEGRATION_TEST_PACKAGES)
 
 ci: check-format lint test-unit test-integration
+test-ui:
+	cd demo/ui && npm test
 
 tools:
 	@command -v staticcheck >/dev/null 2>&1 || go install honnef.co/go/tools/cmd/staticcheck@latest
