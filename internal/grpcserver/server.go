@@ -35,7 +35,7 @@ type CreditServiceServer struct {
 	creditService *credit.Service
 }
 
-// NewCreditServiceServer constructs a gRPC server for the credit service.
+// NewCreditServiceServer constructs a gRPC server for the ledger service.
 func NewCreditServiceServer(creditService *credit.Service) *CreditServiceServer {
 	return &CreditServiceServer{creditService: creditService}
 }

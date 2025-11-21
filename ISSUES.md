@@ -40,11 +40,11 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
     - Implement wallet views that call `demoapi` endpoints (`/api/bootstrap`, `/api/wallet`, `/api/transactions`, `/api/purchases`) to cover the three required flows: spend succeeds at 5 coins, spend rejected when balance <5, and zero-balance after exhausting 20-coin seed + top-ups.
     - Surface status/history in the UI (balance cards, entry list, banners) using declarative markup, constants, and event wiring per `docs/mpr-ui/demo-index-auth.md` and `docs/mpr-ui/custom-elements.md`.
     - Piggyback on the proven `tools/mpr-ui/demo/tauth-demo.html` patterns for script ordering, auth-client loading, and header config; adapt for the ledger UI without importing from `tools/` at runtime.
-    - Keep the ledger service agnostic: route all demo interactions through the existing `cmd/demoapi`/`internal/demoapi` façade so the UI never couples directly to ledger gRPC.
+    - Keep the ledger service agnostic: build a new demo backend and move all demo interactions from the existing `cmd/demoapi`/`internal/demoapi` façade so the new backend so that UI never couples directly to ledger gRPC.
 
 - [ ] [LG-112] Fix and extend the Docker/ops scaffolding for the demo stack.
     - Add the missing `demo` directory with env templates (`demo/.env.tauth.example`, `.env.demoapi`) and config script to pass the Google client ID/base URL to the front end without editing HTML.
-    - Update `docker-compose.demo.yml` to mount `demo/ui`, align ports (creditd host mapping, demoapi 9090, tauth 8080, ghttp 8000), and ensure volumes persist SQLite data for ledger and TAuth.
+    - Update `docker-compose.demo.yml` to mount `demo/ui`, align ports (`ledgerd` host mapping, demoapi 9090, tauth 8080, ghttp 8000), and ensure volumes persist SQLite data for ledger and TAuth.
     - Ensure CORS/cookie settings stay consistent across TAuth and demoapi (issuer, cookie name, signing key) and that the UI pulls `auth-client.js` from the TAuth container.
     - Refresh `README.md`/`docs/demo.md` with end-to-end run instructions (compose + manual Go flow), artifact locations, and required secrets.
     - Mirror the compose + env wiring used in `tools/mpr-ui/docker-compose.tauth.yml` where applicable so contributors recognize the flow and avoid duplicating configuration logic.
@@ -56,7 +56,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 ## Improvements (200–299)
 
-- [ ] [LG-201] Align naming to "ledger" across services and binaries.
+- [x] [LG-201] Align naming to "ledger" across services and binaries.
     - Ensure the core daemon is referred to as `ledger`/`ledgerd` (not `creditd`) in docs, binaries, and orchestrators.
     - Sweep CLI flags, README, Compose files, and sample commands to use ledger-centric naming while keeping functionality unchanged.
     - Keep gRPC API package paths stable unless a broader migration is planned; focus on user-facing labels and process names.

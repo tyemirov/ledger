@@ -1,4 +1,4 @@
-# Credit Service
+# Ledger Service
 
 A standalone **gRPC-based virtual credits ledger** written in Go.
 Provides core operations for granting, reserving, spending, capturing, and releasing virtual currency (e.g., promotional credits, in-app balances).
@@ -27,7 +27,7 @@ It is intentionally **application-agnostic** — you decide when and why credits
         |
         |  gRPC
         v
- [Credit Service]  <--->  PostgreSQL
+ [Ledger Service]  <--->  PostgreSQL
 ```
 
 * `internal/credit` – core domain logic (ledger)
@@ -96,7 +96,13 @@ Environment variables:
 ```bash
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/credit?sslmode=disable \
 GRPC_LISTEN_ADDR=:7000 \
-go run ./cmd/creditd
+go run ./cmd/credit
+```
+To build a standalone binary named `ledgerd`:
+
+```bash
+go build -o ledgerd ./cmd/credit
+./ledgerd
 ```
 
 ---
@@ -213,9 +219,9 @@ The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite://
 
 ## Demo Application
 
-Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the new HTTP façade (`cmd/demoapi`), creditd, and the static UI (`demo/ui`) via `docker-compose.demo.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows.
+Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the new HTTP façade (`cmd/demoapi`), the `ledgerd` daemon, and the static UI (`demo/ui`) via `docker-compose.demo.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows.
 
-- `docker-compose.demo.yml` publishes creditd on host port `7700` (the container still listens on `7000`) to avoid macOS Control Center occupying `7000`; adjust the mapping if your host needs a different port.
+- `docker-compose.demo.yml` publishes `ledgerd` on host port `7700` (the container still listens on `7000`) to avoid macOS Control Center occupying `7000`; adjust the mapping if your host needs a different port.
 - `demo/ui/index.html` loads `http://localhost:8080/demo/config.js`, so the `<mpr-header>` automatically consumes the Google OAuth Web Client ID configured in `demo/.env.tauth`. You no longer have to edit the HTML file when rotating credentials—update the env file and restart the stack.
 
 ---

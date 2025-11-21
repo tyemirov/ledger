@@ -3,8 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ledger-creditd:latest
-    container_name: ledger-creditd
+    image: ledger-ledgerd:latest
+    container_name: ledger-ledgerd
     environment:
       - DATABASE_URL=sqlite:///data/demo-ledger.db
     volumes:
