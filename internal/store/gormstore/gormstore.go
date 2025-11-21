@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
+	gosqlite "github.com/glebarez/go-sqlite"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -223,6 +224,11 @@ func isIdempotencyConflict(err error) bool {
 	if errors.As(err, &pgErr) {
 		return pgErr.Code == "23505" && pgErr.ConstraintName == constraintAccountIdempotencyKey
 	}
+	var sqliteErr *gosqlite.Error
+	if errors.As(err, &sqliteErr) {
+		// SQLite extended constraint codes occupy the high byte; mask to handle UNIQUE vs generic constraint.
+		return sqliteErr.Code()&0xFF == 19
+	}
 	return false
 }
 
@@ -236,6 +242,10 @@ func isReservationConflict(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		return pgErr.Code == "23505" && pgErr.ConstraintName == constraintReservationPrimary
+	}
+	var sqliteErr *gosqlite.Error
+	if errors.As(err, &sqliteErr) {
+		return sqliteErr.Code()&0xFF == 19
 	}
 	return false
 }
