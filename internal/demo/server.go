@@ -1,4 +1,4 @@
-package demobackend
+package demo
 
 import (
 	"context"

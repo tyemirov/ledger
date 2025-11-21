@@ -1,4 +1,4 @@
-package demobackend
+package demo
 
 import (
 	"bytes"
@@ -13,8 +13,8 @@ import (
 	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/tyemirov/tauth/pkg/sessionvalidator"
-	"google.golang.org/grpc"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 type stubLedgerClient struct {

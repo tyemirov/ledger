@@ -7,7 +7,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/MarkoPoloResearchLab/ledger/internal/demobackend"
+	"github.com/MarkoPoloResearchLab/ledger/internal/demo"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -34,7 +34,7 @@ func main() {
 }
 
 func newRootCommand() *cobra.Command {
-	cfg := demobackend.Config{}
+	cfg := demo.Config{}
 	cmd := &cobra.Command{
 		Use:           "demo-backend",
 		Short:         "HTTP façade for the ledger demo",
@@ -46,7 +46,7 @@ func newRootCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
-			return demobackend.Run(ctx, cfg)
+			return demo.Run(ctx, cfg)
 		},
 	}
 
@@ -63,7 +63,7 @@ func newRootCommand() *cobra.Command {
 	return cmd
 }
 
-func loadConfig(cmd *cobra.Command, cfg *demobackend.Config) error {
+func loadConfig(cmd *cobra.Command, cfg *demo.Config) error {
 	v := viper.New()
 	v.SetEnvPrefix(envPrefix)
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
@@ -107,7 +107,7 @@ func loadConfig(cmd *cobra.Command, cfg *demobackend.Config) error {
 	cfg.LedgerAddress = strings.TrimSpace(v.GetString(flagLedgerAddr))
 	cfg.LedgerInsecure = v.GetBool(flagLedgerInsecure)
 	cfg.LedgerTimeout = v.GetDuration(flagLedgerTimeout)
-	cfg.AllowedOrigins = demobackend.ParseAllowedOrigins(v.GetString(flagAllowedOrigins))
+	cfg.AllowedOrigins = demo.ParseAllowedOrigins(v.GetString(flagAllowedOrigins))
 	cfg.SessionSigningKey = v.GetString(flagJWTSigningKey)
 	cfg.SessionIssuer = strings.TrimSpace(v.GetString(flagJWTIssuer))
 	cfg.SessionCookieName = strings.TrimSpace(v.GetString(flagJWTCookieName))
