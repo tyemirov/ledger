@@ -34,11 +34,10 @@ It is intentionally **application-agnostic** — you decide when and why credits
 * `internal/store/pgstore` – PostgreSQL implementation of `credit.Store`
 * `internal/grpcserver` – gRPC API bindings
 * `api/credit/v1` – protobuf definitions
-* `cmd/demoapi` – HTTP façade used by the demo UI; it authenticates via TAuth cookies and calls the ledger service over an internal-only gRPC address.
 
 ### Network exposure and auth
 
-The ledger gRPC server does not implement end-user authentication. Deploy it on a private interface (loopback/cluster-internal) and front it with an HTTP gateway such as `demoapi` that performs session validation (TAuth) and enforces request rules. In Compose/Kubernetes, point the gateway at `ledger:50051`/`localhost:50051` on the internal network and expose only the gateway externally. Add mTLS or a JWT-validating interceptor at the gRPC layer only if future topologies require crossing trust boundaries.
+The ledger gRPC server does not implement end-user authentication. Deploy it on a private interface (loopback/cluster-internal) and front it with an HTTP gateway that performs session validation and enforces request rules. In Compose/Kubernetes, point the gateway at `ledger:50051`/`localhost:50051` on the internal network and expose only the gateway externally. Add mTLS or a JWT-validating interceptor at the gRPC layer only if future topologies require crossing trust boundaries.
 
 ---
 
@@ -219,12 +218,7 @@ The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite://
 
 ## Demo Application
 
-Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the new HTTP façade (`cmd/demo`), the `ledgerd` daemon, and the static UI (`demo/ui`) via `demo/docker-compose.demo.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows. All demo assets and compose state live under `demo/` so you can operate it without touching the rest of the repository.
-
-When you copy `demo/` to another machine, Compose builds the demo backend from GitHub using `demo/Dockerfile.demoapi` (default ref `master`, override via `LEDGER_REF=<branch|tag|commit>`). No files outside `demo/` are needed, only network access to pull images and the Go module.
-
-- `docker-compose.demo.yml` publishes `ledgerd` on host port `50051` (the container listens on `50051`) to follow the standard gRPC port; adjust the mapping if your host needs a different port.
-- `demo/ui/index.html` reads `demo/ui/config.js`, which picks up values from `demo/config.js` (served by ghttp) for the TAuth base URL, demo API base URL, and Google OAuth Web Client ID. Update those config files to rotate credentials; no HTML edits are required.
+All demo assets (UI, Docker compose, optional backend) live under `demo/`. The ledger service code remains agnostic of the demo; see `demo/README.md` inside that folder for usage.
 
 ---
 

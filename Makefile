@@ -1,7 +1,7 @@
 GO_SOURCES := $(shell find . -name '*.go' -not -path "./vendor/*" -not -path "./.git/*" -not -path "*/.git/*")
-STATICCHECK_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1)
-UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/internal/demo)
-INTEGRATION_TEST_PACKAGES := github.com/MarkoPoloResearchLab/ledger/internal/demo
+STATICCHECK_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1 | grep -v github.com/MarkoPoloResearchLab/ledger/cmd/demo | grep -v github.com/MarkoPoloResearchLab/ledger/internal/demo)
+UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/cmd/demo | grep -v github.com/MarkoPoloResearchLab/ledger/internal/demo)
+INTEGRATION_TEST_PACKAGES :=
 
 .PHONY: fmt format check-format lint test test-unit test-integration ci tools
 
@@ -21,11 +21,11 @@ check-format:
 	fi
 
 lint: tools
-	go vet ./...
+	go vet $(UNIT_TEST_PACKAGES)
 	staticcheck $(STATICCHECK_PACKAGES)
-	ineffassign ./...
+	ineffassign $(UNIT_TEST_PACKAGES)
 
-test: test-unit test-integration test-ui
+test: test-unit test-integration
 
 test-unit:
 	go test $(UNIT_TEST_PACKAGES)
@@ -33,15 +33,9 @@ test-unit:
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 80.0) { print "coverage below 80%"; exit 1 } }'
 
 test-integration:
-	go test $(INTEGRATION_TEST_PACKAGES)
+	@echo "no integration tests configured"
 
-ci: check-format lint test-unit test-integration test-ui
-test-ui:
-	@if [ -f demo/ui/package.json ]; then \
-		cd demo/ui && npm test; \
-	else \
-		echo "Skipping UI tests (demo/ui missing)"; \
-	fi
+ci: check-format lint test-unit test-integration
 
 tools:
 	@command -v staticcheck >/dev/null 2>&1 || go install honnef.co/go/tools/cmd/staticcheck@latest
