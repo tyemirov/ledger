@@ -93,7 +93,7 @@ Components:
 - Serve the UI directory via `ghttp --directory demo/ui 8000` (adds markdown rendering and zap logs for free). This keeps front-end static and origin-isolated from the APIs.
 
 ### Local Orchestration / Compose
-- Add `docker-compose.demo.yml` with services:
+- Add `demo/docker-compose.demo.yml` with services:
   - `ledger`: runs `ledgerd` with SQLite volume `./tmp/data:/app/data`.
   - `tauth`: builds from `tools/TAuth` or pulls published image; loads `.env.tauth`.
   - `demo`: builds from the repo, depends on ledger + tauth, shares `APP_JWT_SIGNING_KEY`.
@@ -122,7 +122,7 @@ Components:
 ## Deliverables for Implementing LG-101
 - `cmd/demo` binary + supporting `internal/demo/...` packages.
 - Static UI assets under `demo/ui/` with `mpr-ui` components + JS glue.
-- `docker-compose.demo.yml` (or instructions for running binaries manually) plus `.env.demoapi.example` capturing required env vars.
+- `demo/docker-compose.demo.yml` (or instructions for running binaries manually) plus `.env.demoapi.example` capturing required env vars.
 - Documentation snippet (README section or `docs/demo.md`) that references this plan, lists ports, and explains how to run the demo.
 - Integration tests verifying ledger balances for the three required scenarios.
 
