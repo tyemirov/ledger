@@ -33,7 +33,7 @@ test-unit:
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 80.0) { print "coverage below 80%"; exit 1 } }'
 
 test-integration:
-	@echo "no integration tests configured"
+	@true
 
 ci: check-format lint test-unit test-integration
 
