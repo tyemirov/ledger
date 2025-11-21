@@ -11,6 +11,7 @@ services:
       - ledger_data:/data
     ports:
       - "7000:7000"
+    restart: unless-stopped
 
   tauth:
     image: ghcr.io/tyemirov/tauth:latest
@@ -21,6 +22,7 @@ services:
       - tauth_data:/data
     ports:
       - "8080:8080"
+    restart: unless-stopped
 
   demoapi:
     build:
@@ -29,12 +31,13 @@ services:
     image: ledger-demoapi:latest
     container_name: ledger-demoapi
     env_file:
-      - ./.env.demoapi
+      - ./demo/.env.demoapi
     depends_on:
       - ledger
       - tauth
     ports:
       - "9090:9090"
+    restart: unless-stopped
 
   ghttp:
     image: ghcr.io/tyemirov/ghttp:latest
@@ -44,8 +47,10 @@ services:
       - "8000:8000"
     volumes:
       - ./demo/ui:/data:ro
+      - ./demo/config.js:/data/config.js:ro
     depends_on:
       - demoapi
+    restart: unless-stopped
 
 volumes:
   ledger_data:
