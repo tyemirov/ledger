@@ -2,9 +2,9 @@ services:
   ledger:
     image: ghcr.io/tyemirov/ledger:latest
     container_name: ledger-ledger
-    environment:
-      - GRPC_LISTEN_ADDR=:50051
-      - DATABASE_URL=sqlite:///data/demo-ledger.db
+    pull_policy: always
+    env_file:
+      - ./.env.ledger
     volumes:
       - ledger_data:/data
     ports:
@@ -14,6 +14,7 @@ services:
   tauth:
     image: ghcr.io/tyemirov/tauth:latest
     container_name: ledger-tauth
+    pull_policy: always
     env_file:
       - ./.env.tauth
     volumes:
@@ -40,6 +41,7 @@ services:
   ghttp:
     image: ghcr.io/tyemirov/ghttp:latest
     container_name: ledger-ghttp
+    pull_policy: always
     command: ["--directory", "/data", "8000"]
     ports:
       - "8000:8000"
