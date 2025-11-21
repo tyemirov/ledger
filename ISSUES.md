@@ -73,7 +73,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 ## BugFixes (301–399)
 
-- [ ] [LG-301] Ledger gRPC server does not emit request logs, making demo troubleshooting impossible. Add structured logging (zap) around gRPC handlers or interceptors so grant/spend/reserve calls surface in container logs.
+- [x] [LG-301] Ledger gRPC server does not emit request logs, making demo troubleshooting impossible. Add structured logging (zap) around gRPC handlers or interceptors so grant/spend/reserve calls surface in container logs.
 
 ## Maintenance (407–499)
 
