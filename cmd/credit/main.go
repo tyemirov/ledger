@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/status"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -134,7 +135,9 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 		return fmt.Errorf("listen: %w", err)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(newLoggingInterceptor(logger)),
+	)
 	creditv1.RegisterCreditServiceServer(grpcServer, grpcserver.NewCreditServiceServer(creditService))
 
 	errCh := make(chan error, 1)
@@ -156,6 +159,43 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 			return nil
 		}
 		return serveErr
+	}
+}
+
+type userIDGetter interface {
+	GetUserId() string
+}
+
+func extractUserID(request interface{}) string {
+	getter, ok := request.(userIDGetter)
+	if !ok {
+		return ""
+	}
+	userID := strings.TrimSpace(getter.GetUserId())
+	return userID
+}
+
+// newLoggingInterceptor logs every unary RPC with method, duration, status, and optional user identifier.
+func newLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, request interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		start := time.Now()
+		response, err := handler(ctx, request)
+		code := status.Code(err)
+
+		fields := []zap.Field{
+			zap.String("method", info.FullMethod),
+			zap.Duration("duration", time.Since(start)),
+			zap.String("code", code.String()),
+		}
+		if userID := extractUserID(request); userID != "" {
+			fields = append(fields, zap.String("user_id", userID))
+		}
+		if err != nil {
+			logger.Error("grpc request failed", append(fields, zap.Error(err))...)
+		} else {
+			logger.Info("grpc request completed", fields...)
+		}
+		return response, err
 	}
 }
 
