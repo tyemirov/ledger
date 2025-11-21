@@ -62,6 +62,15 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
     - Sweep CLI flags, README, Compose files, and sample commands to use ledger-centric naming while keeping functionality unchanged.
     - Keep gRPC API package paths stable unless a broader migration is planned; focus on user-facing labels and process names.
 
+- [ ] [LG-202] Extract ledger core into a reusable Go library.
+    - Promote `internal/credit` into a public `pkg/ledger` module with explicit domain types and invariants.
+    - Define a storage interface suitable for both in-process and service-hosted deployments.
+    - Provide a default SQL-backed implementation (adapting existing gorm stores) while keeping the core domain independent of GORM.
+
+- [ ] [LG-203] Add integration documentation for service and library usage.
+    - Document how to run ledger as a standalone gRPC microservice (config, migrations, networking) and how to consume it from other languages.
+    - Document how to embed the future `pkg/ledger` library in Go services, including storage wiring, transaction patterns, and error contracts.
+
 ## BugFixes (301–399)
 
 - [ ] [LG-301] Ledger gRPC server does not emit request logs, making demo troubleshooting impossible. Add structured logging (zap) around gRPC handlers or interceptors so grant/spend/reserve calls surface in container logs.
