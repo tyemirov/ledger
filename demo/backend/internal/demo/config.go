@@ -1,4 +1,4 @@
-package demoapi
+package demo
 
 import (
 	"fmt"

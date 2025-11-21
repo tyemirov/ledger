@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ledger Demo</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css"
+    />
+    <script defer src="./config.js"></script>
+    <script defer src="./config-apply.js"></script>
+    <script defer src="./load-auth-client.js"></script>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/module.esm.js"
+      type="module"
+    ></script>
+    <script
+      id="mpr-ui-bundle"
+      defer
+      src="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.js"
+    ></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+  </head>
+  <body class="theme-light" data-palette="sunrise">
+    <mpr-header
+      id="demo-header"
+      brand-label="Ledger Demo"
+      brand-href="/"
+      nav-links='[{ "label": "Docs", "href": "https://github.com/tyemirov/ledger" }]'
+      site-id="991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com"
+      login-path="/auth/google"
+      logout-path="/auth/logout"
+      nonce-path="/auth/nonce"
+      settings-label="Account"
+      settings="true"
+    ></mpr-header>
+
+    <main class="layout">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Ledger-backed wallet</p>
+          <h1>Spend demo coins with a single click</h1>
+          <p class="lede">
+            Sign in with Google, receive 20 starter coins, spend them in 5-coin steps, and top up
+            when you run out. All actions go through the ledger service via demoapi.
+          </p>
+          <div class="status" id="status-banner" role="status" aria-live="polite"></div>
+        </div>
+        <div class="session-card" id="session-card">
+          <p class="session-label">Session</p>
+          <p class="session-value" data-session-state>Awaiting sign-in…</p>
+          <p class="session-meta" data-session-email></p>
+        </div>
+      </section>
+
+      <section class="cards">
+        <article class="card">
+          <header class="card__header">
+            <div>
+              <p class="eyebrow">Balance</p>
+              <h2>Coins available</h2>
+            </div>
+            <div class="pill" id="balance-available-pill">--</div>
+          </header>
+          <div class="balance">
+            <div>
+              <p class="label">Total</p>
+              <p class="value" id="balance-total">--</p>
+            </div>
+            <div>
+              <p class="label">Available</p>
+              <p class="value" id="balance-available">--</p>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="cta" id="spend-button">
+              Spend 5 coins
+            </button>
+            <p class="hint">Transactions are idempotent and safe to retry.</p>
+          </div>
+        </article>
+        <article class="card">
+          <header class="card__header">
+            <div>
+              <p class="eyebrow">Top up</p>
+              <h2>Buy more coins</h2>
+            </div>
+          </header>
+          <form id="purchase-form" class="purchase">
+            <div class="options">
+              <label>
+                <input type="radio" name="purchase" value="5" checked />
+                <span>+5 coins</span>
+              </label>
+              <label>
+                <input type="radio" name="purchase" value="10" />
+                <span>+10 coins</span>
+              </label>
+              <label>
+                <input type="radio" name="purchase" value="20" />
+                <span>+20 coins</span>
+              </label>
+            </div>
+            <button type="submit" class="ghost">Buy coins</button>
+            <p class="hint">Minimum 5 coins; increments of 5 only.</p>
+          </form>
+        </article>
+      </section>
+
+      <section class="history">
+        <header class="history__header">
+          <div>
+            <p class="eyebrow">Entries</p>
+            <h2>Latest ledger activity</h2>
+          </div>
+          <span class="pill pill--muted" id="entry-count">0 items</span>
+        </header>
+        <ul class="history__list" id="entry-list" aria-live="polite"></ul>
+      </section>
+    </main>
+
+    <mpr-footer
+      id="page-footer"
+      prefix-text="Built with mpr-ui"
+      privacy-link-label="Privacy &amp; Terms"
+      privacy-modal-content="
+        <h1>Privacy Policy — Ledger Demo</h1>
+        <p>This demo uses TAuth for authentication and stores session cookies locally.</p>
+        <p>No data is shared beyond ledger entries needed for the demonstration.</p>
+      "
+      links-collection='{"style":"drop-up","text":"Explore","links":[{ "label": "Repository", "url": "https://github.com/tyemirov/ledger" },{ "label": "mpr-ui docs", "url": "https://github.com/MarcoPoloResearchLab/mpr-ui" }]}'
+      theme-switcher="square"
+      theme-config='{"attribute":"data-palette","targets":["body"],"initialMode":"light","modes":[{"value":"sunrise","attributeValue":"light","classList":["theme-light"],"dataset":{"palette":"sunrise"}},{"value":"midnight","attributeValue":"dark","classList":["theme-dark"],"dataset":{"palette":"midnight"}}]}'
+    ></mpr-footer>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
