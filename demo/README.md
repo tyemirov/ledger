@@ -9,6 +9,17 @@ This document describes how to run the end-to-end wallet scenario that combines 
 3. **demo backend** (`backend/cmd/demo`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
 4. **ghttp** (`ghcr.io/tyemirov/ghttp`) – static server for `demo/ui` on `:8000`.
 
+## Google OAuth Client ID
+
+Before running the stack with your own Google OAuth Web client, sync the ID across the UI and TAuth by running:
+
+```bash
+cd demo
+make configure-google-client-id GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+```
+
+The helper updates `demo/config.js`, all UI fallbacks, and both `.env.tauth` files so the `<mpr-header>` and the TAuth server agree on the same ID. Restart TAuth and reload the UI after changing the value.
+
 ## Manual Run (Go toolchain)
 
 1. **ledgerd**

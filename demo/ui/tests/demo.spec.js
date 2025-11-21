@@ -85,7 +85,7 @@ test('bootstrap, spend, insufficient, purchase flows', async ({ page }) => {
     }
   }, DEMO_PROFILE);
 
-  await page.addInitScript(({ profile }) => {
+  await page.addInitScript(() => {
     const entries = [];
     let totalCents = 2000;
     let availableCents = 2000;
@@ -98,12 +98,6 @@ test('bootstrap, spend, insufficient, purchase flows', async ({ page }) => {
       googleClientId: 'test-client',
     });
     window.DEMO_LEDGER_AUTH_CLIENT_PROMISE = Promise.resolve(true);
-
-    window.initAuthClient = (opts) => {
-      window.getCurrentUser = () => profile;
-      setTimeout(() => opts.onAuthenticated && opts.onAuthenticated(profile), 0);
-    };
-    window.logout = async () => {};
 
     const buildWallet = () => ({
       wallet: {
@@ -171,7 +165,7 @@ test('bootstrap, spend, insufficient, purchase flows', async ({ page }) => {
       }
       return originalFetch(input, init);
     };
-  }, { profile: DEMO_PROFILE });
+  });
 
   await page.route('**/config.js', async (route) => {
     await route.fulfill({ contentType: 'application/javascript', body: '' });
