@@ -48,6 +48,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
     - Ensure CORS/cookie settings stay consistent across TAuth and demoapi (issuer, cookie name, signing key) and that the UI pulls `auth-client.js` from the TAuth container.
     - Refresh `README.md`/`docs/demo.md` with end-to-end run instructions (compose + manual Go flow), artifact locations, and required secrets.
     - Mirror the compose + env wiring used in `tools/mpr-ui/docker-compose.tauth.yml` where applicable so contributors recognize the flow and avoid duplicating configuration logic.
+    - The demo folder must be self contained, docker-compose.yml live inside the demo folder and no outside references can be made
 
 - [ ] [LG-113] Add automated coverage for the auth + wallet demo flows.
     - Introduce end-to-end tests (Playwright or equivalent) that exercise login via TAuth, bootstrap grant, 5-coin spend success, insufficient funds rejection, zero-balance state, and purchase top-up using the demo UI.

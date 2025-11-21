@@ -14,7 +14,7 @@ services:
     image: ghcr.io/tyemirov/tauth:latest
     container_name: ledger-tauth
     env_file:
-      - ./demo/.env.tauth
+      - ./env.tauth
     volumes:
       - tauth_data:/data
     ports:
@@ -22,13 +22,10 @@ services:
     restart: unless-stopped
 
   demoapi:
-    build:
-      context: .
-      dockerfile: Dockerfile.demoapi
-    image: ledger-demoapi:latest
+    image: ghcr.io/tyemirov/ledger-demoapi:latest
     container_name: ledger-demoapi
     env_file:
-      - ./demo/.env.demoapi
+      - ./env.demoapi
     depends_on:
       - ledger
       - tauth
@@ -43,8 +40,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./demo/ui:/data:ro
-      - ./demo/config.js:/data/config.js:ro
+      - ./ui:/data:ro
+      - ./config.js:/data/config.js:ro
     depends_on:
       - demoapi
     restart: unless-stopped
