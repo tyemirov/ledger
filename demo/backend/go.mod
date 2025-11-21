@@ -2,8 +2,6 @@ module github.com/MarkoPoloResearchLab/ledger/demo/backend
 
 go 1.25
 
-replace github.com/MarkoPoloResearchLab/ledger => ../..
-
 require (
 github.com/MarkoPoloResearchLab/ledger v0.0.0-20251121012229-f0742e840c06
 	github.com/gin-contrib/cors v1.7.5
