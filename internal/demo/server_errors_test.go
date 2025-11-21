@@ -72,7 +72,7 @@ func (stub *stubLedgerClient) Release(context.Context, *creditv1.ReleaseRequest,
 	return nil, errUnimplemented
 }
 
-var testErr = errors.New("assertion_error")
+var errTestAssertion = errors.New("assertion_error")
 
 func TestHandlePurchaseInvalidCoins(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -123,7 +123,7 @@ func TestHandleWalletLedgerError(t *testing.T) {
 	handler := &httpHandler{
 		logger: zap.NewNop(),
 		ledgerClient: &stubLedgerClient{
-			balanceErr: testErr,
+			balanceErr: errTestAssertion,
 		},
 		cfg: Config{
 			LedgerTimeout:     time.Second,
