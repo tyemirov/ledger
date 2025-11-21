@@ -1,6 +1,6 @@
 GO_SOURCES := $(shell find . -name '*.go' -not -path "./vendor/*" -not -path "./.git/*" -not -path "*/.git/*")
-STATICCHECK_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1 | grep -v github.com/MarkoPoloResearchLab/ledger/cmd/demo | grep -v github.com/MarkoPoloResearchLab/ledger/internal/demo)
-UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/cmd/demo | grep -v github.com/MarkoPoloResearchLab/ledger/internal/demo)
+STATICCHECK_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1)
+UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1)
 INTEGRATION_TEST_PACKAGES :=
 
 .PHONY: fmt format check-format lint test test-unit test-integration ci tools

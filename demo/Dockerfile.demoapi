@@ -4,7 +4,7 @@ FROM golang:1.25 AS build
 ARG LEDGER_REF=master
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
 
-RUN go install github.com/MarkoPoloResearchLab/ledger/cmd/demo@${LEDGER_REF}
+RUN go install github.com/MarkoPoloResearchLab/ledger/demo/backend/cmd/demo@${LEDGER_REF}
 
 FROM alpine:3.20
 

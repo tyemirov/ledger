@@ -6,7 +6,7 @@ This document describes how to run the end-to-end wallet scenario that combines 
 
 1. **ledgerd** (`cmd/credit`) – append-only ledger exposed via gRPC on `:50051`.
 2. **TAuth** (`tools/TAuth`) – Google Sign-In + JWT session issuer on `:8080`.
-3. **demo backend** (`cmd/demo`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
+3. **demo backend** (`backend/cmd/demo`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
 4. **ghttp** (`ghcr.io/tyemirov/ghttp`) – static server for `demo/ui` on `:8000`.
 
 ## Manual Run (Go toolchain)
@@ -30,6 +30,7 @@ This document describes how to run the end-to-end wallet scenario that combines 
    ```
 3. **demo backend** (signing key, issuer, cookie name, and timeout must match TAuth)
    ```bash
+   cd backend
    DEMOAPI_LISTEN_ADDR=:9090 \
    DEMOAPI_LEDGER_ADDR=localhost:50051 \
    DEMOAPI_LEDGER_INSECURE=true \

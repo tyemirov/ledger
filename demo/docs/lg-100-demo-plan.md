@@ -24,7 +24,7 @@
 Components:
 1. **Ledger gRPC server** (`cmd/credit`, existing) – stores append-only entries in SQLite/Postgres. We map `1 coin = 100 cents` so 5 coins = 500 cents and the initial 20 coins grant = 2,000 cents (integer math only).
 2. **TAuth** (`tools/TAuth`) – verifies Google Sign-In, issues JWT-backed cookies, exposes `/auth/*`, `/me`, `/static/auth-client.js`. Configure with `APP_ENABLE_CORS=true` and `APP_CORS_ALLOWED_ORIGINS=http://localhost:8000` so the UI origin can exchange cookies.
-3. **Demo transaction API** (new Go binary under `cmd/demoapi` + `internal/demoapi`) – HTTP/JSON façade that validates TAuth cookies, applies the "5 coins per transaction" rules, and talks to the ledger via the generated gRPC client (`api/credit/v1`).
+3. **Demo transaction API** (Go binary under `backend/cmd/demo` + `backend/internal/demo`) – HTTP/JSON façade that validates TAuth cookies, applies the "5 coins per transaction" rules, and talks to the ledger via the generated gRPC client (`api/credit/v1`).
 4. **UI bundle** (static assets under `demo/ui/`) – HTML/CSS/JS referencing the CDN-hosted `mpr-ui.css`/`mpr-ui.js`, Alpine bootstrap per docs, the TAuth `auth-client.js`, and GIS script. Served by `ghttp --directory demo/ui 8000`.
 
 ## Component Responsibilities & Integration Details
@@ -49,7 +49,7 @@ Components:
   - Use the provided Gin middleware or wrap it in `net/http` middleware to extract claims (user id/email/avatar/roles) before hitting business logic.
 
 ### Demo Transaction API (new)
-- Implement under `cmd/demo/main.go` using Cobra+Viper (mirrors `cmd/credit`). Key config:
+- Implement under `backend/cmd/demo/main.go` using Cobra+Viper (mirrors `cmd/credit`). Key config:
   - `DEMOAPI_LISTEN_ADDR` (HTTP port, default `:9090`).
   - `DEMOAPI_TAUTH_BASE_URL` (default `http://localhost:8080`) to reuse in documentation/responses.
   - `DEMOAPI_JWT_SIGNING_KEY` + `DEMOAPI_JWT_ISSUER` to set up the session validator.
@@ -121,7 +121,7 @@ Components:
 - Manual demo script (to be written in LG-101 docs) walks through: login → auto-grant 20 coins → click `Transact` 4 times (success, success, success, failure) → `Buy Coins (10)` → `Transact` twice to hit zero.
 
 ## Deliverables for Implementing LG-101
-- `cmd/demo` binary + supporting `internal/demo/...` packages.
+- `backend/cmd/demo` binary + supporting `backend/internal/demo/...` packages.
 - Static UI assets under `demo/ui/` with `mpr-ui` components + JS glue.
 - `demo/docker-compose.demo.yml` (or instructions for running binaries manually) plus `.env.demoapi.example` capturing required env vars.
 - Documentation snippet (README section or `docs/demo.md`) that references this plan, lists ports, and explains how to run the demo.
