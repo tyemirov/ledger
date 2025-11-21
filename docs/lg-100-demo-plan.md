@@ -89,7 +89,7 @@ Components:
 - CSS: reuse tokens from `mpr-ui.css` for spacing/typography; only add layout wrappers.
 
 ### Hosting with ghttp
-- Vendor the compiled `ghttp` binary or run `go install github.com/temirov/ghttp/cmd/ghttp@latest` (per `tools/ghttp/README.md`).
+- Vendor the compiled `ghttp` binary or run `go install github.com/tyemirov/ghttp/cmd/ghttp@latest` (per `tools/ghttp/README.md`).
 - Serve the UI directory via `ghttp --directory demo/ui 8000` (adds markdown rendering and zap logs for free). This keeps front-end static and origin-isolated from the APIs.
 
 ### Local Orchestration / Compose
@@ -97,7 +97,7 @@ Components:
   - `ledger`: runs `ledgerd` with SQLite volume `./tmp/data:/app/data`.
   - `tauth`: builds from `tools/TAuth` or pulls published image; loads `.env.tauth`.
   - `demo`: builds from the repo, depends on ledger + tauth, shares `APP_JWT_SIGNING_KEY`.
-  - `ghttp`: uses `ghcr.io/temirov/ghttp:latest`, mounts `demo/ui`, serves on `8000`.
+- `ghttp`: uses `ghcr.io/tyemirov/ghttp:latest`, mounts `demo/ui`, serves on `8000`.
 - Provide `scripts/demo-up.sh` wrapper (optional) that exports the needed env variables and launches the binaries directly for contributors who prefer the Go toolchain over Compose.
 
 ## Implementation Breakdown for LG-101

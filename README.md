@@ -219,7 +219,7 @@ The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite://
 
 ## Demo Application
 
-Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the new HTTP façade (`cmd/demo`), the `ledgerd` daemon, and the static UI (`demo/ui`) via `demo/docker-compose.demo.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows.
+Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the new HTTP façade (`cmd/demo`), the `ledgerd` daemon, and the static UI (`demo/ui`) via `demo/docker-compose.demo.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows. All demo assets and compose state live under `demo/` so you can operate it without touching the rest of the repository.
 
 - `docker-compose.demo.yml` publishes `ledgerd` on host port `50051` (the container listens on `50051`) to follow the standard gRPC port; adjust the mapping if your host needs a different port.
 - `demo/ui/index.html` reads `demo/ui/config.js`, which picks up values from `demo/config.js` (served by ghttp) for the TAuth base URL, demo API base URL, and Google OAuth Web Client ID. Update those config files to rotate credentials; no HTML edits are required.

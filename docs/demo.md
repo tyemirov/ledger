@@ -7,7 +7,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
 1. **ledgerd** (`cmd/credit`) – append-only ledger exposed via gRPC on `:50051`.
 2. **TAuth** (`tools/TAuth`) – Google Sign-In + JWT session issuer on `:8080`.
 3. **demo backend** (`cmd/demo`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
-4. **ghttp** (`ghcr.io/temirov/ghttp`) – static server for `demo/ui` on `:8000`.
+4. **ghttp** (`ghcr.io/tyemirov/ghttp`) – static server for `demo/ui` on `:8000`.
 
 ## Manual Run (Go toolchain)
 
@@ -53,8 +53,10 @@ The repository ships `demo/docker-compose.demo.yml` plus env templates so you ca
 
 1. From the `demo/` directory, copy the env templates:
    ```bash
+   cd demo
    cp env.demoapi.example env.demoapi
    cp env.tauth.example env.tauth
+   cd -
    ```
    Edit both files so `DEMOAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID.
 2. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `demo/docker-compose.demo.yml` if your machine needs a different port):
