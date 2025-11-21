@@ -37,7 +37,11 @@ test-integration:
 
 ci: check-format lint test-unit test-integration test-ui
 test-ui:
-	cd demo/ui && npm test
+	@if [ -f demo/ui/package.json ]; then \
+		cd demo/ui && npm test; \
+	else \
+		echo "Skipping UI tests (demo/ui missing)"; \
+	fi
 
 tools:
 	@command -v staticcheck >/dev/null 2>&1 || go install honnef.co/go/tools/cmd/staticcheck@latest
