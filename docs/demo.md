@@ -59,12 +59,13 @@ The repository ships `demo/docker-compose.demo.yml` plus env templates so you ca
    cd -
    ```
    Edit both files so `DEMOAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID.
-2. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `demo/docker-compose.demo.yml` if your machine needs a different port):
+2. If you want to build the demo backend from a specific branch/tag/commit, export `LEDGER_REF=<ref>` (defaults to `master`). The Dockerfile lives inside `demo/` and fetches the Go module from GitHub, so moving the folder to another host does not require the rest of the repo—only network access to pull images and the Go source.
+3. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `demo/docker-compose.demo.yml` if your machine needs a different port):
    ```bash
    docker compose -f demo/docker-compose.demo.yml up --build
    ```
-3. Visit `http://localhost:8000` (ghttp), `http://localhost:9090/api/wallet` (demo backend), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `http://localhost:8080/demo/config.js`, so whatever Google OAuth Web Client ID you set in `demo/env.tauth` is automatically injected into `<mpr-header>`—no need to edit the HTML file manually.
-4. Stop everything with `docker compose -f demo/docker-compose.demo.yml down`.
+4. Visit `http://localhost:8000` (ghttp), `http://localhost:9090/api/wallet` (demo backend), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `http://localhost:8080/demo/config.js`, so whatever Google OAuth Web Client ID you set in `demo/env.tauth` is automatically injected into `<mpr-header>`—no need to edit the HTML file manually.
+5. Stop everything with `docker compose -f demo/docker-compose.demo.yml down`.
 
 Volumes `ledger_data` and `tauth_data` persist ledger entries plus refresh tokens. Remove them with `docker volume rm ledger_ledger_data ledger_tauth_data` if you need a fresh state.
 

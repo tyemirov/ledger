@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1
+FROM golang:1.22 AS build
+
+ARG LEDGER_REF=master
+ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+
+RUN go install github.com/MarkoPoloResearchLab/ledger/cmd/demo@${LEDGER_REF}
+
+FROM alpine:3.20
+
+RUN apk add --no-cache ca-certificates
+COPY --from=build /go/bin/demo /usr/local/bin/demo
+
+ENV DEMOAPI_LISTEN_ADDR=:9090
+
+ENTRYPOINT ["/usr/local/bin/demo"]

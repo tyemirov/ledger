@@ -23,8 +23,10 @@ services:
 
   demoapi:
     build:
-      context: ..
+      context: .
       dockerfile: Dockerfile.demoapi
+      args:
+        LEDGER_REF: ${LEDGER_REF:-master}
     image: ledger-demoapi:latest
     container_name: ledger-demoapi
     env_file:
