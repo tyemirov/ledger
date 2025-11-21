@@ -22,7 +22,10 @@ services:
     restart: unless-stopped
 
   demoapi:
-    image: ghcr.io/tyemirov/ledger-demoapi:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile.demoapi
+    image: ledger-demoapi:latest
     container_name: ledger-demoapi
     env_file:
       - ./env.demoapi
