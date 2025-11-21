@@ -1,5 +1,5 @@
 services:
-  creditsvc:
+  ledgerd:
     build:
       context: .
       dockerfile: Dockerfile

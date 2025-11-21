@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
-	"github.com/MarkoPoloResearchLab/ledger/internal/credit"
+	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -32,16 +32,16 @@ const (
 // CreditServiceServer exposes the credit ledger over gRPC.
 type CreditServiceServer struct {
 	creditv1.UnimplementedCreditServiceServer
-	creditService *credit.Service
+	creditService *ledger.Service
 }
 
 // NewCreditServiceServer constructs a gRPC server for the ledger service.
-func NewCreditServiceServer(creditService *credit.Service) *CreditServiceServer {
+func NewCreditServiceServer(creditService *ledger.Service) *CreditServiceServer {
 	return &CreditServiceServer{creditService: creditService}
 }
 
 func (service *CreditServiceServer) GetBalance(ctx context.Context, request *creditv1.BalanceRequest) (*creditv1.BalanceResponse, error) {
-	userID, err := credit.NewUserID(request.GetUserId())
+	userID, err := ledger.NewUserID(request.GetUserId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
@@ -56,19 +56,19 @@ func (service *CreditServiceServer) GetBalance(ctx context.Context, request *cre
 }
 
 func (service *CreditServiceServer) Grant(ctx context.Context, request *creditv1.GrantRequest) (*creditv1.Empty, error) {
-	userID, err := credit.NewUserID(request.GetUserId())
+	userID, err := ledger.NewUserID(request.GetUserId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	amount, err := credit.NewAmountCents(request.GetAmountCents())
+	amount, err := ledger.NewAmountCents(request.GetAmountCents())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	idem, err := credit.NewIdempotencyKey(request.GetIdempotencyKey())
+	idem, err := ledger.NewIdempotencyKey(request.GetIdempotencyKey())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	metadata, err := credit.NewMetadataJSON(request.GetMetadataJson())
+	metadata, err := ledger.NewMetadataJSON(request.GetMetadataJson())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
@@ -80,23 +80,23 @@ func (service *CreditServiceServer) Grant(ctx context.Context, request *creditv1
 }
 
 func (service *CreditServiceServer) Reserve(ctx context.Context, request *creditv1.ReserveRequest) (*creditv1.Empty, error) {
-	userID, err := credit.NewUserID(request.GetUserId())
+	userID, err := ledger.NewUserID(request.GetUserId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	amount, err := credit.NewAmountCents(request.GetAmountCents())
+	amount, err := ledger.NewAmountCents(request.GetAmountCents())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	reservationID, err := credit.NewReservationID(request.GetReservationId())
+	reservationID, err := ledger.NewReservationID(request.GetReservationId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	idem, err := credit.NewIdempotencyKey(request.GetIdempotencyKey())
+	idem, err := ledger.NewIdempotencyKey(request.GetIdempotencyKey())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	metadata, err := credit.NewMetadataJSON(request.GetMetadataJson())
+	metadata, err := ledger.NewMetadataJSON(request.GetMetadataJson())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
@@ -108,23 +108,23 @@ func (service *CreditServiceServer) Reserve(ctx context.Context, request *credit
 }
 
 func (service *CreditServiceServer) Capture(ctx context.Context, request *creditv1.CaptureRequest) (*creditv1.Empty, error) {
-	userID, err := credit.NewUserID(request.GetUserId())
+	userID, err := ledger.NewUserID(request.GetUserId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	reservationID, err := credit.NewReservationID(request.GetReservationId())
+	reservationID, err := ledger.NewReservationID(request.GetReservationId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	idem, err := credit.NewIdempotencyKey(request.GetIdempotencyKey())
+	idem, err := ledger.NewIdempotencyKey(request.GetIdempotencyKey())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	amount, err := credit.NewAmountCents(request.GetAmountCents())
+	amount, err := ledger.NewAmountCents(request.GetAmountCents())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	metadata, err := credit.NewMetadataJSON(request.GetMetadataJson())
+	metadata, err := ledger.NewMetadataJSON(request.GetMetadataJson())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
@@ -136,19 +136,19 @@ func (service *CreditServiceServer) Capture(ctx context.Context, request *credit
 }
 
 func (service *CreditServiceServer) Release(ctx context.Context, request *creditv1.ReleaseRequest) (*creditv1.Empty, error) {
-	userID, err := credit.NewUserID(request.GetUserId())
+	userID, err := ledger.NewUserID(request.GetUserId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	reservationID, err := credit.NewReservationID(request.GetReservationId())
+	reservationID, err := ledger.NewReservationID(request.GetReservationId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	idem, err := credit.NewIdempotencyKey(request.GetIdempotencyKey())
+	idem, err := ledger.NewIdempotencyKey(request.GetIdempotencyKey())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	metadata, err := credit.NewMetadataJSON(request.GetMetadataJson())
+	metadata, err := ledger.NewMetadataJSON(request.GetMetadataJson())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
@@ -160,19 +160,19 @@ func (service *CreditServiceServer) Release(ctx context.Context, request *credit
 }
 
 func (service *CreditServiceServer) Spend(ctx context.Context, request *creditv1.SpendRequest) (*creditv1.Empty, error) {
-	userID, err := credit.NewUserID(request.GetUserId())
+	userID, err := ledger.NewUserID(request.GetUserId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	amount, err := credit.NewAmountCents(request.GetAmountCents())
+	amount, err := ledger.NewAmountCents(request.GetAmountCents())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	idem, err := credit.NewIdempotencyKey(request.GetIdempotencyKey())
+	idem, err := ledger.NewIdempotencyKey(request.GetIdempotencyKey())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	metadata, err := credit.NewMetadataJSON(request.GetMetadataJson())
+	metadata, err := ledger.NewMetadataJSON(request.GetMetadataJson())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
@@ -184,7 +184,7 @@ func (service *CreditServiceServer) Spend(ctx context.Context, request *creditv1
 }
 
 func (service *CreditServiceServer) ListEntries(ctx context.Context, request *creditv1.ListEntriesRequest) (*creditv1.ListEntriesResponse, error) {
-	userID, err := credit.NewUserID(request.GetUserId())
+	userID, err := ledger.NewUserID(request.GetUserId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
@@ -228,34 +228,34 @@ func normalizeListLimit(limit int32) (int32, error) {
 }
 
 func mapToGRPCError(source error) error {
-	if errors.Is(source, credit.ErrInvalidUserID) {
+	if errors.Is(source, ledger.ErrInvalidUserID) {
 		return status.Error(codes.InvalidArgument, errorInvalidUserID)
 	}
-	if errors.Is(source, credit.ErrInvalidReservationID) {
+	if errors.Is(source, ledger.ErrInvalidReservationID) {
 		return status.Error(codes.InvalidArgument, errorInvalidReservationID)
 	}
-	if errors.Is(source, credit.ErrInvalidIdempotencyKey) {
+	if errors.Is(source, ledger.ErrInvalidIdempotencyKey) {
 		return status.Error(codes.InvalidArgument, errorInvalidIdempotencyKey)
 	}
-	if errors.Is(source, credit.ErrInvalidAmountCents) {
+	if errors.Is(source, ledger.ErrInvalidAmountCents) {
 		return status.Error(codes.InvalidArgument, errorInvalidAmount)
 	}
-	if errors.Is(source, credit.ErrInvalidMetadataJSON) {
+	if errors.Is(source, ledger.ErrInvalidMetadataJSON) {
 		return status.Error(codes.InvalidArgument, errorInvalidMetadata)
 	}
-	if errors.Is(source, credit.ErrInsufficientFunds) {
+	if errors.Is(source, ledger.ErrInsufficientFunds) {
 		return status.Error(codes.FailedPrecondition, errorInsufficientFunds)
 	}
-	if errors.Is(source, credit.ErrUnknownReservation) {
+	if errors.Is(source, ledger.ErrUnknownReservation) {
 		return status.Error(codes.NotFound, errorUnknownReservation)
 	}
-	if errors.Is(source, credit.ErrDuplicateIdempotencyKey) {
+	if errors.Is(source, ledger.ErrDuplicateIdempotencyKey) {
 		return status.Error(codes.AlreadyExists, errorDuplicateIdempotencyKey)
 	}
-	if errors.Is(source, credit.ErrReservationExists) {
+	if errors.Is(source, ledger.ErrReservationExists) {
 		return status.Error(codes.AlreadyExists, errorReservationExists)
 	}
-	if errors.Is(source, credit.ErrReservationClosed) {
+	if errors.Is(source, ledger.ErrReservationClosed) {
 		return status.Error(codes.FailedPrecondition, errorReservationClosed)
 	}
 	return status.Error(codes.Internal, source.Error())

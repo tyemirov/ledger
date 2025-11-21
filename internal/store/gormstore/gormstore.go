@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/MarkoPoloResearchLab/ledger/internal/credit"
+	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -17,7 +17,7 @@ const (
 	constraintReservationPrimary    = "reservations_pkey"
 )
 
-// Store implements credit.Store using GORM.
+// Store implements ledger.Store using GORM.
 type Store struct {
 	db *gorm.DB
 }
@@ -28,7 +28,7 @@ func New(db *gorm.DB) *Store {
 }
 
 // WithTx executes fn within a transaction.
-func (s *Store) WithTx(ctx context.Context, fn func(ctx context.Context, txStore credit.Store) error) error {
+func (s *Store) WithTx(ctx context.Context, fn func(ctx context.Context, txStore ledger.Store) error) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return fn(ctx, &Store{db: tx})
 	})
@@ -48,7 +48,7 @@ func (s *Store) GetOrCreateAccountID(ctx context.Context, userID string) (string
 	return acc.AccountID, nil
 }
 
-func (s *Store) InsertEntry(ctx context.Context, e credit.Entry) error {
+func (s *Store) InsertEntry(ctx context.Context, e ledger.Entry) error {
 	var expiresAt *time.Time
 	if e.ExpiresAtUnixUTC != 0 {
 		t := time.Unix(e.ExpiresAtUnixUTC, 0).UTC()
@@ -69,12 +69,12 @@ func (s *Store) InsertEntry(ctx context.Context, e credit.Entry) error {
 	}
 	err := s.db.WithContext(ctx).Create(&entry).Error
 	if isIdempotencyConflict(err) {
-		return credit.ErrDuplicateIdempotencyKey
+		return ledger.ErrDuplicateIdempotencyKey
 	}
 	return err
 }
 
-func (s *Store) SumTotal(ctx context.Context, accountID string, atUnixUTC int64) (credit.AmountCents, error) {
+func (s *Store) SumTotal(ctx context.Context, accountID string, atUnixUTC int64) (ledger.AmountCents, error) {
 	at := time.Unix(atUnixUTC, 0).UTC()
 	var sum sqlSum
 	err := s.db.WithContext(ctx).
@@ -84,20 +84,20 @@ func (s *Store) SumTotal(ctx context.Context, accountID string, atUnixUTC int64)
 		Where("type not in ('hold','reverse_hold')").
 		Where("(expires_at is null or expires_at > ?)", at).
 		Scan(&sum).Error
-	return credit.AmountCents(sum.Total), err
+	return ledger.AmountCents(sum.Total), err
 }
 
-func (s *Store) SumActiveHolds(ctx context.Context, accountID string, _ int64) (credit.AmountCents, error) {
+func (s *Store) SumActiveHolds(ctx context.Context, accountID string, _ int64) (ledger.AmountCents, error) {
 	var sum sqlSum
 	err := s.db.WithContext(ctx).
 		Model(&Reservation{}).
 		Select("coalesce(sum(amount_cents),0) as total").
-		Where("account_id = ? AND status = ?", accountID, string(credit.ReservationStatusActive)).
+		Where("account_id = ? AND status = ?", accountID, string(ledger.ReservationStatusActive)).
 		Scan(&sum).Error
-	return credit.AmountCents(sum.Total), err
+	return ledger.AmountCents(sum.Total), err
 }
 
-func (s *Store) CreateReservation(ctx context.Context, reservation credit.Reservation) error {
+func (s *Store) CreateReservation(ctx context.Context, reservation ledger.Reservation) error {
 	model := Reservation{
 		AccountID:     reservation.AccountID,
 		ReservationID: reservation.ReservationID,
@@ -106,12 +106,12 @@ func (s *Store) CreateReservation(ctx context.Context, reservation credit.Reserv
 	}
 	err := s.db.WithContext(ctx).Create(&model).Error
 	if isReservationConflict(err) {
-		return credit.ErrReservationExists
+		return ledger.ErrReservationExists
 	}
 	return err
 }
 
-func (s *Store) GetReservation(ctx context.Context, accountID string, reservationID string) (credit.Reservation, error) {
+func (s *Store) GetReservation(ctx context.Context, accountID string, reservationID string) (ledger.Reservation, error) {
 	var model Reservation
 	err := s.db.WithContext(ctx).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -119,19 +119,19 @@ func (s *Store) GetReservation(ctx context.Context, accountID string, reservatio
 		Take(&model).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return credit.Reservation{}, credit.ErrUnknownReservation
+			return ledger.Reservation{}, ledger.ErrUnknownReservation
 		}
-		return credit.Reservation{}, err
+		return ledger.Reservation{}, err
 	}
-	return credit.Reservation{
+	return ledger.Reservation{
 		AccountID:     model.AccountID,
 		ReservationID: model.ReservationID,
-		AmountCents:   credit.AmountCents(model.AmountCents),
-		Status:        credit.ReservationStatus(model.Status),
+		AmountCents:   ledger.AmountCents(model.AmountCents),
+		Status:        ledger.ReservationStatus(model.Status),
 	}, nil
 }
 
-func (s *Store) UpdateReservationStatus(ctx context.Context, accountID string, reservationID string, from, to credit.ReservationStatus) error {
+func (s *Store) UpdateReservationStatus(ctx context.Context, accountID string, reservationID string, from, to ledger.ReservationStatus) error {
 	res := s.db.WithContext(ctx).
 		Model(&Reservation{}).
 		Where("account_id = ? AND reservation_id = ? AND status = ?", accountID, reservationID, string(from)).
@@ -140,12 +140,12 @@ func (s *Store) UpdateReservationStatus(ctx context.Context, accountID string, r
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return credit.ErrReservationClosed
+		return ledger.ErrReservationClosed
 	}
 	return nil
 }
 
-func (s *Store) ListEntries(ctx context.Context, accountID string, beforeUnixUTC int64, limit int) ([]credit.Entry, error) {
+func (s *Store) ListEntries(ctx context.Context, accountID string, beforeUnixUTC int64, limit int) ([]ledger.Entry, error) {
 	before := time.Unix(beforeUnixUTC, 0).UTC()
 	if beforeUnixUTC == 0 {
 		before = time.Now().UTC().Add(time.Second)
@@ -161,13 +161,13 @@ func (s *Store) ListEntries(ctx context.Context, accountID string, beforeUnixUTC
 		return nil, err
 	}
 
-	entries := make([]credit.Entry, 0, len(rows))
+	entries := make([]ledger.Entry, 0, len(rows))
 	for _, r := range rows {
-		entries = append(entries, credit.Entry{
+		entries = append(entries, ledger.Entry{
 			EntryID:          r.EntryID,
 			AccountID:        r.AccountID,
-			Type:             credit.EntryType(r.Type),
-			AmountCents:      credit.AmountCents(r.AmountCents),
+			Type:             ledger.EntryType(r.Type),
+			AmountCents:      ledger.AmountCents(r.AmountCents),
 			ReservationID:    strOrEmpty(r.ReservationID),
 			IdempotencyKey:   r.IdempotencyKey,
 			ExpiresAtUnixUTC: timeOrZero(r.ExpiresAt),
