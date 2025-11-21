@@ -436,3 +436,55 @@ func mustAmount(t *testing.T, raw int64) AmountCents {
 	}
 	return value
 }
+
+type mockStore struct {
+	*stubStore
+}
+
+func newMockStore() *mockStore {
+	return &mockStore{stubStore: newStubStore(AmountCents(0))}
+}
+
+type failingStore struct {
+	Store
+	err error
+}
+
+func (f *failingStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore Store) error) error {
+	if fn == nil {
+		return nil
+	}
+	return fn(ctx, f)
+}
+
+func (f *failingStore) GetOrCreateAccountID(ctx context.Context, userID string) (string, error) {
+	return "acct", nil
+}
+
+func (f *failingStore) InsertEntry(ctx context.Context, entry Entry) error {
+	return f.err
+}
+
+func (f *failingStore) SumTotal(ctx context.Context, accountID string, atUnixUTC int64) (AmountCents, error) {
+	return 1000, nil
+}
+
+func (f *failingStore) SumActiveHolds(ctx context.Context, accountID string, atUnixUTC int64) (AmountCents, error) {
+	return 0, nil
+}
+
+func (f *failingStore) CreateReservation(ctx context.Context, reservation Reservation) error {
+	return nil
+}
+
+func (f *failingStore) GetReservation(ctx context.Context, accountID string, reservationID string) (Reservation, error) {
+	return Reservation{}, nil
+}
+
+func (f *failingStore) UpdateReservationStatus(ctx context.Context, accountID string, reservationID string, from, to ReservationStatus) error {
+	return nil
+}
+
+func (f *failingStore) ListEntries(ctx context.Context, accountID string, beforeUnixUTC int64, limit int) ([]Entry, error) {
+	return nil, nil
+}
