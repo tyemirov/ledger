@@ -31,7 +31,7 @@ const (
 	configKeyDatabaseURL  = "database_url"
 	configKeyListenAddr   = "listen_addr"
 	defaultDatabaseURL    = "sqlite:///tmp/ledger.db"
-	defaultGRPCListenAddr = ":7000"
+	defaultGRPCListenAddr = ":50051"
 )
 
 type runtimeConfig struct {

@@ -29,12 +29,9 @@ const selectors = {
 
 const config = normalizeConfig(window.DEMO_LEDGER_CONFIG || {});
 applyHeaderConfig(config);
+attachAuthEventHandlers();
 wireUI();
-
-run().catch((error) => {
-  console.error(error);
-  setStatus('Failed to start the demo. See console for details.', 'error');
-});
+setStatus('Sign in to continue.', 'info');
 
 function normalizeConfig(raw) {
   return {
@@ -57,45 +54,15 @@ function sanitizeUrl(value) {
   return trimmed.replace(/\/+$/, '');
 }
 
-async function run() {
-  await ensureAuthClientLoaded();
-  initializeAuthFlow();
-}
-
-async function ensureAuthClientLoaded() {
-  if (window.DEMO_LEDGER_AUTH_CLIENT_PROMISE) {
-    try {
-      await window.DEMO_LEDGER_AUTH_CLIENT_PROMISE;
-    } catch (error) {
-      setStatus('Could not load auth-client.js from TAuth.', 'error');
-      throw error;
-    }
-  }
-}
-
-function initializeAuthFlow() {
-  attachAuthEventHandlers();
-  if (typeof initAuthClient !== 'function') {
-    setStatus('Auth client missing; check TAuth URL.', 'error');
-    return;
-  }
-  initAuthClient({
-    baseUrl: config.tauthBaseUrl,
-    onAuthenticated(profile) {
-      handleAuthenticated(profile || null);
-    },
-    onUnauthenticated() {
-      resetUI();
-    },
-  });
-}
-
 function attachAuthEventHandlers() {
   document.addEventListener('mpr-ui:auth:authenticated', (event) => {
     const profile = event?.detail?.profile || null;
     handleAuthenticated(profile);
   });
   document.addEventListener('mpr-ui:auth:unauthenticated', () => resetUI());
+  document.addEventListener('mpr-ui:auth:error', () => {
+    setStatus('Authentication failed. Try again.', 'error');
+  });
 }
 
 function handleAuthenticated(profile) {

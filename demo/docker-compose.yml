@@ -1,31 +1,31 @@
 services:
   ledger:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ledger-ledgerd:latest
-    container_name: ledger-ledgerd
+    image: ghcr.io/tyemirov/ledger:latest
+    container_name: ledger-ledger
     environment:
+      - GRPC_LISTEN_ADDR=:50051
       - DATABASE_URL=sqlite:///data/demo-ledger.db
     volumes:
       - ledger_data:/data
     ports:
-      - "7000:7000"
+      - "50051:50051"
+    restart: unless-stopped
 
   tauth:
     image: ghcr.io/tyemirov/tauth:latest
     container_name: ledger-tauth
     env_file:
-      - ./demo/.env.tauth
+      - ./.env.tauth
     volumes:
       - tauth_data:/data
     ports:
       - "8080:8080"
+    restart: unless-stopped
 
   demoapi:
     build:
       context: .
-      dockerfile: Dockerfile.demoapi
+      dockerfile: Dockerfile
     image: ledger-demoapi:latest
     container_name: ledger-demoapi
     env_file:
@@ -35,6 +35,7 @@ services:
       - tauth
     ports:
       - "9090:9090"
+    restart: unless-stopped
 
   ghttp:
     image: ghcr.io/tyemirov/ghttp:latest
@@ -43,9 +44,11 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./demo/ui:/data:ro
+      - ./ui:/data:ro
+      - ./config.js:/data/config.js:ro
     depends_on:
       - demoapi
+    restart: unless-stopped
 
 volumes:
   ledger_data:
