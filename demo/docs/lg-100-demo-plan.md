@@ -98,7 +98,7 @@ Components:
   - `tauth`: builds from `tools/TAuth` or pulls published image; loads `.env.tauth`.
   - `demo`: builds from the repo, depends on ledger + tauth, shares `APP_JWT_SIGNING_KEY`.
 - `ghttp`: uses `ghcr.io/tyemirov/ghttp:latest`, mounts `demo/ui`, serves on `8000`.
-- Provide a Dockerfile inside `demo/` so the demo backend can be built from a Git ref (default `master`, override via `LEDGER_REF`) when the `demo/` directory is copied to a host without the rest of the repository.
+- Provide a Dockerfile inside `demo/` that builds the demo backend from the local `demo/backend` sources when the `demo/` directory is copied to another host.
 - Provide `scripts/demo-up.sh` wrapper (optional) that exports the needed env variables and launches the binaries directly for contributors who prefer the Go toolchain over Compose.
 
 ## Implementation Breakdown for LG-101
