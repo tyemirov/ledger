@@ -49,11 +49,11 @@ Components:
   - Use the provided Gin middleware or wrap it in `net/http` middleware to extract claims (user id/email/avatar/roles) before hitting business logic.
 
 ### Demo Transaction API (new)
-- Implement under `cmd/demoapi/main.go` using Cobra+Viper (mirrors `cmd/credit`). Key config:
+- Implement under `cmd/demobackend/main.go` using Cobra+Viper (mirrors `cmd/credit`). Key config:
   - `DEMOAPI_LISTEN_ADDR` (HTTP port, default `:9090`).
   - `DEMOAPI_TAUTH_BASE_URL` (default `http://localhost:8080`) to reuse in documentation/responses.
   - `DEMOAPI_JWT_SIGNING_KEY` + `DEMOAPI_JWT_ISSUER` to set up the session validator.
-  - `DEMOAPI_LEDGER_ADDR` for the gRPC endpoint (default `localhost:7000`).
+  - `DEMOAPI_LEDGER_ADDR` for the gRPC endpoint (default `localhost:50051`).
 - Wire a shared `grpc.ClientConn` to `creditv1.NewCreditServiceClient` with unary interceptors for logging/timeouts.
 - Expose the following HTTP endpoints (all JSON, served after the auth middleware):
 
@@ -96,20 +96,20 @@ Components:
 - Add `docker-compose.demo.yml` with services:
   - `ledger`: runs `ledgerd` with SQLite volume `./tmp/data:/app/data`.
   - `tauth`: builds from `tools/TAuth` or pulls published image; loads `.env.tauth`.
-  - `demoapi`: builds from the repo, depends on ledger + tauth, shares `APP_JWT_SIGNING_KEY`.
+  - `demobackend`: builds from the repo, depends on ledger + tauth, shares `APP_JWT_SIGNING_KEY`.
   - `ghttp`: uses `ghcr.io/temirov/ghttp:latest`, mounts `demo/ui`, serves on `8000`.
 - Provide `scripts/demo-up.sh` wrapper (optional) that exports the needed env variables and launches the binaries directly for contributors who prefer the Go toolchain over Compose.
 
 ## Implementation Breakdown for LG-101
-1. **Backend scaffolding** – create `internal/demoapi` with:
-   - Configuration loader (Viper) + `cmd/demoapi/main.go` entrypoint.
+1. **Backend scaffolding** – create `internal/demobackend` with:
+   - Configuration loader (Viper) + `cmd/demobackend/main.go` entrypoint.
    - Session middleware using `sessionvalidator`.
    - gRPC client wiring (`grpc.WithTransportCredentials(insecure.NewCredentials())` for local dev, allow TLS later).
    - HTTP handlers per table above with smart constructors for request payloads and domain-level validation (positive coins, multiples of 5, metadata JSON via `credit.MetadataJSON`).
 2. **UI bundle** – craft static assets referencing `mpr-ui` components, handshake with TAuth events, and calling backend endpoints. Provide sample copy explaining the scenarios.
 3. **Orchestration** – add Compose file + docs showing how to run TAuth, ledger, demo API, and ghttp together. Document port map + env variables in README or a dedicated `docs/demo/README.md`.
 4. **Testing** –
-   - Go integration tests under `internal/demoapi` using `httptest.Server` + an in-process ledger service (instantiate `credit.Service` with the SQLite store backed by `t.TempDir()` and `grpc/test/bufconn` to avoid real sockets).
+   - Go integration tests under `internal/demobackend` using `httptest.Server` + an in-process ledger service (instantiate `credit.Service` with the SQLite store backed by `t.TempDir()` and `grpc/test/bufconn` to avoid real sockets).
    - UI smoke tests via Playwright (stretch) once LG-101 adds the front-end; scenario scripts click the button three times to observe success/failure/zero-state.
 5. **CI hooks** – extend `make test` to run new backend tests; include the demo assets in `make lint` or `npm run lint` only if a JS toolchain becomes necessary (today we stay framework-free).
 
@@ -120,7 +120,7 @@ Components:
 - Manual demo script (to be written in LG-101 docs) walks through: login → auto-grant 20 coins → click `Transact` 4 times (success, success, success, failure) → `Buy Coins (10)` → `Transact` twice to hit zero.
 
 ## Deliverables for Implementing LG-101
-- `cmd/demoapi` binary + supporting `internal/demoapi/...` packages.
+- `cmd/demobackend` binary + supporting `internal/demobackend/...` packages.
 - Static UI assets under `demo/ui/` with `mpr-ui` components + JS glue.
 - `docker-compose.demo.yml` (or instructions for running binaries manually) plus `.env.demoapi.example` capturing required env vars.
 - Documentation snippet (README section or `docs/demo.md`) that references this plan, lists ports, and explains how to run the demo.

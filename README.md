@@ -34,11 +34,11 @@ It is intentionally **application-agnostic** — you decide when and why credits
 * `internal/store/pgstore` – PostgreSQL implementation of `credit.Store`
 * `internal/grpcserver` – gRPC API bindings
 * `api/credit/v1` – protobuf definitions
-* `cmd/demoapi` – HTTP façade used by the demo UI; it authenticates via TAuth cookies and calls the ledger service over an internal-only gRPC address.
+* `cmd/demobackend` – HTTP façade used by the demo UI; it authenticates via TAuth cookies and calls the ledger service over an internal-only gRPC address.
 
 ### Network exposure and auth
 
-The ledger gRPC server does not implement end-user authentication. Deploy it on a private interface (loopback/cluster-internal) and front it with an HTTP gateway such as `demoapi` that performs session validation (TAuth) and enforces request rules. In Compose/Kubernetes, point the gateway at `ledger:7000`/`localhost:7000` on the internal network and expose only the gateway externally. Add mTLS or a JWT-validating interceptor at the gRPC layer only if future topologies require crossing trust boundaries.
+The ledger gRPC server does not implement end-user authentication. Deploy it on a private interface (loopback/cluster-internal) and front it with an HTTP gateway such as `cmd/demobackend` that performs session validation (TAuth) and enforces request rules. In Compose/Kubernetes, point the gateway at `ledger:50051`/`localhost:50051` on the internal network and expose only the gateway externally. Add mTLS or a JWT-validating interceptor at the gRPC layer only if future topologies require crossing trust boundaries.
 
 ---
 
@@ -219,7 +219,7 @@ The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite://
 
 ## Demo Application
 
-Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the new HTTP façade (`cmd/demoapi`), the `ledgerd` daemon, and the static UI (`demo/ui`) via `docker-compose.demo.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows.
+Follow `docs/demo.md` to launch the LG-100 wallet demo. It wires together TAuth (`tools/TAuth`), the new HTTP façade (`cmd/demobackend`), the `ledgerd` daemon, and the static UI (`demo/ui`) via `docker-compose.demo.yml` or the manual gRPC + ghttp workflow. The UI uses `mpr-ui` components plus the TAuth auth-client helper to authenticate, auto-grant 20 coins, execute the 5-coin transaction button, and surface insufficient-funds/zero-balance flows.
 
 - `docker-compose.demo.yml` publishes `ledgerd` on host port `7700` (the container still listens on `7000`) to avoid macOS Control Center occupying `7000`; adjust the mapping if your host needs a different port.
 - `demo/ui/index.html` loads `http://localhost:8080/demo/config.js`, so the `<mpr-header>` automatically consumes the Google OAuth Web Client ID configured in `demo/.env.tauth`. You no longer have to edit the HTML file when rotating credentials—update the env file and restart the stack.

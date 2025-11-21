@@ -1,4 +1,4 @@
-package demoapi
+package demobackend
 
 import (
 	"bytes"

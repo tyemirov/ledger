@@ -6,7 +6,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
 
 1. **ledgerd** (`cmd/credit`) – append-only ledger exposed via gRPC on `:7000` (published as `7700` on the host when using Compose to avoid macOS Control Center conflicts).
 2. **TAuth** (`tools/TAuth`) – Google Sign-In + JWT session issuer on `:8080`.
-3. **demoapi** (`cmd/demoapi`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
+3. **demo backend** (`cmd/demobackend`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
 4. **ghttp** (`ghcr.io/temirov/ghttp`) – static server for `demo/ui` on `:8000`.
 
 ## Manual Run (Go toolchain)
@@ -28,10 +28,10 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
    APP_DATABASE_URL=sqlite:///data/tauth.db \
    go run ./cmd/server
    ```
-3. **demoapi** (signing key, issuer, cookie name, and timeout must match TAuth)
+3. **demo backend** (signing key, issuer, cookie name, and timeout must match TAuth)
    ```bash
    DEMOAPI_LISTEN_ADDR=:9090 \
-   DEMOAPI_LEDGER_ADDR=localhost:7000 \
+   DEMOAPI_LEDGER_ADDR=localhost:50051 \
    DEMOAPI_LEDGER_INSECURE=true \
    DEMOAPI_LEDGER_TIMEOUT=3s \
    DEMOAPI_ALLOWED_ORIGINS=http://localhost:8000 \
@@ -39,7 +39,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
    DEMOAPI_JWT_ISSUER=mprlab-auth \
    DEMOAPI_JWT_COOKIE_NAME=app_session \
    DEMOAPI_TAUTH_BASE_URL=http://localhost:8080 \
-   go run ./cmd/demoapi
+   go run ./cmd/demobackend
    ```
 4. **Static UI** (requires `ghttp` binary or Docker image)
    ```bash
@@ -61,7 +61,7 @@ The repository ships `docker-compose.demo.yml` plus env templates so you can run
    ```bash
    docker compose -f docker-compose.demo.yml up --build
    ```
-3. Visit `http://localhost:8000` (ghttp), `http://localhost:9090/api/wallet` (demoapi), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `http://localhost:8080/demo/config.js`, so whatever Google OAuth Web Client ID you set in `demo/.env.tauth` is automatically injected into `<mpr-header>`—no need to edit the HTML file manually.
+3. Visit `http://localhost:8000` (ghttp), `http://localhost:9090/api/wallet` (demo backend), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `http://localhost:8080/demo/config.js`, so whatever Google OAuth Web Client ID you set in `demo/.env.tauth` is automatically injected into `<mpr-header>`—no need to edit the HTML file manually.
 4. Stop everything with `docker compose -f docker-compose.demo.yml down`.
 
 Volumes `ledger_data` and `tauth_data` persist ledger entries plus refresh tokens. Remove them with `docker volume rm ledger_ledger_data ledger_tauth_data` if you need a fresh state.
@@ -78,7 +78,7 @@ Once authenticated:
 
 Monitor logs for:
 
-- `demoapi`: zap logs containing `status` + `user_id` fields.
+- Demo backend: zap logs containing `status` + `user_id` fields.
 - `ledgerd`: gRPC operations landing in the ledger.
 - `tauth`: nonce/login/refresh lifecycle.
 
