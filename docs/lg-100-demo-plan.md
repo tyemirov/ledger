@@ -30,7 +30,7 @@ Components:
 ## Component Responsibilities & Integration Details
 
 ### Ledger gRPC (`cmd/credit`)
-- Run `creditd` via `DATABASE_URL=sqlite:///tmp/demo-ledger.db GRPC_LISTEN_ADDR=:7000 creditd`.
+- Run `ledgerd` via `DATABASE_URL=sqlite:///tmp/demo-ledger.db GRPC_LISTEN_ADDR=:7000 ledgerd`.
 - Operations that the demo backend will call:
   - `Grant(user_id, amount_cents=2000, idempotency_key=bootstrap:<user>)` to seed new accounts.
   - `Spend(user_id, amount_cents=500, idempotency_key=spend:<uuid>)` whenever the user clicks the 5-coin button.
@@ -94,7 +94,7 @@ Components:
 
 ### Local Orchestration / Compose
 - Add `docker-compose.demo.yml` with services:
-  - `ledger`: runs `creditd` with SQLite volume `./tmp/data:/app/data`.
+  - `ledger`: runs `ledgerd` with SQLite volume `./tmp/data:/app/data`.
   - `tauth`: builds from `tools/TAuth` or pulls published image; loads `.env.tauth`.
   - `demoapi`: builds from the repo, depends on ledger + tauth, shares `APP_JWT_SIGNING_KEY`.
   - `ghttp`: uses `ghcr.io/temirov/ghttp:latest`, mounts `demo/ui`, serves on `8000`.

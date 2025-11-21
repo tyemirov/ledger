@@ -164,7 +164,7 @@ func startLedgerClient(t *testing.T) (creditv1.CreditServiceClient, func()) {
 	clock := func() int64 { return time.Now().UTC().Unix() }
 	service, err := credit.NewService(store, clock)
 	if err != nil {
-		t.Fatalf("credit service init failed: %v", err)
+		t.Fatalf("ledger service init failed: %v", err)
 	}
 
 	listener := bufconn.Listen(bufconnSize)
