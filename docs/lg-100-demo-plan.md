@@ -30,7 +30,7 @@ Components:
 ## Component Responsibilities & Integration Details
 
 ### Ledger gRPC (`cmd/credit`)
-- Run `ledgerd` via `DATABASE_URL=sqlite:///tmp/demo-ledger.db GRPC_LISTEN_ADDR=:7000 ledgerd`.
+- Run `ledgerd` via `DATABASE_URL=sqlite:///tmp/demo-ledger.db GRPC_LISTEN_ADDR=:50051 ledgerd`.
 - Operations that the demo backend will call:
   - `Grant(user_id, amount_cents=2000, idempotency_key=bootstrap:<user>)` to seed new accounts.
   - `Spend(user_id, amount_cents=500, idempotency_key=spend:<uuid>)` whenever the user clicks the 5-coin button.
@@ -53,7 +53,7 @@ Components:
   - `DEMOAPI_LISTEN_ADDR` (HTTP port, default `:9090`).
   - `DEMOAPI_TAUTH_BASE_URL` (default `http://localhost:8080`) to reuse in documentation/responses.
   - `DEMOAPI_JWT_SIGNING_KEY` + `DEMOAPI_JWT_ISSUER` to set up the session validator.
-  - `DEMOAPI_LEDGER_ADDR` for the gRPC endpoint (default `localhost:7000`).
+  - `DEMOAPI_LEDGER_ADDR` for the gRPC endpoint (default `localhost:50051`).
 - Wire a shared `grpc.ClientConn` to `creditv1.NewCreditServiceClient` with unary interceptors for logging/timeouts.
 - Expose the following HTTP endpoints (all JSON, served after the auth middleware):
 

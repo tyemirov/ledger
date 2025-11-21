@@ -4,7 +4,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
 
 ## Components
 
-1. **ledgerd** (`cmd/credit`) – append-only ledger exposed via gRPC on `:7000` (published as `7700` on the host when using Compose to avoid macOS Control Center conflicts).
+1. **ledgerd** (`cmd/credit`) – append-only ledger exposed via gRPC on `:50051`.
 2. **TAuth** (`tools/TAuth`) – Google Sign-In + JWT session issuer on `:8080`.
 3. **demoapi** (`cmd/demoapi`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
 4. **ghttp** (`ghcr.io/temirov/ghttp`) – static server for `demo/ui` on `:8000`.
@@ -13,7 +13,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
 
 1. **ledgerd**
    ```bash
-   DATABASE_URL=sqlite:///tmp/demo-ledger.db GRPC_LISTEN_ADDR=:7000 go run ./cmd/credit
+   DATABASE_URL=sqlite:///tmp/demo-ledger.db GRPC_LISTEN_ADDR=:50051 go run ./cmd/credit
    ```
 2. **TAuth** (run from `tools/TAuth` and reuse its README instructions)
    ```bash
@@ -31,7 +31,7 @@ This document mirrors `docs/lg-100-demo-plan.md` and describes how to run the en
 3. **demoapi** (signing key, issuer, cookie name, and timeout must match TAuth)
    ```bash
    DEMOAPI_LISTEN_ADDR=:9090 \
-   DEMOAPI_LEDGER_ADDR=localhost:7000 \
+   DEMOAPI_LEDGER_ADDR=localhost:50051 \
    DEMOAPI_LEDGER_INSECURE=true \
    DEMOAPI_LEDGER_TIMEOUT=3s \
    DEMOAPI_ALLOWED_ORIGINS=http://localhost:8000 \
@@ -57,7 +57,7 @@ The repository ships `docker-compose.demo.yml` plus env templates so you can run
    cp demo/.env.tauth.example demo/.env.tauth
    ```
    Edit both files so `DEMOAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID.
-2. Start the stack (`ledgerd` binds to host port `7700` so macOS Control Center can keep port `7000`; adjust `docker-compose.demo.yml` if your machine exposes a different port):
+2. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `docker-compose.demo.yml` if your machine needs a different port):
    ```bash
    docker compose -f docker-compose.demo.yml up --build
    ```
