@@ -23,6 +23,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+var errUnimplemented = errors.New("unimplemented")
+
 // Run boots the HTTP façade using the supplied configuration.
 func Run(ctx context.Context, cfg Config) error {
 	logger, err := zap.NewProduction()
