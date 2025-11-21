@@ -25,17 +25,14 @@ lint: tools
 	staticcheck $(STATICCHECK_PACKAGES)
 	ineffassign $(UNIT_TEST_PACKAGES)
 
-test: test-unit test-integration
+test: test-unit
 
 test-unit:
 	go test $(UNIT_TEST_PACKAGES)
 	go test ./internal/credit -coverprofile=coverage.out -covermode=count
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 80.0) { print "coverage below 80%"; exit 1 } }'
 
-test-integration:
-	@true
-
-ci: check-format lint test-unit test-integration
+ci: check-format lint test-unit
 
 tools:
 	@command -v staticcheck >/dev/null 2>&1 || go install honnef.co/go/tools/cmd/staticcheck@latest
