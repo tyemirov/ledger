@@ -20,7 +20,7 @@ import (
 const bufconnSize = 1 << 20
 
 func TestDemoAPITransactionsAndPurchases(t *testing.T) {
-	ledgerClient, cleanup := startLedgerClient(t)
+	ledgerClient, fakeServer, cleanup := startLedgerClient(t)
 	defer cleanup()
 
 	cfg := Config{
@@ -52,6 +52,16 @@ func TestDemoAPITransactionsAndPurchases(t *testing.T) {
 	handler.handleBootstrap(bootstrapCtx)
 	if bootstrapRecorder.Code != http.StatusOK {
 		t.Fatalf("bootstrap status=%d body=%s", bootstrapRecorder.Code, bootstrapRecorder.Body.String())
+	}
+	// second bootstrap should no-op without hitting Grant again.
+	secondCtx, secondRecorder := newTestContext(http.MethodPost, "/api/bootstrap", nil)
+	secondCtx.Set("auth_claims", authClaims)
+	handler.handleBootstrap(secondCtx)
+	if secondRecorder.Code != http.StatusOK {
+		t.Fatalf("second bootstrap status=%d body=%s", secondRecorder.Code, secondRecorder.Body.String())
+	}
+	if fakeServer.grantCalls != 1 {
+		t.Fatalf("expected exactly one grant call, got %d", fakeServer.grantCalls)
 	}
 	wallet := readWallet(t, handler, authClaims.GetUserID())
 	if wallet.Balance.TotalCoins != 20 {
@@ -107,11 +117,12 @@ func readWallet(t *testing.T, handler *httpHandler, userID string) *walletRespon
 	return wallet
 }
 
-func startLedgerClient(t *testing.T) (creditv1.CreditServiceClient, func()) {
+func startLedgerClient(t *testing.T) (creditv1.CreditServiceClient, *fakeLedgerServer, func()) {
 	t.Helper()
 	listener := bufconn.Listen(bufconnSize)
 	grpcServer := grpc.NewServer()
-	creditv1.RegisterCreditServiceServer(grpcServer, newFakeLedgerServer())
+	fakeServer := newFakeLedgerServer()
+	creditv1.RegisterCreditServiceServer(grpcServer, fakeServer)
 
 	go func() {
 		if serveErr := grpcServer.Serve(listener); serveErr != nil {
@@ -137,7 +148,7 @@ func startLedgerClient(t *testing.T) (creditv1.CreditServiceClient, func()) {
 		grpcServer.Stop()
 		_ = conn.Close()
 	}
-	return creditv1.NewCreditServiceClient(conn), cleanup
+	return creditv1.NewCreditServiceClient(conn), fakeServer, cleanup
 }
 
 type fakeLedgerServer struct {
@@ -145,6 +156,7 @@ type fakeLedgerServer struct {
 	balanceCents    int64
 	entries         []*creditv1.Entry
 	seenIdempotency map[string]struct{}
+	grantCalls      int
 }
 
 func newFakeLedgerServer() *fakeLedgerServer {
@@ -155,6 +167,7 @@ func newFakeLedgerServer() *fakeLedgerServer {
 }
 
 func (srv *fakeLedgerServer) Grant(_ context.Context, request *creditv1.GrantRequest) (*creditv1.Empty, error) {
+	srv.grantCalls++
 	if _, exists := srv.seenIdempotency[request.IdempotencyKey]; exists {
 		return nil, status.Error(codes.AlreadyExists, "duplicate")
 	}

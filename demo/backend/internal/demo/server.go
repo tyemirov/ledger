@@ -154,21 +154,52 @@ func (handler *httpHandler) handleBootstrap(ctx *gin.Context) {
 	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), handler.cfg.LedgerTimeout)
 	defer cancel()
 
-	_, err := handler.ledgerClient.Grant(requestCtx, &creditv1.GrantRequest{
-		UserId:           claims.GetUserID(),
+	if err := handler.ensureBootstrap(requestCtx, claims.GetUserID()); err != nil {
+		handler.logger.Error("bootstrap grant failed", zap.Error(err))
+		ctx.JSON(http.StatusBadGateway, errorResponse("ledger_error", "grant failed"))
+		return
+	}
+	handler.respondWithWallet(ctx, claims.GetUserID())
+}
+
+func (handler *httpHandler) ensureBootstrap(ctx context.Context, userID string) error {
+	hasGrant, err := handler.hasBootstrapGrant(ctx, userID)
+	if err != nil {
+		handler.logger.Warn("bootstrap grant check failed", zap.Error(err))
+	}
+	if hasGrant {
+		return nil
+	}
+	_, err = handler.ledgerClient.Grant(ctx, &creditv1.GrantRequest{
+		UserId:           userID,
 		AmountCents:      BootstrapAmountCents(),
-		IdempotencyKey:   fmt.Sprintf("bootstrap:%s", claims.GetUserID()),
+		IdempotencyKey:   fmt.Sprintf("bootstrap:%s", userID),
 		MetadataJson:     marshalMetadata(map[string]string{"action": "bootstrap"}),
 		ExpiresAtUnixUtc: 0,
 	})
+	if err != nil && !isGRPCAlreadyExists(err) {
+		return err
+	}
+	return nil
+}
+
+func (handler *httpHandler) hasBootstrapGrant(ctx context.Context, userID string) (bool, error) {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, handler.cfg.LedgerTimeout)
+	defer cancel()
+	response, err := handler.ledgerClient.ListEntries(ctxWithTimeout, &creditv1.ListEntriesRequest{
+		UserId: userID,
+		Limit:  200,
+	})
 	if err != nil {
-		if !isGRPCAlreadyExists(err) {
-			handler.logger.Error("bootstrap grant failed", zap.Error(err))
-			ctx.JSON(http.StatusBadGateway, errorResponse("ledger_error", "grant failed"))
-			return
+		return false, err
+	}
+	targetKey := fmt.Sprintf("bootstrap:%s", userID)
+	for _, entry := range response.GetEntries() {
+		if entry.GetIdempotencyKey() == targetKey {
+			return true, nil
 		}
 	}
-	handler.respondWithWallet(ctx, claims.GetUserID())
+	return false, nil
 }
 
 func (handler *httpHandler) handleWallet(ctx *gin.Context) {
