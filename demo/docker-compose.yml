@@ -1,8 +1,9 @@
 services:
   ledger:
-    image: ghcr.io/tyemirov/ledgerd:latest
-    container_name: ledger-ledgerd
+    image: ghcr.io/tyemirov/ledger:latest
+    container_name: ledger-ledger
     environment:
+      - GRPC_LISTEN_ADDR=:50051
       - DATABASE_URL=sqlite:///data/demo-ledger.db
     volumes:
       - ledger_data:/data
@@ -14,7 +15,7 @@ services:
     image: ghcr.io/tyemirov/tauth:latest
     container_name: ledger-tauth
     env_file:
-      - ./env.tauth
+      - ./.env.tauth
     volumes:
       - tauth_data:/data
     ports:
@@ -28,7 +29,7 @@ services:
     image: ledger-demoapi:latest
     container_name: ledger-demoapi
     env_file:
-      - ./env.demoapi
+      - ./.env.demoapi
     depends_on:
       - ledger
       - tauth
