@@ -44,7 +44,7 @@ The ledger gRPC server does not implement end-user authentication. Deploy it on 
 
 ## Requirements
 
-* Go 1.21+
+* Go 1.25+
 * SQLite (default file-based runtime) or PostgreSQL 13+ if you supply a Postgres `DATABASE_URL`
 * `protoc` with Go plugins (`protoc-gen-go`, `protoc-gen-go-grpc`)
 
