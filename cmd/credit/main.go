@@ -125,7 +125,8 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 
 	store := gormstore.New(gormDB)
 	clock := func() int64 { return time.Now().UTC().Unix() }
-	creditService, err := ledger.NewService(store, clock)
+	opLogger := &zapOperationLogger{logger: logger}
+	creditService, err := ledger.NewService(store, clock, ledger.WithOperationLogger(opLogger))
 	if err != nil {
 		return fmt.Errorf("ledger service init: %w", err)
 	}
@@ -197,6 +198,49 @@ func newLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 		}
 		return response, err
 	}
+}
+
+type zapOperationLogger struct {
+	logger *zap.Logger
+}
+
+func (l *zapOperationLogger) LogOperation(_ context.Context, entry ledger.OperationLog) {
+	if l == nil || l.logger == nil {
+		return
+	}
+	status := entry.Status
+	if status == "" {
+		if entry.Error != nil {
+			status = "error"
+		} else {
+			status = "ok"
+		}
+	}
+	fields := []zap.Field{
+		zap.String("operation", entry.Operation),
+		zap.String("status", status),
+	}
+	if user := entry.UserID.String(); user != "" {
+		fields = append(fields, zap.String("user_id", user))
+	}
+	if entry.Amount != 0 {
+		fields = append(fields, zap.Int64("amount_cents", int64(entry.Amount)))
+	}
+	if reservation := entry.ReservationID.String(); reservation != "" {
+		fields = append(fields, zap.String("reservation_id", reservation))
+	}
+	if key := entry.IdempotencyKey.String(); key != "" {
+		fields = append(fields, zap.String("idempotency_key", key))
+	}
+	if metadata := entry.Metadata.String(); metadata != "" && metadata != "{}" {
+		fields = append(fields, zap.String("metadata", metadata))
+	}
+	if entry.Error != nil {
+		fields = append(fields, zap.Error(entry.Error))
+		l.logger.Error("ledger.operation", fields...)
+		return
+	}
+	l.logger.Info("ledger.operation", fields...)
 }
 
 func openDatabase(ctx context.Context, dsn string) (*gorm.DB, func() error, string, error) {

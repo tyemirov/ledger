@@ -4,7 +4,7 @@ import "context"
 
 // Spend debits the user's available balance immediately (no hold).
 func (service *Service) Spend(requestContext context.Context, userID UserID, amount AmountCents, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
-	return service.store.WithTx(requestContext, func(ctx context.Context, transactionStore Store) error {
+	err := service.store.WithTx(requestContext, func(ctx context.Context, transactionStore Store) error {
 		accountID, accountError := transactionStore.GetOrCreateAccountID(ctx, userID.String())
 		if accountError != nil {
 			return accountError
@@ -31,6 +31,15 @@ func (service *Service) Spend(requestContext context.Context, userID UserID, amo
 			CreatedUnixUTC: nowUnix,
 		})
 	})
+	service.logOperation(requestContext, OperationLog{
+		Operation:      "spend",
+		UserID:         userID,
+		Amount:         amount,
+		IdempotencyKey: idempotencyKey,
+		Metadata:       metadata,
+		Error:          err,
+	})
+	return err
 }
 
 // ListEntries lists ledger entries for a user before a cutoff time.
