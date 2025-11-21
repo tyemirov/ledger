@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
-	"github.com/MarkoPoloResearchLab/ledger/internal/credit"
 	"github.com/MarkoPoloResearchLab/ledger/internal/grpcserver"
 	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
+	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"github.com/glebarez/sqlite"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -125,7 +125,7 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 
 	store := gormstore.New(gormDB)
 	clock := func() int64 { return time.Now().UTC().Unix() }
-	creditService, err := credit.NewService(store, clock)
+	creditService, err := ledger.NewService(store, clock)
 	if err != nil {
 		return fmt.Errorf("ledger service init: %w", err)
 	}

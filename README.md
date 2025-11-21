@@ -30,7 +30,7 @@ It is intentionally **application-agnostic** — you decide when and why credits
  [Ledger Service]  <--->  PostgreSQL
 ```
 
-* `internal/credit` – core domain logic (ledger)
+* `pkg/ledger` – core domain logic (ledger) reusable as a Go module
 * `internal/store/pgstore` – PostgreSQL implementation of `credit.Store`
 * `internal/grpcserver` – gRPC API bindings
 * `api/credit/v1` – protobuf definitions
@@ -38,6 +38,10 @@ It is intentionally **application-agnostic** — you decide when and why credits
 ### Network exposure and auth
 
 The ledger gRPC server does not implement end-user authentication. Deploy it on a private interface (loopback/cluster-internal) and front it with an HTTP gateway that performs session validation and enforces request rules. In Compose/Kubernetes, point the gateway at `ledger:50051`/`localhost:50051` on the internal network and expose only the gateway externally. Add mTLS or a JWT-validating interceptor at the gRPC layer only if future topologies require crossing trust boundaries.
+
+### Library vs. service
+
+You can run the hosted service (`cmd/credit`) or embed the domain logic via `pkg/ledger`. See `docs/integration.md` for end-to-end guidance on both integration styles.
 
 ---
 
