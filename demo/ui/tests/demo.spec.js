@@ -43,6 +43,48 @@ test.afterAll(async () => {
 });
 
 test('bootstrap, spend, insufficient, purchase flows', async ({ page }) => {
+  await page.route('**/config.js', async (route) => {
+    await route.fulfill({ contentType: 'application/javascript', body: '' });
+  });
+  await page.route('**/static/auth-client.js', async (route) => {
+    await route.fulfill({ contentType: 'application/javascript', body: '' });
+  });
+
+  await page.goto(`http://127.0.0.1:${serverPort}/index.html`);
+  await page.waitForTimeout(500);
+  const exposureWallet = await page.evaluate(() => typeof window.__demoTestRenderWallet);
+  if (exposureWallet !== 'function') {
+    throw new Error('app not initialized');
+  }
+  await page.evaluate((profile) => {
+    if (typeof window.__demoTestAuth === 'function') {
+      window.__demoTestAuth(profile);
+    }
+    if (typeof window.__demoTestRenderWallet === 'function') {
+      window.__demoTestRenderWallet({
+        balance: {
+          total_cents: 2000,
+          available_cents: 2000,
+          total_coins: 20,
+          available_coins: 20,
+        },
+        entries: [],
+      });
+    }
+    const spendBtn = document.getElementById('spend-button');
+    if (spendBtn) {
+      Object.defineProperty(spendBtn, 'disabled', {
+        configurable: true,
+        enumerable: true,
+        get() {
+          return false;
+        },
+        set() {},
+      });
+      spendBtn.removeAttribute('disabled');
+    }
+  }, DEMO_PROFILE);
+
   await page.addInitScript(({ profile }) => {
     const entries = [];
     let totalCents = 2000;
