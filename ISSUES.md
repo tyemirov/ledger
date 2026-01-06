@@ -59,7 +59,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Promote `internal/credit` into a public `pkg/ledger` module with explicit domain types and invariants.
     - Define a storage interface suitable for both in-process and service-hosted deployments.
     - Provide a default SQL-backed implementation (adapting existing gorm stores) while keeping the core domain independent of GORM.
-- [ ] [LG-203] Add integration documentation for service and library usage.
+- [ ] [LG-203] (P2) Add integration documentation for service and library usage.
   - Document how to run ledger as a standalone gRPC microservice (config, migrations, networking) and how to consume it from other languages.
     - Document how to embed the future `pkg/ledger` library in Go services, including storage wiring, transaction patterns, and error contracts.
 
