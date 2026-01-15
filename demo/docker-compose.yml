@@ -6,7 +6,7 @@ services:
     env_file:
       - ../.env.ledger
     volumes:
-      - ledger_data:${LEDGER_DATA_DIR}
+      - ledger_data:/srv/data
     ports:
       - "50051:50051"
     restart: unless-stopped

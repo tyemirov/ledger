@@ -222,7 +222,7 @@ make test  # executes go test with >=95% coverage enforcement for internal packa
 make ci    # runs fmt + lint + test
 ```
 
-Docker Compose reads configuration from `.env.ledger` (including `LEDGER_DATA_DIR` for the data volume); use `docker compose --env-file .env.ledger ...` so volume targets resolve correctly.
+Docker Compose reads configuration from `.env.ledger`, so the container runtime matches the CLI flag/environment setup.
 
 ---
 
