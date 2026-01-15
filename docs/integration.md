@@ -11,7 +11,13 @@ This document explains how consumers can adopt the ledger either as a standalone
 DATABASE_URL=sqlite:///tmp/ledger.db GRPC_LISTEN_ADDR=:50051 ./ledgerd
 ```
 
-The server automatically prepares the schema, listens for gRPC requests, and logs every RPC (method, duration, code, user_id when present). Integration steps for any language:
+SQLite databases are created automatically. For Postgres, apply the schema first:
+
+```bash
+psql -h localhost -U postgres -d credit -f db/migrations.sql
+```
+
+The server prepares the schema, listens for gRPC requests, and logs every RPC (method, duration, code, user_id when present). Deploy the gRPC port on a private interface or internal network, then front it with your gateway for authentication and rate limiting. Integration steps for any language:
 
 * Generate gRPC stubs from `api/credit/v1/credit.proto`.
 * Call the relevant RPCs (`Grant`, `Spend`, `Reserve`, `ListEntries`, etc.) using the user identifier that represents your account in the ledger.
@@ -39,11 +45,36 @@ func newLedgerService(db *gorm.DB, clock func() int64) (*ledger.Service, error) 
 
 * `ledger.Service` defines operations (`Grant`, `Spend`, `Reserve`, `Capture`, `Release`, `Balance`, `ListEntries`).
 * `ledger.Store` is the storage interface. Use `internal/store/gormstore` for GORM-backed projects or `internal/store/pgstore` for pgx pools. Custom stores can satisfy the interface to target other databases.
-* Validation happens at the edge: construct `ledger.UserID`, `ledger.IdempotencyKey`, `ledger.AmountCents`, etc., before invoking the service.
+* Validation happens at the edge: construct `ledger.UserID`, `ledger.PositiveAmountCents`, `ledger.ReservationID`, `ledger.IdempotencyKey`, and `ledger.MetadataJSON` before invoking the service.
+* Store implementations consume `ledger.EntryInput` values and return `ledger.Entry` records; use the smart constructors (`NewEntryInput`, `NewEntry`, `NewReservation`) to enforce invariants.
 
 When embedding, reuse your existing application database and transaction management. Because the ledger code does not spawn goroutines or hold globals, you can scope it per request or as a singleton.
 
-### 3. Choosing an approach
+Example edge construction:
+
+```go
+userID, err := ledger.NewUserID(request.UserId)
+amount, err := ledger.NewPositiveAmountCents(request.AmountCents)
+reservationID, err := ledger.NewReservationID(request.ReservationId)
+idempotencyKey, err := ledger.NewIdempotencyKey(request.IdempotencyKey)
+metadata, err := ledger.NewMetadataJSON(request.MetadataJson)
+```
+
+The service methods expect these domain types and will return domain errors if business rules are violated.
+
+### 3. Error contracts
+
+The ledger returns sentinel errors you can match with `errors.Is`:
+
+* `ErrInvalidUserID`, `ErrInvalidReservationID`, `ErrInvalidIdempotencyKey`, `ErrInvalidAmountCents`, `ErrInvalidMetadataJSON` for input validation failures.
+* `ErrInsufficientFunds` when a spend or reserve would overdraw the account.
+* `ErrDuplicateIdempotencyKey` when a request reuses an idempotency key.
+* `ErrReservationExists`, `ErrUnknownReservation`, `ErrReservationClosed` for reservation state issues.
+
+Store adapters wrap errors with `ledger.OperationError` so downstream callers can log stable codes (`operation.subject.code`).
+At the gRPC boundary, these map to standard gRPC codes (InvalidArgument, AlreadyExists, FailedPrecondition, NotFound).
+
+### 4. Choosing an approach
 
 | Scenario                              | Recommended path                        |
 |--------------------------------------|-----------------------------------------|
