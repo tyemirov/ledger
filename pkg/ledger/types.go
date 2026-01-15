@@ -31,6 +31,11 @@ type UserID struct {
 	value string
 }
 
+// LedgerID identifies a user ledger namespace.
+type LedgerID struct {
+	value string
+}
+
 // ReservationID identifies a reservation.
 type ReservationID struct {
 	value string
@@ -125,6 +130,20 @@ func NewUserID(raw string) (UserID, error) {
 
 // String returns the normalized identifier.
 func (id UserID) String() string {
+	return id.value
+}
+
+// NewLedgerID validates and normalizes a ledger id.
+func NewLedgerID(raw string) (LedgerID, error) {
+	normalized, err := normalizeIdentifier(raw, ErrInvalidLedgerID)
+	if err != nil {
+		return LedgerID{}, err
+	}
+	return LedgerID{value: normalized}, nil
+}
+
+// String returns the normalized identifier.
+func (id LedgerID) String() string {
 	return id.value
 }
 
@@ -495,7 +514,7 @@ func (entry Entry) CreatedUnixUTC() int64 {
 // Store is the persistence contract used by Service.
 type Store interface {
 	WithTx(ctx context.Context, fn func(ctx context.Context, txStore Store) error) error
-	GetOrCreateAccountID(ctx context.Context, userID UserID) (AccountID, error)
+	GetOrCreateAccountID(ctx context.Context, userID UserID, ledgerID LedgerID) (AccountID, error)
 	InsertEntry(ctx context.Context, entry EntryInput) error
 	SumTotal(ctx context.Context, accountID AccountID, atUnixUTC int64) (AmountCents, error)
 	SumActiveHolds(ctx context.Context, accountID AccountID, atUnixUTC int64) (AmountCents, error)

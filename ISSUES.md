@@ -17,7 +17,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 - [x] [LG-205] (P2) Add integration documentation for service and library usage. Resolved: expanded integration guide with domain types, store wiring, and error contracts.
   - Document how to run ledger as a standalone gRPC microservice (config, migrations, networking) and how to consume it from other languages.
     - Document how to embed the future `pkg/ledger` library in Go services, including storage wiring, transaction patterns, and error contracts.
-- [ ] [LG-206] (P2) Support multiple ledgers per user.
+- [x] [LG-206] (P2) Support multiple ledgers per user. Resolved: ledger_id threaded through API/service/store/schema; demo/docs updated; migration path omitted per no-backward-compat requirement.
   - Allow a single user_id to own multiple ledger accounts (introduce a ledger/account namespace or composite key).
     - Update storage constraints, API inputs, and reservation/entry lookups to include the ledger identifier.
     - Provide a migration path for existing single-ledger data.

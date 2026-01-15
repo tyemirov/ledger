@@ -25,6 +25,8 @@ import (
 
 var errUnimplemented = errors.New("unimplemented")
 
+const defaultLedgerID = "default"
+
 // Run boots the HTTP façade using the supplied configuration.
 func Run(ctx context.Context, cfg Config) error {
 	logger, err := zap.NewProduction()
@@ -176,6 +178,7 @@ func (handler *httpHandler) ensureBootstrap(ctx context.Context, userID string) 
 		IdempotencyKey:   fmt.Sprintf("bootstrap:%s", userID),
 		MetadataJson:     marshalMetadata(map[string]string{"action": "bootstrap"}),
 		ExpiresAtUnixUtc: 0,
+		LedgerId:         defaultLedgerID,
 	})
 	if err != nil && !isGRPCAlreadyExists(err) {
 		return err
@@ -187,8 +190,9 @@ func (handler *httpHandler) hasBootstrapGrant(ctx context.Context, userID string
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, handler.cfg.LedgerTimeout)
 	defer cancel()
 	response, err := handler.ledgerClient.ListEntries(ctxWithTimeout, &creditv1.ListEntriesRequest{
-		UserId: userID,
-		Limit:  200,
+		UserId:   userID,
+		Limit:    200,
+		LedgerId: defaultLedgerID,
 	})
 	if err != nil {
 		return false, err
@@ -236,6 +240,7 @@ func (handler *httpHandler) handleTransaction(ctx *gin.Context) {
 		AmountCents:    TransactionAmountCents(),
 		IdempotencyKey: fmt.Sprintf("spend:%s", uuid.NewString()),
 		MetadataJson:   marshalMetadata(metadata),
+		LedgerId:       defaultLedgerID,
 	})
 	if err != nil {
 		if isGRPCInsufficientFunds(err) {
@@ -278,6 +283,7 @@ func (handler *httpHandler) handlePurchase(ctx *gin.Context) {
 		AmountCents:    request.Coins * CoinValueCents(),
 		IdempotencyKey: fmt.Sprintf("purchase:%s", uuid.NewString()),
 		MetadataJson:   marshalMetadata(metadata),
+		LedgerId:       defaultLedgerID,
 	})
 	if err != nil {
 		handler.logger.Error("purchase grant failed", zap.Error(err))
@@ -313,7 +319,10 @@ func (handler *httpHandler) respondWithWallet(ctx *gin.Context, userID string) {
 func (handler *httpHandler) fetchWallet(ctx context.Context, userID string) (*walletResponse, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, handler.cfg.LedgerTimeout)
 	defer cancel()
-	balanceResp, err := handler.ledgerClient.GetBalance(requestCtx, &creditv1.BalanceRequest{UserId: userID})
+	balanceResp, err := handler.ledgerClient.GetBalance(requestCtx, &creditv1.BalanceRequest{
+		UserId:   userID,
+		LedgerId: defaultLedgerID,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -324,6 +333,7 @@ func (handler *httpHandler) fetchWallet(ctx context.Context, userID string) (*wa
 		UserId:        userID,
 		Limit:         WalletHistoryLimit(),
 		BeforeUnixUtc: time.Now().UTC().Add(time.Second).Unix(),
+		LedgerId:      defaultLedgerID,
 	})
 	if err != nil {
 		return nil, err

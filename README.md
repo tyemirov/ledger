@@ -117,7 +117,7 @@ Below are example calls using [`grpcurl`](https://github.com/fullstorydev/grpcur
 ### Check balance
 
 ```bash
-grpcurl -plaintext -d '{"user_id":"user123"}' localhost:50051 credit.v1.CreditService/GetBalance
+grpcurl -plaintext -d '{"user_id":"user123","ledger_id":"default"}' localhost:50051 credit.v1.CreditService/GetBalance
 ```
 
 Response:
@@ -134,6 +134,7 @@ Response:
 ```bash
 grpcurl -plaintext -d '{
   "user_id":"user123",
+  "ledger_id":"default",
   "amount_cents": 1000,
   "idempotency_key":"grant-1",
   "expires_at_unix_utc":0,
@@ -146,6 +147,7 @@ grpcurl -plaintext -d '{
 ```bash
 grpcurl -plaintext -d '{
   "user_id":"user123",
+  "ledger_id":"default",
   "amount_cents": 500,
   "reservation_id":"order-555",
   "idempotency_key":"reserve-1",
@@ -158,6 +160,7 @@ grpcurl -plaintext -d '{
 ```bash
 grpcurl -plaintext -d '{
   "user_id":"user123",
+  "ledger_id":"default",
   "reservation_id":"order-555",
   "idempotency_key":"capture-1",
   "amount_cents":500,
@@ -170,6 +173,7 @@ grpcurl -plaintext -d '{
 ```bash
 grpcurl -plaintext -d '{
   "user_id":"user123",
+  "ledger_id":"default",
   "reservation_id":"order-555",
   "idempotency_key":"release-1",
   "metadata_json":"{\"order_id\":555}"
@@ -181,6 +185,7 @@ grpcurl -plaintext -d '{
 ```bash
 grpcurl -plaintext -d '{
   "user_id":"user123",
+  "ledger_id":"default",
   "amount_cents": 200,
   "idempotency_key":"spend-1",
   "metadata_json":"{\"action\":\"purchase\"}"
@@ -192,6 +197,7 @@ grpcurl -plaintext -d '{
 ```bash
 grpcurl -plaintext -d '{
   "user_id":"user123",
+  "ledger_id":"default",
   "before_unix_utc": 1893456000,
   "limit": 20
 }' localhost:50051 credit.v1.CreditService/ListEntries

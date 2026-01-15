@@ -167,6 +167,10 @@ type userIDGetter interface {
 	GetUserId() string
 }
 
+type ledgerIDGetter interface {
+	GetLedgerId() string
+}
+
 func extractUserID(request interface{}) string {
 	getter, ok := request.(userIDGetter)
 	if !ok {
@@ -174,6 +178,15 @@ func extractUserID(request interface{}) string {
 	}
 	userID := strings.TrimSpace(getter.GetUserId())
 	return userID
+}
+
+func extractLedgerID(request interface{}) string {
+	getter, ok := request.(ledgerIDGetter)
+	if !ok {
+		return ""
+	}
+	ledgerID := strings.TrimSpace(getter.GetLedgerId())
+	return ledgerID
 }
 
 func newLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
@@ -189,6 +202,9 @@ func newLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 		}
 		if userID := extractUserID(request); userID != "" {
 			fields = append(fields, zap.String("user_id", userID))
+		}
+		if ledgerID := extractLedgerID(request); ledgerID != "" {
+			fields = append(fields, zap.String("ledger_id", ledgerID))
 		}
 		if err != nil {
 			logger.Error("grpc request failed", append(fields, zap.Error(err))...)
@@ -222,6 +238,9 @@ func (logger *zapOperationLogger) LogOperation(_ context.Context, entry ledger.O
 	}
 	if user := entry.UserID.String(); user != "" {
 		fields = append(fields, zap.String("user_id", user))
+	}
+	if ledgerID := entry.LedgerID.String(); ledgerID != "" {
+		fields = append(fields, zap.String("ledger_id", ledgerID))
 	}
 	if entry.Amount != 0 {
 		fields = append(fields, zap.Int64("amount_cents", entry.Amount.Int64()))

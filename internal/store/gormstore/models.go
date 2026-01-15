@@ -11,7 +11,8 @@ import (
 // Account represents the accounts table.
 type Account struct {
 	AccountID string    `gorm:"type:uuid;primaryKey"`
-	UserID    string    `gorm:"uniqueIndex;not null"`
+	UserID    string    `gorm:"not null;index:idx_accounts_user_ledger,unique,priority:1"`
+	LedgerID  string    `gorm:"not null;index:idx_accounts_user_ledger,unique,priority:2"`
 	CreatedAt time.Time `gorm:"not null"`
 }
 

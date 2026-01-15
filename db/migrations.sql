@@ -1,7 +1,9 @@
 create extension if not exists pgcrypto;
 create table if not exists accounts(
   account_id uuid primary key default gen_random_uuid(),
-  user_id text not null unique,
+  user_id text not null,
+  ledger_id text not null,
+  unique(user_id, ledger_id),
   created_at timestamptz not null default now()
 );
 

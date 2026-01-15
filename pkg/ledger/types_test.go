@@ -37,6 +37,38 @@ func TestNewUserID(test *testing.T) {
 	}
 }
 
+func TestNewLedgerID(test *testing.T) {
+	test.Parallel()
+	testCases := []struct {
+		name      string
+		input     string
+		wantErr   error
+		wantValue string
+	}{
+		{name: "valid", input: " ledger-123 ", wantValue: "ledger-123"},
+		{name: "empty", input: "   ", wantErr: ErrInvalidLedgerID},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			result, err := NewLedgerID(testCase.input)
+			if testCase.wantErr != nil {
+				if !errors.Is(err, testCase.wantErr) {
+					test.Fatalf("expected error %v, got %v", testCase.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				test.Fatalf("unexpected error: %v", err)
+			}
+			if result.String() != testCase.wantValue {
+				test.Fatalf("expected %q, got %q", testCase.wantValue, result.String())
+			}
+		})
+	}
+}
+
 func TestNewReservationID(test *testing.T) {
 	test.Parallel()
 	_, err := NewReservationID("")

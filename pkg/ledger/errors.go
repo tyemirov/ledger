@@ -15,6 +15,7 @@ var (
 	ErrInvalidAccountID         = errors.New("invalid account id")
 	ErrInvalidEntryID           = errors.New("invalid entry id")
 	ErrInvalidUserID            = errors.New("invalid user id")
+	ErrInvalidLedgerID          = errors.New("invalid ledger id")
 	ErrInvalidReservationID     = errors.New("invalid reservation id")
 	ErrInvalidIdempotencyKey    = errors.New("invalid idempotency key")
 	ErrInvalidAmountCents       = errors.New("invalid amount cents")
