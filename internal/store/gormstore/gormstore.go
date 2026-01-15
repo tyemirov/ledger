@@ -110,7 +110,7 @@ func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInpu
 	return nil
 }
 
-func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
+func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {
 	at := time.Unix(atUnixUTC, 0).UTC()
 	var sum sqlSum
 	err := store.db.WithContext(ctx).
@@ -123,7 +123,7 @@ func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, at
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumTotal, err)
 	}
-	total, err := ledger.NewAmountCents(sum.Total)
+	total, err := ledger.NewSignedAmountCents(sum.Total)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
 	}

@@ -29,6 +29,9 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 ## BugFixes (302–399)
 
+- [x] [LG-303] (P1) Allow negative totals from SumTotal so expired grants don't break balance/spend flows. Resolved: signed totals added; balance/spend now handle negatives without store errors.
+  - Remove rejection of negative sums and ensure Reserve/Spend returns ErrInsufficientFunds when totals are negative.
+
 ## Maintenance (401–499)
 
 - [ ] [LG-400] (P0) Increase test coverage to 95%.

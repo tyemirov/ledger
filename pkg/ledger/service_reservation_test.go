@@ -13,7 +13,7 @@ const (
 
 func TestReserveCreatesReservationAndHoldEntry(test *testing.T) {
 	test.Parallel()
-	store := newStubStore(test, mustAmountCents(test, 100))
+	store := newStubStore(test, mustSignedAmount(test, 100))
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "user-123")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
@@ -46,7 +46,7 @@ func TestReserveCreatesReservationAndHoldEntry(test *testing.T) {
 
 func TestBalanceComputesAvailableFunds(test *testing.T) {
 	test.Parallel()
-	store := newStubStore(test, mustAmountCents(test, 200))
+	store := newStubStore(test, mustSignedAmount(test, 200))
 	reservationID := mustReservationID(test, "active-hold")
 	reservation := mustReservationRecord(test, store.accountID, reservationID, mustPositiveAmount(test, 50), ReservationStatusActive)
 	store.reservations[reservationID] = reservation
@@ -67,9 +67,29 @@ func TestBalanceComputesAvailableFunds(test *testing.T) {
 	}
 }
 
+func TestBalanceAllowsNegativeTotals(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, -25))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "negative-balance-user")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	balance, err := service.Balance(context.Background(), tenantID, userID, ledgerID)
+	if err != nil {
+		test.Fatalf("balance: %v", err)
+	}
+	if balance.TotalCents != SignedAmountCents(-25) {
+		test.Fatalf("expected total -25, got %d", balance.TotalCents)
+	}
+	if balance.AvailableCents != SignedAmountCents(-25) {
+		test.Fatalf("expected available -25, got %d", balance.AvailableCents)
+	}
+}
+
 func TestGrantAppendsGrantEntry(test *testing.T) {
 	test.Parallel()
-	store := newStubStore(test, mustAmountCents(test, 0))
+	store := newStubStore(test, mustSignedAmount(test, 0))
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "grant-user")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
@@ -95,7 +115,7 @@ func TestGrantAppendsGrantEntry(test *testing.T) {
 
 func TestReserveInsufficientFunds(test *testing.T) {
 	test.Parallel()
-	store := newStubStore(test, mustAmountCents(test, 10))
+	store := newStubStore(test, mustSignedAmount(test, 10))
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "reserve-low")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
@@ -113,7 +133,7 @@ func TestReserveInsufficientFunds(test *testing.T) {
 
 func TestCaptureMovesReservationToCaptured(test *testing.T) {
 	test.Parallel()
-	store := newStubStore(test, mustAmountCents(test, 200))
+	store := newStubStore(test, mustSignedAmount(test, 200))
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "user-456")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
@@ -155,7 +175,7 @@ func TestCaptureMovesReservationToCaptured(test *testing.T) {
 
 func TestCaptureAmountMismatch(test *testing.T) {
 	test.Parallel()
-	store := newStubStore(test, mustAmountCents(test, 200))
+	store := newStubStore(test, mustSignedAmount(test, 200))
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "capture-mismatch")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
@@ -176,7 +196,7 @@ func TestCaptureAmountMismatch(test *testing.T) {
 
 func TestCaptureUsesDistinctIdempotencyKeys(test *testing.T) {
 	test.Parallel()
-	store := newStubStore(test, mustAmountCents(test, 120))
+	store := newStubStore(test, mustSignedAmount(test, 120))
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "user-456")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
@@ -214,7 +234,7 @@ func TestCaptureUsesDistinctIdempotencyKeys(test *testing.T) {
 
 func TestReleaseUnlocksReservation(test *testing.T) {
 	test.Parallel()
-	store := newStubStore(test, mustAmountCents(test, 150))
+	store := newStubStore(test, mustSignedAmount(test, 150))
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "user-789")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
@@ -249,7 +269,7 @@ func TestReleaseUnlocksReservation(test *testing.T) {
 
 func TestListEntriesDelegatesToStore(test *testing.T) {
 	test.Parallel()
-	store := newStubStore(test, mustAmountCents(test, 0))
+	store := newStubStore(test, mustSignedAmount(test, 0))
 	accountID := store.accountID
 	entryIDOne := mustEntryID(test, "e1")
 	entryIDTwo := mustEntryID(test, "e2")
@@ -281,7 +301,7 @@ func TestNewServiceRequiresDependencies(test *testing.T) {
 	if !errors.Is(err, ErrInvalidServiceConfig) {
 		test.Fatalf("expected invalid service config error, got %v", err)
 	}
-	store := newStubStore(test, mustAmountCents(test, 0))
+	store := newStubStore(test, mustSignedAmount(test, 0))
 	_, err = NewService(store, nil)
 	if !errors.Is(err, ErrInvalidServiceConfig) {
 		test.Fatalf("expected invalid service config error, got %v", err)
@@ -290,7 +310,7 @@ func TestNewServiceRequiresDependencies(test *testing.T) {
 
 func TestSpendInsufficientFunds(test *testing.T) {
 	test.Parallel()
-	store := newStubStore(test, mustAmountCents(test, 10))
+	store := newStubStore(test, mustSignedAmount(test, 10))
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "spend-low")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
@@ -307,7 +327,7 @@ func TestSpendInsufficientFunds(test *testing.T) {
 
 func TestSpendAppendsSpendEntry(test *testing.T) {
 	test.Parallel()
-	store := newStubStore(test, mustAmountCents(test, 150))
+	store := newStubStore(test, mustSignedAmount(test, 150))
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "spend-user")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
@@ -333,7 +353,7 @@ func TestSpendAppendsSpendEntry(test *testing.T) {
 
 type stubStore struct {
 	accountID    AccountID
-	total        AmountCents
+	total        SignedAmountCents
 	reservations map[ReservationID]Reservation
 	entries      []EntryInput
 	listEntries  []Entry
@@ -341,7 +361,7 @@ type stubStore struct {
 	idempotency  map[IdempotencyKey]struct{}
 }
 
-func newStubStore(test *testing.T, initialTotal AmountCents) *stubStore {
+func newStubStore(test *testing.T, initialTotal SignedAmountCents) *stubStore {
 	test.Helper()
 	return &stubStore{
 		accountID:    mustAccountID(test, "acct-1"),
@@ -367,16 +387,12 @@ func (store *stubStore) InsertEntry(ctx context.Context, entryInput EntryInput) 
 	store.entries = append(store.entries, entryInput)
 	switch entryInput.Type() {
 	case EntryGrant, EntrySpend:
-		updatedTotal, err := applyEntryDelta(store.total, entryInput.AmountCents())
-		if err != nil {
-			return err
-		}
-		store.total = updatedTotal
+		store.total = applyEntryDelta(store.total, entryInput.AmountCents())
 	}
 	return nil
 }
 
-func (store *stubStore) SumTotal(ctx context.Context, accountID AccountID, _ int64) (AmountCents, error) {
+func (store *stubStore) SumTotal(ctx context.Context, accountID AccountID, _ int64) (SignedAmountCents, error) {
 	return store.total, nil
 }
 
@@ -439,9 +455,10 @@ func (store *stubStore) mustReservation(test *testing.T, reservationID Reservati
 	return reservation
 }
 
-func applyEntryDelta(total AmountCents, delta EntryAmountCents) (AmountCents, error) {
+func applyEntryDelta(total SignedAmountCents, delta EntryAmountCents) SignedAmountCents {
 	updated := total.Int64() + delta.Int64()
-	return NewAmountCents(updated)
+	amount, _ := NewSignedAmountCents(updated)
+	return amount
 }
 
 func mustNewService(test *testing.T, store Store) *Service {
@@ -525,6 +542,15 @@ func mustAmountCents(test *testing.T, raw int64) AmountCents {
 	return value
 }
 
+func mustSignedAmount(test *testing.T, raw int64) SignedAmountCents {
+	test.Helper()
+	value, err := NewSignedAmountCents(raw)
+	if err != nil {
+		test.Fatalf("amount: %v", err)
+	}
+	return value
+}
+
 func mustEntryAmount(test *testing.T, raw int64) EntryAmountCents {
 	test.Helper()
 	value, err := NewEntryAmountCents(raw)
@@ -575,14 +601,14 @@ type mockStore struct {
 }
 
 func newMockStore(test *testing.T) *mockStore {
-	return &mockStore{stubStore: newStubStore(test, mustAmountCents(test, 0))}
+	return &mockStore{stubStore: newStubStore(test, mustSignedAmount(test, 0))}
 }
 
 type failingStore struct {
 	Store
 	err         error
 	accountID   AccountID
-	total       AmountCents
+	total       SignedAmountCents
 	activeHolds AmountCents
 }
 
@@ -591,7 +617,7 @@ func newFailingStore(test *testing.T, err error) *failingStore {
 	return &failingStore{
 		err:         err,
 		accountID:   mustAccountID(test, "acct"),
-		total:       mustAmountCents(test, 1000),
+		total:       mustSignedAmount(test, 1000),
 		activeHolds: mustAmountCents(test, 0),
 	}
 }
@@ -611,7 +637,7 @@ func (store *failingStore) InsertEntry(ctx context.Context, entry EntryInput) er
 	return store.err
 }
 
-func (store *failingStore) SumTotal(ctx context.Context, accountID AccountID, atUnixUTC int64) (AmountCents, error) {
+func (store *failingStore) SumTotal(ctx context.Context, accountID AccountID, atUnixUTC int64) (SignedAmountCents, error) {
 	return store.total, nil
 }
 

@@ -173,6 +173,32 @@ func TestNewAmountCents(test *testing.T) {
 	}
 }
 
+func TestNewSignedAmountCents(test *testing.T) {
+	test.Parallel()
+	testCases := []struct {
+		name    string
+		input   int64
+		wantVal SignedAmountCents
+	}{
+		{name: "negative", input: -50, wantVal: -50},
+		{name: "zero", input: 0, wantVal: 0},
+		{name: "positive", input: 75, wantVal: 75},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			value, err := NewSignedAmountCents(testCase.input)
+			if err != nil {
+				test.Fatalf("unexpected error: %v", err)
+			}
+			if value != testCase.wantVal {
+				test.Fatalf("expected %d, got %d", testCase.wantVal, value)
+			}
+		})
+	}
+}
+
 func TestNewPositiveAmountCents(test *testing.T) {
 	test.Parallel()
 	testCases := []struct {

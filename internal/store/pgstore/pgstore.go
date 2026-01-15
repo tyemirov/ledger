@@ -168,13 +168,13 @@ func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInpu
 	return nil
 }
 
-func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
+func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {
 	var sum int64
 	err := store.pool.QueryRow(ctx, sqlSumTotal, accountID.String(), atUnixUTC).Scan(&sum)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumTotal, err)
 	}
-	total, err := ledger.NewAmountCents(sum)
+	total, err := ledger.NewSignedAmountCents(sum)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
 	}
@@ -318,13 +318,13 @@ func (store *TxStore) InsertEntry(ctx context.Context, entryInput ledger.EntryIn
 	return nil
 }
 
-func (store *TxStore) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
+func (store *TxStore) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {
 	var sum int64
 	err := store.tx.QueryRow(ctx, sqlSumTotal, accountID.String(), atUnixUTC).Scan(&sum)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumTotal, err)
 	}
-	total, err := ledger.NewAmountCents(sum)
+	total, err := ledger.NewSignedAmountCents(sum)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
 	}
