@@ -58,8 +58,8 @@ You can run the hosted service (`cmd/credit`) or embed the domain logic via `pkg
 Clone the repository:
 
 ```bash
-git clone https://github.com/yourorg/creditsvc.git
-cd creditsvc
+git clone https://github.com/MarkoPoloResearchLab/ledger.git
+cd ledger
 ```
 
 Install dependencies:

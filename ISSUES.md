@@ -17,6 +17,10 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 - [ ] [LG-205] (P2) Add integration documentation for service and library usage.
   - Document how to run ledger as a standalone gRPC microservice (config, migrations, networking) and how to consume it from other languages.
     - Document how to embed the future `pkg/ledger` library in Go services, including storage wiring, transaction patterns, and error contracts.
+- [ ] [LG-206] (P2) Support multiple ledgers per user.
+  - Allow a single user_id to own multiple ledger accounts (introduce a ledger/account namespace or composite key).
+    - Update storage constraints, API inputs, and reservation/entry lookups to include the ledger identifier.
+    - Provide a migration path for existing single-ledger data.
 
 
 ## BugFixes (302–399)
@@ -25,4 +29,3 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 ## Planning (500–599)
 *do not implement yet*
-
