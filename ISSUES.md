@@ -8,7 +8,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 ## Features (114–199)
 
-## Improvements (206–299)
+## Improvements (207–299)
 
 - [ ] [LG-204] (P1) Extract ledger core into a reusable Go library.
   - Promote `internal/credit` into a public `pkg/ledger` module with explicit domain types and invariants.
@@ -25,7 +25,12 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 ## BugFixes (302–399)
 
-## Maintenance (400–499)
+## Maintenance (401–499)
+
+- [ ] [LG-400] (P0) Increase test coverage to 95%.
+  Increase test coverage to 95%
+
 
 ## Planning (500–599)
 *do not implement yet*
+
