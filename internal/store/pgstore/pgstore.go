@@ -11,9 +11,27 @@ import (
 )
 
 const (
-	// Matches Postgres' auto-generated name for: UNIQUE(account_id, idempotency_key)
 	constraintAccountIdempotencyKey = "ledger_entries_account_id_idempotency_key_key"
 	constraintReservationPrimary    = "reservations_pkey"
+	pgUniqueViolationCode           = "23505"
+	errorOperationStore             = "store"
+	errorSubjectAccount             = "account"
+	errorSubjectBalance             = "balance"
+	errorSubjectEntry               = "entry"
+	errorSubjectReservation         = "reservation"
+	errorSubjectTransaction         = "transaction"
+	errorCodeBegin                  = "begin"
+	errorCodeCommit                 = "commit"
+	errorCodeCreate                 = "create"
+	errorCodeDuplicate              = "duplicate"
+	errorCodeGet                    = "get"
+	errorCodeInsert                 = "insert"
+	errorCodeInvalid                = "invalid"
+	errorCodeList                   = "list"
+	errorCodeLookup                 = "lookup"
+	errorCodeSumActiveHolds         = "sum_active_holds"
+	errorCodeSumTotal               = "sum_total"
+	errorCodeUpdateStatus           = "update_status"
 
 	sqlInsertOrGetAccount = `
 		insert into accounts(user_id) values($1)
@@ -21,7 +39,6 @@ const (
 		returning account_id
 	`
 
-	// expires_at: NULL when 0; metadata: '{}' when empty string.
 	sqlInsertEntry = `
 		insert into ledger_entries(
 			entry_id, account_id, type, amount_cents, reservation_id, idempotency_key, expires_at, metadata, created_at
@@ -92,229 +109,409 @@ type TxStore struct {
 	tx pgx.Tx
 }
 
-func New(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
+// New returns a Store backed by a pgx pool.
+func New(pool *pgxpool.Pool) *Store {
+	return &Store{pool: pool}
+}
 
-// -------- pool-backed (autocommit) --------
-
-func (s *Store) WithTx(ctx context.Context, fn func(ctx context.Context, txStore ledger.Store) error) error {
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+func (store *Store) WithTx(ctx context.Context, fn func(ctx context.Context, txStore ledger.Store) error) error {
+	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return err
+		return wrapStoreError(errorSubjectTransaction, errorCodeBegin, err)
 	}
-	txStore := &TxStore{tx: tx}
-	if err := fn(ctx, txStore); err != nil {
+	transactionStore := &TxStore{tx: tx}
+	if err := fn(ctx, transactionStore); err != nil {
 		_ = tx.Rollback(ctx)
 		return err
 	}
-	return tx.Commit(ctx)
-}
-
-func (s *Store) GetOrCreateAccountID(ctx context.Context, userID string) (string, error) {
-	var accountID string
-	err := s.pool.QueryRow(ctx, sqlInsertOrGetAccount, userID).Scan(&accountID)
-	return accountID, err
-}
-
-func (s *Store) InsertEntry(ctx context.Context, e ledger.Entry) error {
-	_, err := s.pool.Exec(ctx, sqlInsertEntry,
-		e.AccountID, string(e.Type), int64(e.AmountCents), e.ReservationID,
-		e.IdempotencyKey, e.ExpiresAtUnixUTC, e.MetadataJSON, e.CreatedUnixUTC,
-	)
-	if isIdempotencyConflict(err) {
-		return ledger.ErrDuplicateIdempotencyKey
-	}
-	return err
-}
-
-func (s *Store) SumTotal(ctx context.Context, accountID string, atUnixUTC int64) (ledger.AmountCents, error) {
-	var sum int64
-	err := s.pool.QueryRow(ctx, sqlSumTotal, accountID, atUnixUTC).Scan(&sum)
-	return ledger.AmountCents(sum), err
-}
-
-func (s *Store) SumActiveHolds(ctx context.Context, accountID string, _ int64) (ledger.AmountCents, error) {
-	var sum int64
-	err := s.pool.QueryRow(ctx, sqlSumActiveHolds, accountID).Scan(&sum)
-	return ledger.AmountCents(sum), err
-}
-
-func (s *Store) CreateReservation(ctx context.Context, reservation ledger.Reservation) error {
-	_, err := s.pool.Exec(ctx, sqlInsertReservation,
-		reservation.AccountID,
-		reservation.ReservationID,
-		int64(reservation.AmountCents),
-		string(reservation.Status),
-	)
-	if isReservationConflict(err) {
-		return ledger.ErrReservationExists
-	}
-	return err
-}
-
-func (s *Store) GetReservation(ctx context.Context, accountID string, reservationID string) (ledger.Reservation, error) {
-	var (
-		record ledger.Reservation
-		status string
-		amount int64
-	)
-	err := s.pool.QueryRow(ctx, sqlSelectReservation, accountID, reservationID).Scan(
-		&record.AccountID,
-		&record.ReservationID,
-		&amount,
-		&status,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ledger.Reservation{}, ledger.ErrUnknownReservation
-		}
-		return ledger.Reservation{}, err
-	}
-	record.AmountCents = ledger.AmountCents(amount)
-	record.Status = ledger.ReservationStatus(status)
-	return record, nil
-}
-
-func (s *Store) UpdateReservationStatus(ctx context.Context, accountID string, reservationID string, from, to ledger.ReservationStatus) error {
-	tag, err := s.pool.Exec(ctx, sqlUpdateReservationStatus, accountID, reservationID, string(from), string(to))
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ledger.ErrReservationClosed
+	if err := tx.Commit(ctx); err != nil {
+		return wrapStoreError(errorSubjectTransaction, errorCodeCommit, err)
 	}
 	return nil
 }
 
-func (s *Store) ListEntries(ctx context.Context, accountID string, beforeUnixUTC int64, limit int) ([]ledger.Entry, error) {
-	rows, err := s.pool.Query(ctx, sqlListEntriesBefore, accountID, beforeUnixUTC, limit)
+func (store *Store) GetOrCreateAccountID(ctx context.Context, userID ledger.UserID) (ledger.AccountID, error) {
+	var accountIDValue string
+	err := store.pool.QueryRow(ctx, sqlInsertOrGetAccount, userID.String()).Scan(&accountIDValue)
 	if err != nil {
-		return nil, err
+		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeLookup, err)
 	}
-	defer rows.Close()
-	return scanEntries(rows)
+	accountID, err := ledger.NewAccountID(accountIDValue)
+	if err != nil {
+		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeInvalid, err)
+	}
+	return accountID, nil
 }
 
-// -------- tx-backed --------
-
-func (t *TxStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore ledger.Store) error) error {
-	// Already in a transaction
-	return fn(ctx, t)
-}
-
-func (t *TxStore) GetOrCreateAccountID(ctx context.Context, userID string) (string, error) {
-	var accountID string
-	err := t.tx.QueryRow(ctx, sqlInsertOrGetAccount, userID).Scan(&accountID)
-	return accountID, err
-}
-
-func (t *TxStore) InsertEntry(ctx context.Context, e ledger.Entry) error {
-	_, err := t.tx.Exec(ctx, sqlInsertEntry,
-		e.AccountID, string(e.Type), int64(e.AmountCents), e.ReservationID,
-		e.IdempotencyKey, e.ExpiresAtUnixUTC, e.MetadataJSON, e.CreatedUnixUTC,
+func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) error {
+	reservationValue, hasReservation := entryInput.ReservationID()
+	reservationID := ""
+	if hasReservation {
+		reservationID = reservationValue.String()
+	}
+	_, err := store.pool.Exec(ctx, sqlInsertEntry,
+		entryInput.AccountID().String(),
+		entryInput.Type().String(),
+		entryInput.AmountCents().Int64(),
+		reservationID,
+		entryInput.IdempotencyKey().String(),
+		entryInput.ExpiresAtUnixUTC(),
+		entryInput.MetadataJSON().String(),
+		entryInput.CreatedUnixUTC(),
 	)
 	if isIdempotencyConflict(err) {
-		return ledger.ErrDuplicateIdempotencyKey
+		return wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
 	}
-	return err
-}
-
-func (t *TxStore) SumTotal(ctx context.Context, accountID string, atUnixUTC int64) (ledger.AmountCents, error) {
-	var sum int64
-	err := t.tx.QueryRow(ctx, sqlSumTotal, accountID, atUnixUTC).Scan(&sum)
-	return ledger.AmountCents(sum), err
-}
-
-func (t *TxStore) SumActiveHolds(ctx context.Context, accountID string, _ int64) (ledger.AmountCents, error) {
-	var sum int64
-	err := t.tx.QueryRow(ctx, sqlSumActiveHolds, accountID).Scan(&sum)
-	return ledger.AmountCents(sum), err
-}
-
-func (t *TxStore) CreateReservation(ctx context.Context, reservation ledger.Reservation) error {
-	_, err := t.tx.Exec(ctx, sqlInsertReservation,
-		reservation.AccountID,
-		reservation.ReservationID,
-		int64(reservation.AmountCents),
-		string(reservation.Status),
-	)
-	if isReservationConflict(err) {
-		return ledger.ErrReservationExists
-	}
-	return err
-}
-
-func (t *TxStore) GetReservation(ctx context.Context, accountID string, reservationID string) (ledger.Reservation, error) {
-	var (
-		record ledger.Reservation
-		status string
-		amount int64
-	)
-	err := t.tx.QueryRow(ctx, sqlSelectReservation, accountID, reservationID).Scan(
-		&record.AccountID,
-		&record.ReservationID,
-		&amount,
-		&status,
-	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ledger.Reservation{}, ledger.ErrUnknownReservation
-		}
-		return ledger.Reservation{}, err
-	}
-	record.AmountCents = ledger.AmountCents(amount)
-	record.Status = ledger.ReservationStatus(status)
-	return record, nil
-}
-
-func (t *TxStore) UpdateReservationStatus(ctx context.Context, accountID string, reservationID string, from, to ledger.ReservationStatus) error {
-	tag, err := t.tx.Exec(ctx, sqlUpdateReservationStatus, accountID, reservationID, string(from), string(to))
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ledger.ErrReservationClosed
+		return wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
 	}
 	return nil
 }
 
-func (t *TxStore) ListEntries(ctx context.Context, accountID string, beforeUnixUTC int64, limit int) ([]ledger.Entry, error) {
-	rows, err := t.tx.Query(ctx, sqlListEntriesBefore, accountID, beforeUnixUTC, limit)
+func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
+	var sum int64
+	err := store.pool.QueryRow(ctx, sqlSumTotal, accountID.String(), atUnixUTC).Scan(&sum)
 	if err != nil {
-		return nil, err
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumTotal, err)
 	}
-	defer rows.Close()
-	return scanEntries(rows)
+	total, err := ledger.NewAmountCents(sum)
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
+	}
+	return total, nil
 }
 
-// -------- helpers --------
+func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
+	var sum int64
+	err := store.pool.QueryRow(ctx, sqlSumActiveHolds, accountID.String()).Scan(&sum)
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumActiveHolds, err)
+	}
+	activeHolds, err := ledger.NewAmountCents(sum)
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
+	}
+	return activeHolds, nil
+}
+
+func (store *Store) CreateReservation(ctx context.Context, reservation ledger.Reservation) error {
+	_, err := store.pool.Exec(ctx, sqlInsertReservation,
+		reservation.AccountID().String(),
+		reservation.ReservationID().String(),
+		reservation.AmountCents().Int64(),
+		reservation.Status().String(),
+	)
+	if isReservationConflict(err) {
+		return wrapStoreError(errorSubjectReservation, errorCodeDuplicate, ledger.ErrReservationExists)
+	}
+	if err != nil {
+		return wrapStoreError(errorSubjectReservation, errorCodeCreate, err)
+	}
+	return nil
+}
+
+func (store *Store) GetReservation(ctx context.Context, accountID ledger.AccountID, reservationID ledger.ReservationID) (ledger.Reservation, error) {
+	var (
+		accountValue   string
+		reservationVal string
+		statusValue    string
+		amountValue    int64
+	)
+	err := store.pool.QueryRow(ctx, sqlSelectReservation, accountID.String(), reservationID.String()).Scan(
+		&accountValue,
+		&reservationVal,
+		&amountValue,
+		&statusValue,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeGet, ledger.ErrUnknownReservation)
+		}
+		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeGet, err)
+	}
+	parsedAccountID, err := ledger.NewAccountID(accountValue)
+	if err != nil {
+		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+	}
+	parsedReservationID, err := ledger.NewReservationID(reservationVal)
+	if err != nil {
+		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+	}
+	amountCents, err := ledger.NewPositiveAmountCents(amountValue)
+	if err != nil {
+		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+	}
+	status, err := ledger.ParseReservationStatus(statusValue)
+	if err != nil {
+		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+	}
+	reservation, err := ledger.NewReservation(parsedAccountID, parsedReservationID, amountCents, status)
+	if err != nil {
+		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+	}
+	return reservation, nil
+}
+
+func (store *Store) UpdateReservationStatus(ctx context.Context, accountID ledger.AccountID, reservationID ledger.ReservationID, from, to ledger.ReservationStatus) error {
+	tag, err := store.pool.Exec(ctx, sqlUpdateReservationStatus, accountID.String(), reservationID.String(), from.String(), to.String())
+	if err != nil {
+		return wrapStoreError(errorSubjectReservation, errorCodeUpdateStatus, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return wrapStoreError(errorSubjectReservation, errorCodeUpdateStatus, ledger.ErrReservationClosed)
+	}
+	return nil
+}
+
+func (store *Store) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int) ([]ledger.Entry, error) {
+	rows, err := store.pool.Query(ctx, sqlListEntriesBefore, accountID.String(), beforeUnixUTC, limit)
+	if err != nil {
+		return nil, wrapStoreError(errorSubjectEntry, errorCodeList, err)
+	}
+	defer rows.Close()
+	entries, err := scanEntries(rows)
+	if err != nil {
+		return nil, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	return entries, nil
+}
+
+func (store *TxStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore ledger.Store) error) error {
+	return fn(ctx, store)
+}
+
+func (store *TxStore) GetOrCreateAccountID(ctx context.Context, userID ledger.UserID) (ledger.AccountID, error) {
+	var accountIDValue string
+	err := store.tx.QueryRow(ctx, sqlInsertOrGetAccount, userID.String()).Scan(&accountIDValue)
+	if err != nil {
+		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeLookup, err)
+	}
+	accountID, err := ledger.NewAccountID(accountIDValue)
+	if err != nil {
+		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeInvalid, err)
+	}
+	return accountID, nil
+}
+
+func (store *TxStore) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) error {
+	reservationValue, hasReservation := entryInput.ReservationID()
+	reservationID := ""
+	if hasReservation {
+		reservationID = reservationValue.String()
+	}
+	_, err := store.tx.Exec(ctx, sqlInsertEntry,
+		entryInput.AccountID().String(),
+		entryInput.Type().String(),
+		entryInput.AmountCents().Int64(),
+		reservationID,
+		entryInput.IdempotencyKey().String(),
+		entryInput.ExpiresAtUnixUTC(),
+		entryInput.MetadataJSON().String(),
+		entryInput.CreatedUnixUTC(),
+	)
+	if isIdempotencyConflict(err) {
+		return wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
+	}
+	if err != nil {
+		return wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
+	}
+	return nil
+}
+
+func (store *TxStore) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
+	var sum int64
+	err := store.tx.QueryRow(ctx, sqlSumTotal, accountID.String(), atUnixUTC).Scan(&sum)
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumTotal, err)
+	}
+	total, err := ledger.NewAmountCents(sum)
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
+	}
+	return total, nil
+}
+
+func (store *TxStore) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
+	var sum int64
+	err := store.tx.QueryRow(ctx, sqlSumActiveHolds, accountID.String()).Scan(&sum)
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumActiveHolds, err)
+	}
+	activeHolds, err := ledger.NewAmountCents(sum)
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
+	}
+	return activeHolds, nil
+}
+
+func (store *TxStore) CreateReservation(ctx context.Context, reservation ledger.Reservation) error {
+	_, err := store.tx.Exec(ctx, sqlInsertReservation,
+		reservation.AccountID().String(),
+		reservation.ReservationID().String(),
+		reservation.AmountCents().Int64(),
+		reservation.Status().String(),
+	)
+	if isReservationConflict(err) {
+		return wrapStoreError(errorSubjectReservation, errorCodeDuplicate, ledger.ErrReservationExists)
+	}
+	if err != nil {
+		return wrapStoreError(errorSubjectReservation, errorCodeCreate, err)
+	}
+	return nil
+}
+
+func (store *TxStore) GetReservation(ctx context.Context, accountID ledger.AccountID, reservationID ledger.ReservationID) (ledger.Reservation, error) {
+	var (
+		accountValue   string
+		reservationVal string
+		statusValue    string
+		amountValue    int64
+	)
+	err := store.tx.QueryRow(ctx, sqlSelectReservation, accountID.String(), reservationID.String()).Scan(
+		&accountValue,
+		&reservationVal,
+		&amountValue,
+		&statusValue,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeGet, ledger.ErrUnknownReservation)
+		}
+		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeGet, err)
+	}
+	parsedAccountID, err := ledger.NewAccountID(accountValue)
+	if err != nil {
+		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+	}
+	parsedReservationID, err := ledger.NewReservationID(reservationVal)
+	if err != nil {
+		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+	}
+	amountCents, err := ledger.NewPositiveAmountCents(amountValue)
+	if err != nil {
+		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+	}
+	status, err := ledger.ParseReservationStatus(statusValue)
+	if err != nil {
+		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+	}
+	reservation, err := ledger.NewReservation(parsedAccountID, parsedReservationID, amountCents, status)
+	if err != nil {
+		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+	}
+	return reservation, nil
+}
+
+func (store *TxStore) UpdateReservationStatus(ctx context.Context, accountID ledger.AccountID, reservationID ledger.ReservationID, from, to ledger.ReservationStatus) error {
+	tag, err := store.tx.Exec(ctx, sqlUpdateReservationStatus, accountID.String(), reservationID.String(), from.String(), to.String())
+	if err != nil {
+		return wrapStoreError(errorSubjectReservation, errorCodeUpdateStatus, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return wrapStoreError(errorSubjectReservation, errorCodeUpdateStatus, ledger.ErrReservationClosed)
+	}
+	return nil
+}
+
+func (store *TxStore) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int) ([]ledger.Entry, error) {
+	rows, err := store.tx.Query(ctx, sqlListEntriesBefore, accountID.String(), beforeUnixUTC, limit)
+	if err != nil {
+		return nil, wrapStoreError(errorSubjectEntry, errorCodeList, err)
+	}
+	defer rows.Close()
+	entries, err := scanEntries(rows)
+	if err != nil {
+		return nil, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	return entries, nil
+}
 
 func scanEntries(rows pgx.Rows) ([]ledger.Entry, error) {
-	out := make([]ledger.Entry, 0, 32)
+	entries := make([]ledger.Entry, 0, 32)
 	for rows.Next() {
-		var e ledger.Entry
+		var (
+			entryIDValue     string
+			accountIDValue   string
+			entryTypeValue   string
+			amountValue      int64
+			reservationValue string
+			idempotencyValue string
+			expiresAtUnixUTC int64
+			metadataValue    string
+			createdAtUnixUTC int64
+		)
 		if err := rows.Scan(
-			&e.EntryID,
-			&e.AccountID,
-			(*string)(&e.Type),
-			(*int64)(&e.AmountCents),
-			&e.ReservationID,
-			&e.IdempotencyKey,
-			&e.ExpiresAtUnixUTC,
-			&e.MetadataJSON,
-			&e.CreatedUnixUTC,
+			&entryIDValue,
+			&accountIDValue,
+			&entryTypeValue,
+			&amountValue,
+			&reservationValue,
+			&idempotencyValue,
+			&expiresAtUnixUTC,
+			&metadataValue,
+			&createdAtUnixUTC,
 		); err != nil {
 			return nil, err
 		}
-		out = append(out, e)
+		entryID, err := ledger.NewEntryID(entryIDValue)
+		if err != nil {
+			return nil, err
+		}
+		accountID, err := ledger.NewAccountID(accountIDValue)
+		if err != nil {
+			return nil, err
+		}
+		entryType, err := ledger.ParseEntryType(entryTypeValue)
+		if err != nil {
+			return nil, err
+		}
+		amountCents, err := ledger.NewEntryAmountCents(amountValue)
+		if err != nil {
+			return nil, err
+		}
+		var reservationID *ledger.ReservationID
+		if reservationValue != "" {
+			parsedReservationID, err := ledger.NewReservationID(reservationValue)
+			if err != nil {
+				return nil, err
+			}
+			reservationID = &parsedReservationID
+		}
+		idempotencyKey, err := ledger.NewIdempotencyKey(idempotencyValue)
+		if err != nil {
+			return nil, err
+		}
+		metadata, err := ledger.NewMetadataJSON(metadataValue)
+		if err != nil {
+			return nil, err
+		}
+		entry, err := ledger.NewEntry(
+			entryID,
+			accountID,
+			entryType,
+			amountCents,
+			reservationID,
+			idempotencyKey,
+			expiresAtUnixUTC,
+			metadata,
+			createdAtUnixUTC,
+		)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
 	}
-	return out, rows.Err()
+	return entries, rows.Err()
+}
+
+func wrapStoreError(subject string, code string, err error) error {
+	return ledger.WrapError(errorOperationStore, subject, code, err)
 }
 
 func isIdempotencyConflict(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		// unique_violation
-		if pgErr.Code == "23505" && pgErr.ConstraintName == constraintAccountIdempotencyKey {
+		if pgErr.Code == pgUniqueViolationCode && pgErr.ConstraintName == constraintAccountIdempotencyKey {
 			return true
 		}
 	}
@@ -324,7 +521,7 @@ func isIdempotencyConflict(err error) bool {
 func isReservationConflict(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		return pgErr.Code == "23505" && pgErr.ConstraintName == constraintReservationPrimary
+		return pgErr.Code == pgUniqueViolationCode && pgErr.ConstraintName == constraintReservationPrimary
 	}
 	return false
 }

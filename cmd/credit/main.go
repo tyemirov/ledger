@@ -176,7 +176,6 @@ func extractUserID(request interface{}) string {
 	return userID
 }
 
-// newLoggingInterceptor logs every unary RPC with method, duration, status, and optional user identifier.
 func newLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, request interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		start := time.Now()
@@ -204,10 +203,11 @@ type zapOperationLogger struct {
 	logger *zap.Logger
 }
 
-func (l *zapOperationLogger) LogOperation(_ context.Context, entry ledger.OperationLog) {
-	if l == nil || l.logger == nil {
+func (logger *zapOperationLogger) LogOperation(_ context.Context, entry ledger.OperationLog) {
+	if logger == nil || logger.logger == nil {
 		return
 	}
+	const logEventLedgerOperation = "ledger.operation"
 	status := entry.Status
 	if status == "" {
 		if entry.Error != nil {
@@ -224,10 +224,12 @@ func (l *zapOperationLogger) LogOperation(_ context.Context, entry ledger.Operat
 		fields = append(fields, zap.String("user_id", user))
 	}
 	if entry.Amount != 0 {
-		fields = append(fields, zap.Int64("amount_cents", int64(entry.Amount)))
+		fields = append(fields, zap.Int64("amount_cents", entry.Amount.Int64()))
 	}
-	if reservation := entry.ReservationID.String(); reservation != "" {
-		fields = append(fields, zap.String("reservation_id", reservation))
+	if entry.ReservationID != nil {
+		if reservation := entry.ReservationID.String(); reservation != "" {
+			fields = append(fields, zap.String("reservation_id", reservation))
+		}
 	}
 	if key := entry.IdempotencyKey.String(); key != "" {
 		fields = append(fields, zap.String("idempotency_key", key))
@@ -237,10 +239,10 @@ func (l *zapOperationLogger) LogOperation(_ context.Context, entry ledger.Operat
 	}
 	if entry.Error != nil {
 		fields = append(fields, zap.Error(entry.Error))
-		l.logger.Error("ledger.operation", fields...)
+		logger.logger.Error(logEventLedgerOperation, fields...)
 		return
 	}
-	l.logger.Info("ledger.operation", fields...)
+	logger.logger.Info(logEventLedgerOperation, fields...)
 }
 
 func openDatabase(ctx context.Context, dsn string) (*gorm.DB, func() error, string, error) {
@@ -292,7 +294,6 @@ func resolveDriver(dsn string) (string, string, error) {
 		sqlitePath, err := normalizeSQLitePath(path)
 		return "sqlite", sqlitePath, err
 	}
-	// Treat everything else as a direct sqlite path.
 	sqlitePath, err := normalizeSQLitePath(dsn)
 	return "sqlite", sqlitePath, err
 }

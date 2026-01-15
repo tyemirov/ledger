@@ -3,50 +3,59 @@ package ledger
 import "context"
 
 // Spend debits the user's available balance immediately (no hold).
-func (service *Service) Spend(requestContext context.Context, userID UserID, amount AmountCents, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
-	err := service.store.WithTx(requestContext, func(ctx context.Context, transactionStore Store) error {
-		accountID, accountError := transactionStore.GetOrCreateAccountID(ctx, userID.String())
-		if accountError != nil {
-			return accountError
+func (service *Service) Spend(requestContext context.Context, userID UserID, amount PositiveAmountCents, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
+	operationError := service.store.WithTx(requestContext, func(ctx context.Context, transactionStore Store) error {
+		accountID, err := transactionStore.GetOrCreateAccountID(ctx, userID)
+		if err != nil {
+			return err
 		}
-		nowUnix := service.nowFn()
-		total, totalError := transactionStore.SumTotal(ctx, accountID, nowUnix)
-		if totalError != nil {
-			return totalError
+		nowUnixUTC := service.nowFn()
+		total, err := transactionStore.SumTotal(ctx, accountID, nowUnixUTC)
+		if err != nil {
+			return err
 		}
-		activeHolds, holdsError := transactionStore.SumActiveHolds(ctx, accountID, nowUnix)
-		if holdsError != nil {
-			return holdsError
+		holds, err := transactionStore.SumActiveHolds(ctx, accountID, nowUnixUTC)
+		if err != nil {
+			return err
 		}
-		available := total - activeHolds
-		if available < amount {
+		available, err := calculateAvailable(total, holds)
+		if err != nil {
+			return err
+		}
+		if available < amount.ToAmountCents() {
 			return ErrInsufficientFunds
 		}
-		return transactionStore.InsertEntry(ctx, Entry{
-			AccountID:      accountID,
-			Type:           EntrySpend,
-			AmountCents:    -amount,
-			IdempotencyKey: idempotencyKey.String(),
-			MetadataJSON:   metadata.String(),
-			CreatedUnixUTC: nowUnix,
-		})
+		entryInput, err := NewEntryInput(
+			accountID,
+			EntrySpend,
+			amount.ToEntryAmountCents().Negated(),
+			nil,
+			idempotencyKey,
+			0,
+			metadata,
+			nowUnixUTC,
+		)
+		if err != nil {
+			return err
+		}
+		return transactionStore.InsertEntry(ctx, entryInput)
 	})
 	service.logOperation(requestContext, OperationLog{
-		Operation:      "spend",
+		Operation:      operationSpend,
 		UserID:         userID,
-		Amount:         amount,
+		Amount:         amount.ToAmountCents(),
 		IdempotencyKey: idempotencyKey,
 		Metadata:       metadata,
-		Error:          err,
+		Error:          operationError,
 	})
-	return err
+	return operationError
 }
 
 // ListEntries lists ledger entries for a user before a cutoff time.
 func (service *Service) ListEntries(requestContext context.Context, userID UserID, beforeUnixUTC int64, limit int) ([]Entry, error) {
-	accountID, accountError := service.store.GetOrCreateAccountID(requestContext, userID.String())
-	if accountError != nil {
-		return nil, accountError
+	accountID, err := service.store.GetOrCreateAccountID(requestContext, userID)
+	if err != nil {
+		return nil, err
 	}
 	return service.store.ListEntries(requestContext, accountID, beforeUnixUTC, limit)
 }

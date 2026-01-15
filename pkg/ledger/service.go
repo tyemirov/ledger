@@ -30,208 +30,265 @@ func NewService(store Store, now func() int64, options ...ServiceOption) (*Servi
 }
 
 // Balance returns total and available (total minus active holds).
-func (s *Service) Balance(ctx context.Context, userID UserID) (Balance, error) {
-	accountID, err := s.store.GetOrCreateAccountID(ctx, userID.String())
+func (service *Service) Balance(ctx context.Context, userID UserID) (Balance, error) {
+	accountID, err := service.store.GetOrCreateAccountID(ctx, userID)
 	if err != nil {
 		return Balance{}, err
 	}
-	now := s.nowFn()
-	total, err := s.store.SumTotal(ctx, accountID, now)
+	nowUnixUTC := service.nowFn()
+	total, err := service.store.SumTotal(ctx, accountID, nowUnixUTC)
 	if err != nil {
 		return Balance{}, err
 	}
-	holds, err := s.store.SumActiveHolds(ctx, accountID, now)
+	holds, err := service.store.SumActiveHolds(ctx, accountID, nowUnixUTC)
+	if err != nil {
+		return Balance{}, err
+	}
+	available, err := calculateAvailable(total, holds)
 	if err != nil {
 		return Balance{}, err
 	}
 	return Balance{
 		TotalCents:     total,
-		AvailableCents: total - holds,
+		AvailableCents: available,
 	}, nil
 }
 
 // Grant appends a positive grant (optionally expiring).
-func (s *Service) Grant(ctx context.Context, userID UserID, amount AmountCents, idem IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON) error {
-	err := s.store.WithTx(ctx, func(ctx context.Context, txStore Store) error {
-		accountID, err := txStore.GetOrCreateAccountID(ctx, userID.String())
+func (service *Service) Grant(ctx context.Context, userID UserID, amount PositiveAmountCents, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON) error {
+	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
+		accountID, err := transactionStore.GetOrCreateAccountID(ctx, userID)
 		if err != nil {
 			return err
 		}
-		return txStore.InsertEntry(ctx, Entry{
-			AccountID:        accountID,
-			Type:             EntryGrant,
-			AmountCents:      amount,
-			IdempotencyKey:   idem.String(),
-			ExpiresAtUnixUTC: expiresAtUnixUTC,
-			MetadataJSON:     metadata.String(),
-			CreatedUnixUTC:   s.nowFn(),
-		})
+		entryInput, err := NewEntryInput(
+			accountID,
+			EntryGrant,
+			amount.ToEntryAmountCents(),
+			nil,
+			idempotencyKey,
+			expiresAtUnixUTC,
+			metadata,
+			service.nowFn(),
+		)
+		if err != nil {
+			return err
+		}
+		return transactionStore.InsertEntry(ctx, entryInput)
 	})
-	s.logOperation(ctx, OperationLog{
-		Operation:      "grant",
+	service.logOperation(ctx, OperationLog{
+		Operation:      operationGrant,
 		UserID:         userID,
-		Amount:         amount,
-		IdempotencyKey: idem,
+		Amount:         amount.ToAmountCents(),
+		IdempotencyKey: idempotencyKey,
 		Metadata:       metadata,
-		Error:          err,
+		Error:          operationError,
 	})
-	return err
+	return operationError
 }
 
 // Reserve appends a negative hold if sufficient available balance.
-func (s *Service) Reserve(ctx context.Context, userID UserID, amount AmountCents, reservationID ReservationID, idem IdempotencyKey, metadata MetadataJSON) error {
-	err := s.store.WithTx(ctx, func(ctx context.Context, txStore Store) error {
-		accountID, err := txStore.GetOrCreateAccountID(ctx, userID.String())
+func (service *Service) Reserve(ctx context.Context, userID UserID, amount PositiveAmountCents, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
+	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
+		accountID, err := transactionStore.GetOrCreateAccountID(ctx, userID)
 		if err != nil {
 			return err
 		}
-		now := s.nowFn()
-		total, err := txStore.SumTotal(ctx, accountID, now)
+		nowUnixUTC := service.nowFn()
+		total, err := transactionStore.SumTotal(ctx, accountID, nowUnixUTC)
 		if err != nil {
 			return err
 		}
-		holds, err := txStore.SumActiveHolds(ctx, accountID, now)
+		holds, err := transactionStore.SumActiveHolds(ctx, accountID, nowUnixUTC)
 		if err != nil {
 			return err
 		}
-		if total-holds < amount {
+		available, err := calculateAvailable(total, holds)
+		if err != nil {
+			return err
+		}
+		if available < amount.ToAmountCents() {
 			return ErrInsufficientFunds
 		}
-		if err := txStore.CreateReservation(ctx, Reservation{
-			AccountID:     accountID,
-			ReservationID: reservationID.String(),
-			AmountCents:   amount,
-			Status:        ReservationStatusActive,
-		}); err != nil {
+		reservation, err := NewReservation(accountID, reservationID, amount, ReservationStatusActive)
+		if err != nil {
 			return err
 		}
-		return txStore.InsertEntry(ctx, Entry{
-			AccountID:      accountID,
-			Type:           EntryHold,
-			AmountCents:    -amount,
-			ReservationID:  reservationID.String(),
-			IdempotencyKey: idem.String(),
-			MetadataJSON:   metadata.String(),
-			CreatedUnixUTC: now,
-		})
+		if err := transactionStore.CreateReservation(ctx, reservation); err != nil {
+			return err
+		}
+		entryInput, err := NewEntryInput(
+			accountID,
+			EntryHold,
+			amount.ToEntryAmountCents().Negated(),
+			&reservationID,
+			idempotencyKey,
+			0,
+			metadata,
+			nowUnixUTC,
+		)
+		if err != nil {
+			return err
+		}
+		return transactionStore.InsertEntry(ctx, entryInput)
 	})
-	s.logOperation(ctx, OperationLog{
-		Operation:      "reserve",
+	reservationRef := reservationID
+	service.logOperation(ctx, OperationLog{
+		Operation:      operationReserve,
 		UserID:         userID,
-		Amount:         amount,
-		ReservationID:  reservationID,
-		IdempotencyKey: idem,
+		ReservationID:  &reservationRef,
+		Amount:         amount.ToAmountCents(),
+		IdempotencyKey: idempotencyKey,
 		Metadata:       metadata,
-		Error:          err,
+		Error:          operationError,
 	})
-	return err
+	return operationError
 }
 
 // Capture finalizes a reservation by reversing the hold and spending the funds with distinct idempotency keys.
-func (s *Service) Capture(ctx context.Context, userID UserID, reservationID ReservationID, idem IdempotencyKey, amount AmountCents, metadata MetadataJSON) error {
-	err := s.store.WithTx(ctx, func(ctx context.Context, txStore Store) error {
-		accountID, err := txStore.GetOrCreateAccountID(ctx, userID.String())
+func (service *Service) Capture(ctx context.Context, userID UserID, reservationID ReservationID, idempotencyKey IdempotencyKey, amount PositiveAmountCents, metadata MetadataJSON) error {
+	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
+		accountID, err := transactionStore.GetOrCreateAccountID(ctx, userID)
 		if err != nil {
 			return err
 		}
-		reservation, err := txStore.GetReservation(ctx, accountID, reservationID.String())
+		reservation, err := transactionStore.GetReservation(ctx, accountID, reservationID)
 		if err != nil {
 			return err
 		}
-		if reservation.Status != ReservationStatusActive {
+		if reservation.Status() != ReservationStatusActive {
 			return ErrReservationClosed
 		}
-		if reservation.AmountCents != amount {
+		if reservation.AmountCents() != amount {
 			return fmt.Errorf("%w: capture amount mismatch", ErrInvalidAmountCents)
 		}
-		if err := txStore.UpdateReservationStatus(ctx, accountID, reservationID.String(), ReservationStatusActive, ReservationStatusCaptured); err != nil {
+		if err := transactionStore.UpdateReservationStatus(ctx, accountID, reservationID, ReservationStatusActive, ReservationStatusCaptured); err != nil {
 			return err
 		}
-		now := s.nowFn()
-		reverseIdempotencyKey := fmt.Sprintf("%s:reverse", idem.String())
-		if err := txStore.InsertEntry(ctx, Entry{
-			AccountID:      accountID,
-			Type:           EntryReverseHold,
-			AmountCents:    reservation.AmountCents,
-			ReservationID:  reservationID.String(),
-			IdempotencyKey: reverseIdempotencyKey,
-			MetadataJSON:   metadata.String(),
-			CreatedUnixUTC: now,
-		}); err != nil {
+		nowUnixUTC := service.nowFn()
+		reverseKey, err := deriveIdempotencyKey(idempotencyKey, idempotencySuffixReverse)
+		if err != nil {
 			return err
 		}
-		spendIdempotencyKey := fmt.Sprintf("%s:spend", idem.String())
-		return txStore.InsertEntry(ctx, Entry{
-			AccountID:      accountID,
-			Type:           EntrySpend,
-			AmountCents:    -amount,
-			ReservationID:  reservationID.String(),
-			IdempotencyKey: spendIdempotencyKey,
-			MetadataJSON:   metadata.String(),
-			CreatedUnixUTC: now,
-		})
+		reverseEntry, err := NewEntryInput(
+			accountID,
+			EntryReverseHold,
+			reservation.AmountCents().ToEntryAmountCents(),
+			&reservationID,
+			reverseKey,
+			0,
+			metadata,
+			nowUnixUTC,
+		)
+		if err != nil {
+			return err
+		}
+		if err := transactionStore.InsertEntry(ctx, reverseEntry); err != nil {
+			return err
+		}
+		spendKey, err := deriveIdempotencyKey(idempotencyKey, idempotencySuffixSpend)
+		if err != nil {
+			return err
+		}
+		spendEntry, err := NewEntryInput(
+			accountID,
+			EntrySpend,
+			amount.ToEntryAmountCents().Negated(),
+			&reservationID,
+			spendKey,
+			0,
+			metadata,
+			nowUnixUTC,
+		)
+		if err != nil {
+			return err
+		}
+		return transactionStore.InsertEntry(ctx, spendEntry)
 	})
-	s.logOperation(ctx, OperationLog{
-		Operation:      "capture",
+	reservationRef := reservationID
+	service.logOperation(ctx, OperationLog{
+		Operation:      operationCapture,
 		UserID:         userID,
-		ReservationID:  reservationID,
-		Amount:         amount,
-		IdempotencyKey: idem,
+		ReservationID:  &reservationRef,
+		Amount:         amount.ToAmountCents(),
+		IdempotencyKey: idempotencyKey,
 		Metadata:       metadata,
-		Error:          err,
+		Error:          operationError,
 	})
-	return err
+	return operationError
 }
 
 // Release cancels a reservation by writing a reverse-hold entry.
-// (This simple version doesn’t compute the exact held amount — adjust as needed.)
-func (s *Service) Release(ctx context.Context, userID UserID, reservationID ReservationID, idem IdempotencyKey, metadata MetadataJSON) error {
-	err := s.store.WithTx(ctx, func(ctx context.Context, txStore Store) error {
-		accountID, err := txStore.GetOrCreateAccountID(ctx, userID.String())
+func (service *Service) Release(ctx context.Context, userID UserID, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
+	var reservationAmount AmountCents
+	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
+		accountID, err := transactionStore.GetOrCreateAccountID(ctx, userID)
 		if err != nil {
 			return err
 		}
-		reservation, err := txStore.GetReservation(ctx, accountID, reservationID.String())
+		reservation, err := transactionStore.GetReservation(ctx, accountID, reservationID)
 		if err != nil {
 			return err
 		}
-		if reservation.Status != ReservationStatusActive {
+		if reservation.Status() != ReservationStatusActive {
 			return ErrReservationClosed
 		}
-		if err := txStore.UpdateReservationStatus(ctx, accountID, reservationID.String(), ReservationStatusActive, ReservationStatusReleased); err != nil {
+		reservationAmount = reservation.AmountCents().ToAmountCents()
+		if err := transactionStore.UpdateReservationStatus(ctx, accountID, reservationID, ReservationStatusActive, ReservationStatusReleased); err != nil {
 			return err
 		}
-		return txStore.InsertEntry(ctx, Entry{
-			AccountID:      accountID,
-			Type:           EntryReverseHold,
-			AmountCents:    reservation.AmountCents,
-			ReservationID:  reservationID.String(),
-			IdempotencyKey: idem.String(),
-			MetadataJSON:   metadata.String(),
-			CreatedUnixUTC: s.nowFn(),
-		})
+		entryInput, err := NewEntryInput(
+			accountID,
+			EntryReverseHold,
+			reservation.AmountCents().ToEntryAmountCents(),
+			&reservationID,
+			idempotencyKey,
+			0,
+			metadata,
+			service.nowFn(),
+		)
+		if err != nil {
+			return err
+		}
+		return transactionStore.InsertEntry(ctx, entryInput)
 	})
-	s.logOperation(ctx, OperationLog{
-		Operation:      "release",
+	reservationRef := reservationID
+	service.logOperation(ctx, OperationLog{
+		Operation:      operationRelease,
 		UserID:         userID,
-		ReservationID:  reservationID,
-		IdempotencyKey: idem,
+		ReservationID:  &reservationRef,
+		Amount:         reservationAmount,
+		IdempotencyKey: idempotencyKey,
 		Metadata:       metadata,
-		Error:          err,
+		Error:          operationError,
 	})
-	return err
+	return operationError
 }
 
-func (s *Service) logOperation(ctx context.Context, entry OperationLog) {
-	if s.logger == nil {
+func (service *Service) logOperation(ctx context.Context, entry OperationLog) {
+	if service.logger == nil {
 		return
 	}
 	if entry.Status == "" {
 		if entry.Error != nil {
-			entry.Status = "error"
+			entry.Status = operationStatusError
 		} else {
-			entry.Status = "ok"
+			entry.Status = operationStatusOK
 		}
 	}
-	s.logger.LogOperation(ctx, entry)
+	service.logger.LogOperation(ctx, entry)
+}
+
+func deriveIdempotencyKey(baseKey IdempotencyKey, suffix string) (IdempotencyKey, error) {
+	combined := baseKey.String() + idempotencyKeyDelimiter + suffix
+	return NewIdempotencyKey(combined)
+}
+
+func calculateAvailable(total AmountCents, holds AmountCents) (AmountCents, error) {
+	availableRaw := total.Int64() - holds.Int64()
+	available, err := NewAmountCents(availableRaw)
+	if err != nil {
+		return 0, WrapError("service", "balance", "negative_available", ErrInvalidBalance)
+	}
+	return available, nil
 }

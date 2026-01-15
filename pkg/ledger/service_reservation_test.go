@@ -6,485 +6,586 @@ import (
 	"testing"
 )
 
-func TestReserveCreatesReservationAndHoldEntry(t *testing.T) {
-	t.Parallel()
-	store := newStubStore(AmountCents(100))
-	service := mustNewService(t, store)
-	userID := mustUserID(t, "user-123")
-	reservationID := mustReservationID(t, "res-1")
-	idem := mustIdempotencyKey(t, "idem-1")
-	metadata := mustMetadata(t, `{"foo":"bar"}`)
-	amount := mustAmount(t, 40)
+func TestReserveCreatesReservationAndHoldEntry(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustAmountCents(test, 100))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	reservationID := mustReservationID(test, "res-1")
+	idempotencyKey := mustIdempotencyKey(test, "idem-1")
+	metadata := mustMetadata(test, `{"foo":"bar"}`)
+	amount := mustPositiveAmount(test, 40)
 
-	if err := service.Reserve(context.Background(), userID, amount, reservationID, idem, metadata); err != nil {
-		t.Fatalf("reserve: %v", err)
+	if err := service.Reserve(context.Background(), userID, amount, reservationID, idempotencyKey, metadata); err != nil {
+		test.Fatalf("reserve: %v", err)
 	}
 
 	if len(store.entries) != 1 {
-		t.Fatalf("expected 1 ledger entry, got %d", len(store.entries))
+		test.Fatalf("expected 1 ledger entry, got %d", len(store.entries))
 	}
 	entry := store.entries[0]
-	if entry.Type != EntryHold || entry.AmountCents != -amount {
-		t.Fatalf("expected hold entry -%d, got %+v", amount, entry)
+	if entry.Type() != EntryHold {
+		test.Fatalf("expected hold entry, got %s", entry.Type())
 	}
-	res := store.mustReservation(t, reservationID.String())
-	if res.Status != ReservationStatusActive {
-		t.Fatalf("expected reservation active, got %s", res.Status)
+	expectedAmount := amount.ToEntryAmountCents().Negated()
+	if entry.AmountCents() != expectedAmount {
+		test.Fatalf("expected hold entry %d, got %d", expectedAmount, entry.AmountCents())
+	}
+	reservation := store.mustReservation(test, reservationID)
+	if reservation.Status() != ReservationStatusActive {
+		test.Fatalf("expected reservation active, got %s", reservation.Status())
 	}
 }
 
-func TestBalanceComputesAvailableFunds(t *testing.T) {
-	t.Parallel()
-	store := newStubStore(AmountCents(200))
-	store.reservations["active-hold"] = Reservation{
-		ReservationID: "active-hold",
-		AmountCents:   mustAmount(t, 50),
-		Status:        ReservationStatusActive,
-	}
-	service := mustNewService(t, store)
-	userID := mustUserID(t, "availability-user")
+func TestBalanceComputesAvailableFunds(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustAmountCents(test, 200))
+	reservationID := mustReservationID(test, "active-hold")
+	reservation := mustReservationRecord(test, store.accountID, reservationID, mustPositiveAmount(test, 50), ReservationStatusActive)
+	store.reservations[reservationID] = reservation
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "availability-user")
 
 	balance, err := service.Balance(context.Background(), userID)
 	if err != nil {
-		t.Fatalf("balance: %v", err)
+		test.Fatalf("balance: %v", err)
 	}
 	if balance.TotalCents != 200 {
-		t.Fatalf("expected total 200, got %d", balance.TotalCents)
+		test.Fatalf("expected total 200, got %d", balance.TotalCents)
 	}
 	if balance.AvailableCents != 150 {
-		t.Fatalf("expected available 150, got %d", balance.AvailableCents)
+		test.Fatalf("expected available 150, got %d", balance.AvailableCents)
 	}
 }
 
-func TestGrantAppendsGrantEntry(t *testing.T) {
-	t.Parallel()
-	store := newStubStore(0)
-	service := mustNewService(t, store)
-	userID := mustUserID(t, "grant-user")
-	idem := mustIdempotencyKey(t, "grant-idem")
-	meta := mustMetadata(t, "{}")
-	amount := mustAmount(t, 75)
+func TestGrantAppendsGrantEntry(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustAmountCents(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "grant-user")
+	idempotencyKey := mustIdempotencyKey(test, "grant-idem")
+	metadata := mustMetadata(test, "{}")
+	amount := mustPositiveAmount(test, 75)
 
-	if err := service.Grant(context.Background(), userID, amount, idem, 0, meta); err != nil {
-		t.Fatalf("grant: %v", err)
+	if err := service.Grant(context.Background(), userID, amount, idempotencyKey, 0, metadata); err != nil {
+		test.Fatalf("grant: %v", err)
 	}
 	if len(store.entries) != 1 {
-		t.Fatalf("expected grant entry, got %d entries", len(store.entries))
+		test.Fatalf("expected grant entry, got %d entries", len(store.entries))
 	}
 	entry := store.entries[0]
-	if entry.Type != EntryGrant || entry.AmountCents != amount {
-		t.Fatalf("unexpected grant entry: %+v", entry)
+	if entry.Type() != EntryGrant {
+		test.Fatalf("unexpected grant entry type: %s", entry.Type())
+	}
+	if entry.AmountCents() != amount.ToEntryAmountCents() {
+		test.Fatalf("unexpected grant amount: %d", entry.AmountCents())
 	}
 }
 
-func TestReserveInsufficientFunds(t *testing.T) {
-	t.Parallel()
-	store := newStubStore(AmountCents(10))
-	service := mustNewService(t, store)
-	userID := mustUserID(t, "reserve-low")
-	resID := mustReservationID(t, "reserve-low")
-	idem := mustIdempotencyKey(t, "reserve-low")
-	meta := mustMetadata(t, "{}")
-	amount := mustAmount(t, 50)
+func TestReserveInsufficientFunds(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustAmountCents(test, 10))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "reserve-low")
+	reservationID := mustReservationID(test, "reserve-low")
+	idempotencyKey := mustIdempotencyKey(test, "reserve-low")
+	metadata := mustMetadata(test, "{}")
+	amount := mustPositiveAmount(test, 50)
 
-	err := service.Reserve(context.Background(), userID, amount, resID, idem, meta)
+	err := service.Reserve(context.Background(), userID, amount, reservationID, idempotencyKey, metadata)
 	if !errors.Is(err, ErrInsufficientFunds) {
-		t.Fatalf("expected ErrInsufficientFunds, got %v", err)
+		test.Fatalf("expected ErrInsufficientFunds, got %v", err)
 	}
 }
 
-func TestCaptureMovesReservationToCaptured(t *testing.T) {
-	t.Parallel()
-	store := newStubStore(AmountCents(200))
-	service := mustNewService(t, store)
-	userID := mustUserID(t, "user-456")
-	resID := mustReservationID(t, "res-9")
-	idem := mustIdempotencyKey(t, "idem-9")
-	meta := mustMetadata(t, "{}")
-	amount := mustAmount(t, 60)
-
-	if err := service.Reserve(context.Background(), userID, amount, resID, idem, meta); err != nil {
-		t.Fatalf("reserve: %v", err)
-	}
-	if err := service.Capture(context.Background(), userID, resID, idem, amount, meta); err != nil {
-		t.Fatalf("capture: %v", err)
-	}
-
-	if got := len(store.entries); got != 3 {
-		t.Fatalf("expected 3 ledger entries (hold, reverse, spend), got %d", got)
-	}
-	reverse := store.entries[1]
-	if reverse.Type != EntryReverseHold || reverse.AmountCents != amount {
-		t.Fatalf("expected reverse hold of %d, got %+v", amount, reverse)
-	}
-	spend := store.entries[2]
-	if spend.Type != EntrySpend || spend.AmountCents != -amount {
-		t.Fatalf("expected spend of -%d, got %+v", amount, spend)
-	}
-	res := store.mustReservation(t, resID.String())
-	if res.Status != ReservationStatusCaptured {
-		t.Fatalf("expected captured reservation, got %s", res.Status)
-	}
-}
-
-func TestCaptureAmountMismatch(t *testing.T) {
-	t.Parallel()
-	store := newStubStore(AmountCents(200))
-	service := mustNewService(t, store)
-	userID := mustUserID(t, "capture-mismatch")
-	resID := mustReservationID(t, "capture-mismatch")
-	idem := mustIdempotencyKey(t, "capture-mismatch")
-	meta := mustMetadata(t, "{}")
-	amount := mustAmount(t, 60)
-
-	if err := service.Reserve(context.Background(), userID, amount, resID, idem, meta); err != nil {
-		t.Fatalf("reserve: %v", err)
-	}
-	err := service.Capture(context.Background(), userID, resID, idem, mustAmount(t, 10), meta)
-	if !errors.Is(err, ErrInvalidAmountCents) {
-		t.Fatalf("expected ErrInvalidAmountCents, got %v", err)
-	}
-}
-
-func TestCaptureUsesDistinctIdempotencyKeys(t *testing.T) {
-	t.Parallel()
-	store := newStubStore(AmountCents(120))
-	service := mustNewService(t, store)
-	userID := mustUserID(t, "user-456")
-	reservationID := mustReservationID(t, "res-10")
-	idempotencyKey := mustIdempotencyKey(t, "idem-10")
-	metadata := mustMetadata(t, "{}")
-	amount := mustAmount(t, 30)
+func TestCaptureMovesReservationToCaptured(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustAmountCents(test, 200))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-456")
+	reservationID := mustReservationID(test, "res-9")
+	idempotencyKey := mustIdempotencyKey(test, "idem-9")
+	metadata := mustMetadata(test, "{}")
+	amount := mustPositiveAmount(test, 60)
 
 	if err := service.Reserve(context.Background(), userID, amount, reservationID, idempotencyKey, metadata); err != nil {
-		t.Fatalf("reserve: %v", err)
+		test.Fatalf("reserve: %v", err)
 	}
 	if err := service.Capture(context.Background(), userID, reservationID, idempotencyKey, amount, metadata); err != nil {
-		t.Fatalf("capture: %v", err)
+		test.Fatalf("capture: %v", err)
 	}
 
 	if got := len(store.entries); got != 3 {
-		t.Fatalf("expected 3 ledger entries (grant not required), got %d", got)
+		test.Fatalf("expected 3 ledger entries (hold, reverse, spend), got %d", got)
+	}
+	reverse := store.entries[1]
+	if reverse.Type() != EntryReverseHold {
+		test.Fatalf("expected reverse hold, got %s", reverse.Type())
+	}
+	if reverse.AmountCents() != amount.ToEntryAmountCents() {
+		test.Fatalf("expected reverse hold of %d, got %d", amount, reverse.AmountCents())
+	}
+	spend := store.entries[2]
+	if spend.Type() != EntrySpend {
+		test.Fatalf("expected spend, got %s", spend.Type())
+	}
+	if spend.AmountCents() != amount.ToEntryAmountCents().Negated() {
+		test.Fatalf("expected spend of %d, got %d", amount.ToEntryAmountCents().Negated(), spend.AmountCents())
+	}
+	reservation := store.mustReservation(test, reservationID)
+	if reservation.Status() != ReservationStatusCaptured {
+		test.Fatalf("expected captured reservation, got %s", reservation.Status())
+	}
+}
+
+func TestCaptureAmountMismatch(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustAmountCents(test, 200))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "capture-mismatch")
+	reservationID := mustReservationID(test, "capture-mismatch")
+	idempotencyKey := mustIdempotencyKey(test, "capture-mismatch")
+	metadata := mustMetadata(test, "{}")
+	amount := mustPositiveAmount(test, 60)
+
+	if err := service.Reserve(context.Background(), userID, amount, reservationID, idempotencyKey, metadata); err != nil {
+		test.Fatalf("reserve: %v", err)
+	}
+	err := service.Capture(context.Background(), userID, reservationID, idempotencyKey, mustPositiveAmount(test, 10), metadata)
+	if !errors.Is(err, ErrInvalidAmountCents) {
+		test.Fatalf("expected ErrInvalidAmountCents, got %v", err)
+	}
+}
+
+func TestCaptureUsesDistinctIdempotencyKeys(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustAmountCents(test, 120))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-456")
+	reservationID := mustReservationID(test, "res-10")
+	idempotencyKey := mustIdempotencyKey(test, "idem-10")
+	metadata := mustMetadata(test, "{}")
+	amount := mustPositiveAmount(test, 30)
+
+	if err := service.Reserve(context.Background(), userID, amount, reservationID, idempotencyKey, metadata); err != nil {
+		test.Fatalf("reserve: %v", err)
+	}
+	if err := service.Capture(context.Background(), userID, reservationID, idempotencyKey, amount, metadata); err != nil {
+		test.Fatalf("capture: %v", err)
 	}
 
-	keys := make(map[string]struct{}, len(store.entries))
+	if got := len(store.entries); got != 3 {
+		test.Fatalf("expected 3 ledger entries (grant not required), got %d", got)
+	}
+
+	keys := make(map[IdempotencyKey]struct{}, len(store.entries))
 	for _, entry := range store.entries {
-		keys[entry.IdempotencyKey] = struct{}{}
+		keys[entry.IdempotencyKey()] = struct{}{}
 	}
 	if len(keys) != len(store.entries) {
-		t.Fatalf("expected unique idempotency keys, got %v", keys)
+		test.Fatalf("expected unique idempotency keys, got %v", keys)
 	}
 
 	reverse := store.entries[1]
 	spend := store.entries[2]
-	if reverse.IdempotencyKey == spend.IdempotencyKey {
-		t.Fatalf("expected distinct keys, got reverse=%s spend=%s", reverse.IdempotencyKey, spend.IdempotencyKey)
+	if reverse.IdempotencyKey() == spend.IdempotencyKey() {
+		test.Fatalf("expected distinct keys, got reverse=%s spend=%s", reverse.IdempotencyKey().String(), spend.IdempotencyKey().String())
 	}
 }
 
-func TestReleaseUnlocksReservation(t *testing.T) {
-	t.Parallel()
-	store := newStubStore(AmountCents(150))
-	service := mustNewService(t, store)
-	userID := mustUserID(t, "user-789")
-	resID := mustReservationID(t, "res-77")
-	holdIdempotencyKey := mustIdempotencyKey(t, "idem-77")
-	releaseIdempotencyKey := mustIdempotencyKey(t, "idem-77-release")
-	meta := mustMetadata(t, "{}")
-	amount := mustAmount(t, 50)
+func TestReleaseUnlocksReservation(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustAmountCents(test, 150))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-789")
+	reservationID := mustReservationID(test, "res-77")
+	holdIdempotencyKey := mustIdempotencyKey(test, "idem-77")
+	releaseIdempotencyKey := mustIdempotencyKey(test, "idem-77-release")
+	metadata := mustMetadata(test, "{}")
+	amount := mustPositiveAmount(test, 50)
 
-	if err := service.Reserve(context.Background(), userID, amount, resID, holdIdempotencyKey, meta); err != nil {
-		t.Fatalf("reserve: %v", err)
+	if err := service.Reserve(context.Background(), userID, amount, reservationID, holdIdempotencyKey, metadata); err != nil {
+		test.Fatalf("reserve: %v", err)
 	}
-	if err := service.Release(context.Background(), userID, resID, releaseIdempotencyKey, meta); err != nil {
-		t.Fatalf("release: %v", err)
+	if err := service.Release(context.Background(), userID, reservationID, releaseIdempotencyKey, metadata); err != nil {
+		test.Fatalf("release: %v", err)
 	}
 	if got := len(store.entries); got != 2 {
-		t.Fatalf("expected 2 entries (hold + reverse hold), got %d", got)
+		test.Fatalf("expected 2 entries (hold + reverse hold), got %d", got)
 	}
 	reverse := store.entries[1]
-	if reverse.Type != EntryReverseHold || reverse.AmountCents != amount {
-		t.Fatalf("expected reverse hold of %d, got %+v", amount, reverse)
+	if reverse.Type() != EntryReverseHold {
+		test.Fatalf("expected reverse hold, got %s", reverse.Type())
 	}
-	res := store.mustReservation(t, resID.String())
-	if res.Status != ReservationStatusReleased {
-		t.Fatalf("expected released reservation, got %s", res.Status)
+	if reverse.AmountCents() != amount.ToEntryAmountCents() {
+		test.Fatalf("expected reverse hold of %d, got %d", amount, reverse.AmountCents())
+	}
+	reservation := store.mustReservation(test, reservationID)
+	if reservation.Status() != ReservationStatusReleased {
+		test.Fatalf("expected released reservation, got %s", reservation.Status())
 	}
 }
 
-func TestListEntriesDelegatesToStore(t *testing.T) {
-	t.Parallel()
-	store := newStubStore(0)
-	store.listEntries = []Entry{
-		{EntryID: "e1"},
-		{EntryID: "e2"},
-	}
-	service := mustNewService(t, store)
-	userID := mustUserID(t, "list-user")
+func TestListEntriesDelegatesToStore(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustAmountCents(test, 0))
+	accountID := store.accountID
+	entryIDOne := mustEntryID(test, "e1")
+	entryIDTwo := mustEntryID(test, "e2")
+	idempotencyKey := mustIdempotencyKey(test, "list-idem")
+	metadata := mustMetadata(test, "{}")
+	entryOne := mustEntry(test, entryIDOne, accountID, EntryGrant, mustEntryAmount(test, 10), idempotencyKey, metadata)
+	entryTwo := mustEntry(test, entryIDTwo, accountID, EntryGrant, mustEntryAmount(test, 20), idempotencyKey, metadata)
+	store.listEntries = []Entry{entryOne, entryTwo}
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "list-user")
 
 	out, err := service.ListEntries(context.Background(), userID, 0, 5)
 	if err != nil {
-		t.Fatalf("list entries: %v", err)
+		test.Fatalf("list entries: %v", err)
 	}
-	if len(out) != 2 || out[0].EntryID != "e1" || out[1].EntryID != "e2" {
-		t.Fatalf("unexpected entries: %+v", out)
+	if len(out) != 2 {
+		test.Fatalf("unexpected entries: %+v", out)
+	}
+	if out[0].EntryID().String() != "e1" || out[1].EntryID().String() != "e2" {
+		test.Fatalf("unexpected entries: %+v", out)
 	}
 }
 
-func TestNewServiceRequiresDependencies(t *testing.T) {
-	t.Parallel()
+func TestNewServiceRequiresDependencies(test *testing.T) {
+	test.Parallel()
 	_, err := NewService(nil, func() int64 { return 0 })
 	if !errors.Is(err, ErrInvalidServiceConfig) {
-		t.Fatalf("expected invalid service config error, got %v", err)
+		test.Fatalf("expected invalid service config error, got %v", err)
 	}
-	store := newStubStore(0)
+	store := newStubStore(test, mustAmountCents(test, 0))
 	_, err = NewService(store, nil)
 	if !errors.Is(err, ErrInvalidServiceConfig) {
-		t.Fatalf("expected invalid service config error, got %v", err)
+		test.Fatalf("expected invalid service config error, got %v", err)
 	}
 }
 
-func TestSpendInsufficientFunds(t *testing.T) {
-	t.Parallel()
-	store := newStubStore(AmountCents(10))
-	service := mustNewService(t, store)
-	userID := mustUserID(t, "spend-low")
-	idem := mustIdempotencyKey(t, "spend-low")
-	meta := mustMetadata(t, "{}")
-	amount := mustAmount(t, 40)
+func TestSpendInsufficientFunds(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustAmountCents(test, 10))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "spend-low")
+	idempotencyKey := mustIdempotencyKey(test, "spend-low")
+	metadata := mustMetadata(test, "{}")
+	amount := mustPositiveAmount(test, 40)
 
-	err := service.Spend(context.Background(), userID, amount, idem, meta)
+	err := service.Spend(context.Background(), userID, amount, idempotencyKey, metadata)
 	if !errors.Is(err, ErrInsufficientFunds) {
-		t.Fatalf("expected ErrInsufficientFunds, got %v", err)
+		test.Fatalf("expected ErrInsufficientFunds, got %v", err)
 	}
 }
 
-func TestSpendAppendsSpendEntry(t *testing.T) {
-	t.Parallel()
-	store := newStubStore(AmountCents(150))
-	service := mustNewService(t, store)
-	userID := mustUserID(t, "spend-user")
-	idem := mustIdempotencyKey(t, "spend-idem")
-	meta := mustMetadata(t, "{}")
-	amount := mustAmount(t, 25)
+func TestSpendAppendsSpendEntry(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustAmountCents(test, 150))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "spend-user")
+	idempotencyKey := mustIdempotencyKey(test, "spend-idem")
+	metadata := mustMetadata(test, "{}")
+	amount := mustPositiveAmount(test, 25)
 
-	if err := service.Spend(context.Background(), userID, amount, idem, meta); err != nil {
-		t.Fatalf("spend: %v", err)
+	if err := service.Spend(context.Background(), userID, amount, idempotencyKey, metadata); err != nil {
+		test.Fatalf("spend: %v", err)
 	}
 	if len(store.entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(store.entries))
+		test.Fatalf("expected 1 entry, got %d", len(store.entries))
 	}
 	entry := store.entries[0]
-	if entry.Type != EntrySpend || entry.AmountCents != -amount {
-		t.Fatalf("unexpected spend entry: %+v", entry)
+	if entry.Type() != EntrySpend {
+		test.Fatalf("unexpected spend entry type: %s", entry.Type())
+	}
+	if entry.AmountCents() != amount.ToEntryAmountCents().Negated() {
+		test.Fatalf("unexpected spend entry amount: %d", entry.AmountCents())
 	}
 }
-
-// --- helpers ---
 
 type stubStore struct {
-	accountID    string
+	accountID    AccountID
 	total        AmountCents
-	reservations map[string]Reservation
-	entries      []Entry
+	reservations map[ReservationID]Reservation
+	entries      []EntryInput
 	listEntries  []Entry
 	listErr      error
-	idempotency  map[string]struct{}
+	idempotency  map[IdempotencyKey]struct{}
 }
 
-func newStubStore(initialTotal AmountCents) *stubStore {
+func newStubStore(test *testing.T, initialTotal AmountCents) *stubStore {
+	test.Helper()
 	return &stubStore{
-		accountID:    "acct-1",
+		accountID:    mustAccountID(test, "acct-1"),
 		total:        initialTotal,
-		reservations: make(map[string]Reservation),
-		idempotency:  make(map[string]struct{}),
+		reservations: make(map[ReservationID]Reservation),
+		idempotency:  make(map[IdempotencyKey]struct{}),
 	}
 }
 
-func (s *stubStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore Store) error) error {
-	return fn(ctx, s)
+func (store *stubStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore Store) error) error {
+	return fn(ctx, store)
 }
 
-func (s *stubStore) GetOrCreateAccountID(ctx context.Context, userID string) (string, error) {
-	return s.accountID, nil
+func (store *stubStore) GetOrCreateAccountID(ctx context.Context, userID UserID) (AccountID, error) {
+	return store.accountID, nil
 }
 
-func (s *stubStore) InsertEntry(ctx context.Context, entry Entry) error {
-	if _, exists := s.idempotency[entry.IdempotencyKey]; exists {
+func (store *stubStore) InsertEntry(ctx context.Context, entryInput EntryInput) error {
+	if _, exists := store.idempotency[entryInput.IdempotencyKey()]; exists {
 		return ErrDuplicateIdempotencyKey
 	}
-	s.idempotency[entry.IdempotencyKey] = struct{}{}
-	s.entries = append(s.entries, entry)
-	switch entry.Type {
+	store.idempotency[entryInput.IdempotencyKey()] = struct{}{}
+	store.entries = append(store.entries, entryInput)
+	switch entryInput.Type() {
 	case EntryGrant, EntrySpend:
-		s.total += entry.AmountCents
+		updatedTotal, err := applyEntryDelta(store.total, entryInput.AmountCents())
+		if err != nil {
+			return err
+		}
+		store.total = updatedTotal
 	}
 	return nil
 }
 
-func (s *stubStore) SumTotal(ctx context.Context, accountID string, _ int64) (AmountCents, error) {
-	return s.total, nil
+func (store *stubStore) SumTotal(ctx context.Context, accountID AccountID, _ int64) (AmountCents, error) {
+	return store.total, nil
 }
 
-func (s *stubStore) SumActiveHolds(ctx context.Context, accountID string, _ int64) (AmountCents, error) {
-	var sum AmountCents
-	for _, res := range s.reservations {
-		if res.Status == ReservationStatusActive {
-			sum += res.AmountCents
+func (store *stubStore) SumActiveHolds(ctx context.Context, accountID AccountID, _ int64) (AmountCents, error) {
+	var sum int64
+	for _, reservation := range store.reservations {
+		if reservation.Status() == ReservationStatusActive {
+			sum += reservation.AmountCents().Int64()
 		}
 	}
-	return sum, nil
+	return NewAmountCents(sum)
 }
 
-func (s *stubStore) CreateReservation(ctx context.Context, reservation Reservation) error {
-	key := reservation.ReservationID
-	if _, exists := s.reservations[key]; exists {
+func (store *stubStore) CreateReservation(ctx context.Context, reservation Reservation) error {
+	reservationID := reservation.ReservationID()
+	if _, exists := store.reservations[reservationID]; exists {
 		return ErrReservationExists
 	}
-	s.reservations[key] = reservation
+	store.reservations[reservationID] = reservation
 	return nil
 }
 
-func (s *stubStore) GetReservation(ctx context.Context, accountID string, reservationID string) (Reservation, error) {
-	res, ok := s.reservations[reservationID]
+func (store *stubStore) GetReservation(ctx context.Context, accountID AccountID, reservationID ReservationID) (Reservation, error) {
+	reservation, ok := store.reservations[reservationID]
 	if !ok {
 		return Reservation{}, ErrUnknownReservation
 	}
-	return res, nil
+	return reservation, nil
 }
 
-func (s *stubStore) UpdateReservationStatus(ctx context.Context, accountID string, reservationID string, from, to ReservationStatus) error {
-	res, ok := s.reservations[reservationID]
+func (store *stubStore) UpdateReservationStatus(ctx context.Context, accountID AccountID, reservationID ReservationID, from, to ReservationStatus) error {
+	reservation, ok := store.reservations[reservationID]
 	if !ok {
 		return ErrUnknownReservation
 	}
-	if res.Status != from {
+	if reservation.Status() != from {
 		return ErrReservationClosed
 	}
-	res.Status = to
-	s.reservations[reservationID] = res
+	updatedReservation, err := NewReservation(reservation.AccountID(), reservation.ReservationID(), reservation.AmountCents(), to)
+	if err != nil {
+		return err
+	}
+	store.reservations[reservationID] = updatedReservation
 	return nil
 }
 
-func (s *stubStore) ListEntries(ctx context.Context, accountID string, beforeUnixUTC int64, limit int) ([]Entry, error) {
-	if s.listErr != nil {
-		return nil, s.listErr
+func (store *stubStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int) ([]Entry, error) {
+	if store.listErr != nil {
+		return nil, store.listErr
 	}
-	return append([]Entry(nil), s.listEntries...), nil
+	return append([]Entry(nil), store.listEntries...), nil
 }
 
-func (s *stubStore) mustReservation(t *testing.T, reservationID string) Reservation {
-	t.Helper()
-	res, ok := s.reservations[reservationID]
+func (store *stubStore) mustReservation(test *testing.T, reservationID ReservationID) Reservation {
+	test.Helper()
+	reservation, ok := store.reservations[reservationID]
 	if !ok {
-		t.Fatalf("reservation %s not found", reservationID)
+		test.Fatalf("reservation %s not found", reservationID.String())
 	}
-	return res
+	return reservation
 }
 
-// domain helper constructors
-func mustNewService(t *testing.T, store Store) *Service {
-	t.Helper()
+func applyEntryDelta(total AmountCents, delta EntryAmountCents) (AmountCents, error) {
+	updated := total.Int64() + delta.Int64()
+	return NewAmountCents(updated)
+}
+
+func mustNewService(test *testing.T, store Store) *Service {
+	test.Helper()
 	service, err := NewService(store, func() int64 { return 100 })
 	if err != nil {
-		t.Fatalf("new service: %v", err)
+		test.Fatalf("new service: %v", err)
 	}
 	return service
 }
 
-func mustUserID(t *testing.T, raw string) UserID {
-	t.Helper()
+func mustUserID(test *testing.T, raw string) UserID {
+	test.Helper()
 	value, err := NewUserID(raw)
 	if err != nil {
-		t.Fatalf("user id: %v", err)
+		test.Fatalf("user id: %v", err)
 	}
 	return value
 }
 
-func mustReservationID(t *testing.T, raw string) ReservationID {
-	t.Helper()
+func mustReservationID(test *testing.T, raw string) ReservationID {
+	test.Helper()
 	value, err := NewReservationID(raw)
 	if err != nil {
-		t.Fatalf("reservation id: %v", err)
+		test.Fatalf("reservation id: %v", err)
 	}
 	return value
 }
 
-func mustIdempotencyKey(t *testing.T, raw string) IdempotencyKey {
-	t.Helper()
+func mustIdempotencyKey(test *testing.T, raw string) IdempotencyKey {
+	test.Helper()
 	value, err := NewIdempotencyKey(raw)
 	if err != nil {
-		t.Fatalf("idempotency key: %v", err)
+		test.Fatalf("idempotency key: %v", err)
 	}
 	return value
 }
 
-func mustMetadata(t *testing.T, raw string) MetadataJSON {
-	t.Helper()
+func mustMetadata(test *testing.T, raw string) MetadataJSON {
+	test.Helper()
 	value, err := NewMetadataJSON(raw)
 	if err != nil {
-		t.Fatalf("metadata: %v", err)
+		test.Fatalf("metadata: %v", err)
 	}
 	return value
 }
 
-func mustAmount(t *testing.T, raw int64) AmountCents {
-	t.Helper()
-	value, err := NewAmountCents(raw)
+func mustPositiveAmount(test *testing.T, raw int64) PositiveAmountCents {
+	test.Helper()
+	value, err := NewPositiveAmountCents(raw)
 	if err != nil {
-		t.Fatalf("amount: %v", err)
+		test.Fatalf("amount: %v", err)
 	}
 	return value
+}
+
+func mustAmountCents(test *testing.T, raw int64) AmountCents {
+	test.Helper()
+	value, err := NewAmountCents(raw)
+	if err != nil {
+		test.Fatalf("amount: %v", err)
+	}
+	return value
+}
+
+func mustEntryAmount(test *testing.T, raw int64) EntryAmountCents {
+	test.Helper()
+	value, err := NewEntryAmountCents(raw)
+	if err != nil {
+		test.Fatalf("entry amount: %v", err)
+	}
+	return value
+}
+
+func mustAccountID(test *testing.T, raw string) AccountID {
+	test.Helper()
+	value, err := NewAccountID(raw)
+	if err != nil {
+		test.Fatalf("account id: %v", err)
+	}
+	return value
+}
+
+func mustEntryID(test *testing.T, raw string) EntryID {
+	test.Helper()
+	value, err := NewEntryID(raw)
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+	return value
+}
+
+func mustReservationRecord(test *testing.T, accountID AccountID, reservationID ReservationID, amount PositiveAmountCents, status ReservationStatus) Reservation {
+	test.Helper()
+	reservation, err := NewReservation(accountID, reservationID, amount, status)
+	if err != nil {
+		test.Fatalf("reservation: %v", err)
+	}
+	return reservation
+}
+
+func mustEntry(test *testing.T, entryID EntryID, accountID AccountID, entryType EntryType, amount EntryAmountCents, idempotencyKey IdempotencyKey, metadata MetadataJSON) Entry {
+	test.Helper()
+	entry, err := NewEntry(entryID, accountID, entryType, amount, nil, idempotencyKey, 0, metadata, 100)
+	if err != nil {
+		test.Fatalf("entry: %v", err)
+	}
+	return entry
 }
 
 type mockStore struct {
 	*stubStore
 }
 
-func newMockStore() *mockStore {
-	return &mockStore{stubStore: newStubStore(AmountCents(0))}
+func newMockStore(test *testing.T) *mockStore {
+	return &mockStore{stubStore: newStubStore(test, mustAmountCents(test, 0))}
 }
 
 type failingStore struct {
 	Store
-	err error
+	err         error
+	accountID   AccountID
+	total       AmountCents
+	activeHolds AmountCents
 }
 
-func (f *failingStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore Store) error) error {
+func newFailingStore(test *testing.T, err error) *failingStore {
+	test.Helper()
+	return &failingStore{
+		err:         err,
+		accountID:   mustAccountID(test, "acct"),
+		total:       mustAmountCents(test, 1000),
+		activeHolds: mustAmountCents(test, 0),
+	}
+}
+
+func (store *failingStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore Store) error) error {
 	if fn == nil {
 		return nil
 	}
-	return fn(ctx, f)
+	return fn(ctx, store)
 }
 
-func (f *failingStore) GetOrCreateAccountID(ctx context.Context, userID string) (string, error) {
-	return "acct", nil
+func (store *failingStore) GetOrCreateAccountID(ctx context.Context, userID UserID) (AccountID, error) {
+	return store.accountID, nil
 }
 
-func (f *failingStore) InsertEntry(ctx context.Context, entry Entry) error {
-	return f.err
+func (store *failingStore) InsertEntry(ctx context.Context, entry EntryInput) error {
+	return store.err
 }
 
-func (f *failingStore) SumTotal(ctx context.Context, accountID string, atUnixUTC int64) (AmountCents, error) {
-	return 1000, nil
+func (store *failingStore) SumTotal(ctx context.Context, accountID AccountID, atUnixUTC int64) (AmountCents, error) {
+	return store.total, nil
 }
 
-func (f *failingStore) SumActiveHolds(ctx context.Context, accountID string, atUnixUTC int64) (AmountCents, error) {
-	return 0, nil
+func (store *failingStore) SumActiveHolds(ctx context.Context, accountID AccountID, atUnixUTC int64) (AmountCents, error) {
+	return store.activeHolds, nil
 }
 
-func (f *failingStore) CreateReservation(ctx context.Context, reservation Reservation) error {
+func (store *failingStore) CreateReservation(ctx context.Context, reservation Reservation) error {
 	return nil
 }
 
-func (f *failingStore) GetReservation(ctx context.Context, accountID string, reservationID string) (Reservation, error) {
+func (store *failingStore) GetReservation(ctx context.Context, accountID AccountID, reservationID ReservationID) (Reservation, error) {
 	return Reservation{}, nil
 }
 
-func (f *failingStore) UpdateReservationStatus(ctx context.Context, accountID string, reservationID string, from, to ReservationStatus) error {
+func (store *failingStore) UpdateReservationStatus(ctx context.Context, accountID AccountID, reservationID ReservationID, from, to ReservationStatus) error {
 	return nil
 }
 
-func (f *failingStore) ListEntries(ctx context.Context, accountID string, beforeUnixUTC int64, limit int) ([]Entry, error) {
+func (store *failingStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int) ([]Entry, error) {
 	return nil, nil
 }

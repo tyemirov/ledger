@@ -50,8 +50,8 @@ func (service *CreditServiceServer) GetBalance(ctx context.Context, request *cre
 		return nil, mapToGRPCError(operationError)
 	}
 	return &creditv1.BalanceResponse{
-		TotalCents:     int64(balance.TotalCents),
-		AvailableCents: int64(balance.AvailableCents),
+		TotalCents:     balance.TotalCents.Int64(),
+		AvailableCents: balance.AvailableCents.Int64(),
 	}, nil
 }
 
@@ -60,7 +60,7 @@ func (service *CreditServiceServer) Grant(ctx context.Context, request *creditv1
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	amount, err := ledger.NewAmountCents(request.GetAmountCents())
+	amount, err := ledger.NewPositiveAmountCents(request.GetAmountCents())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
@@ -84,7 +84,7 @@ func (service *CreditServiceServer) Reserve(ctx context.Context, request *credit
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	amount, err := ledger.NewAmountCents(request.GetAmountCents())
+	amount, err := ledger.NewPositiveAmountCents(request.GetAmountCents())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
@@ -120,7 +120,7 @@ func (service *CreditServiceServer) Capture(ctx context.Context, request *credit
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	amount, err := ledger.NewAmountCents(request.GetAmountCents())
+	amount, err := ledger.NewPositiveAmountCents(request.GetAmountCents())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
@@ -164,7 +164,7 @@ func (service *CreditServiceServer) Spend(ctx context.Context, request *creditv1
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	amount, err := ledger.NewAmountCents(request.GetAmountCents())
+	amount, err := ledger.NewPositiveAmountCents(request.GetAmountCents())
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
@@ -201,17 +201,22 @@ func (service *CreditServiceServer) ListEntries(ctx context.Context, request *cr
 		return nil, mapToGRPCError(operationError)
 	}
 	response := &creditv1.ListEntriesResponse{Entries: make([]*creditv1.Entry, 0, len(entries))}
-	for _, entry := range entries {
+	for _, entryRecord := range entries {
+		reservationIDValue := ""
+		reservationID, hasReservation := entryRecord.ReservationID()
+		if hasReservation {
+			reservationIDValue = reservationID.String()
+		}
 		response.Entries = append(response.Entries, &creditv1.Entry{
-			EntryId:          entry.EntryID,
-			AccountId:        entry.AccountID,
-			Type:             string(entry.Type),
-			AmountCents:      int64(entry.AmountCents),
-			ReservationId:    entry.ReservationID,
-			IdempotencyKey:   entry.IdempotencyKey,
-			ExpiresAtUnixUtc: entry.ExpiresAtUnixUTC,
-			MetadataJson:     entry.MetadataJSON,
-			CreatedUnixUtc:   entry.CreatedUnixUTC,
+			EntryId:          entryRecord.EntryID().String(),
+			AccountId:        entryRecord.AccountID().String(),
+			Type:             entryRecord.Type().String(),
+			AmountCents:      entryRecord.AmountCents().Int64(),
+			ReservationId:    reservationIDValue,
+			IdempotencyKey:   entryRecord.IdempotencyKey().String(),
+			ExpiresAtUnixUtc: entryRecord.ExpiresAtUnixUTC(),
+			MetadataJson:     entryRecord.MetadataJSON().String(),
+			CreatedUnixUtc:   entryRecord.CreatedUnixUTC(),
 		})
 	}
 	return response, nil

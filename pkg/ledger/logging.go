@@ -14,7 +14,7 @@ type OperationLogger interface {
 type OperationLog struct {
 	Operation      string
 	UserID         UserID
-	ReservationID  ReservationID
+	ReservationID  *ReservationID
 	Amount         AmountCents
 	IdempotencyKey IdempotencyKey
 	Metadata       MetadataJSON

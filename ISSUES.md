@@ -10,7 +10,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 ## Improvements (207–299)
 
-- [ ] [LG-204] (P1) Extract ledger core into a reusable Go library.
+- [x] [LG-204] (P1) Extract ledger core into a reusable Go library. Resolved: domain types + store interfaces enforced, adapters updated, tests/ci passing.
   - Promote `internal/credit` into a public `pkg/ledger` module with explicit domain types and invariants.
     - Define a storage interface suitable for both in-process and service-hosted deployments.
     - Provide a default SQL-backed implementation (adapting existing gorm stores) while keeping the core domain independent of GORM.
@@ -33,4 +33,3 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 ## Planning (500–599)
 *do not implement yet*
-
