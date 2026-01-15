@@ -6,7 +6,7 @@ services:
     env_file:
       - .env.ledger
     volumes:
-      - ledger-data:/srv/data
+      - ledger-data:${LEDGER_DATA_DIR}
     ports:
       - "50051:50051"
 

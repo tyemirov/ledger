@@ -4,9 +4,9 @@ services:
     container_name: ledger-ledger
     pull_policy: always
     env_file:
-      - ./.env.ledger
+      - ../.env.ledger
     volumes:
-      - ledger_data:/data
+      - ledger_data:${LEDGER_DATA_DIR}
     ports:
       - "50051:50051"
     restart: unless-stopped
