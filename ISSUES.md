@@ -37,7 +37,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 ## Maintenance (401–499)
 
-- [ ] [LG-400] (P0) Increase test coverage to 95%.
+- [x] [LG-400] (P0) Increase test coverage to 95%. Resolved: ledger tests expanded to 96.7% coverage; coverage gate raised to 95%, tooling passing.
   Increase test coverage to 95%
 
 
