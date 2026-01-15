@@ -25,7 +25,10 @@ import (
 
 var errUnimplemented = errors.New("unimplemented")
 
-const defaultLedgerID = "default"
+const (
+	defaultLedgerID = "default"
+	defaultTenantID = "default"
+)
 
 // Run boots the HTTP façade using the supplied configuration.
 func Run(ctx context.Context, cfg Config) error {
@@ -179,6 +182,7 @@ func (handler *httpHandler) ensureBootstrap(ctx context.Context, userID string) 
 		MetadataJson:     marshalMetadata(map[string]string{"action": "bootstrap"}),
 		ExpiresAtUnixUtc: 0,
 		LedgerId:         defaultLedgerID,
+		TenantId:         defaultTenantID,
 	})
 	if err != nil && !isGRPCAlreadyExists(err) {
 		return err
@@ -193,6 +197,7 @@ func (handler *httpHandler) hasBootstrapGrant(ctx context.Context, userID string
 		UserId:   userID,
 		Limit:    200,
 		LedgerId: defaultLedgerID,
+		TenantId: defaultTenantID,
 	})
 	if err != nil {
 		return false, err
@@ -241,6 +246,7 @@ func (handler *httpHandler) handleTransaction(ctx *gin.Context) {
 		IdempotencyKey: fmt.Sprintf("spend:%s", uuid.NewString()),
 		MetadataJson:   marshalMetadata(metadata),
 		LedgerId:       defaultLedgerID,
+		TenantId:       defaultTenantID,
 	})
 	if err != nil {
 		if isGRPCInsufficientFunds(err) {
@@ -284,6 +290,7 @@ func (handler *httpHandler) handlePurchase(ctx *gin.Context) {
 		IdempotencyKey: fmt.Sprintf("purchase:%s", uuid.NewString()),
 		MetadataJson:   marshalMetadata(metadata),
 		LedgerId:       defaultLedgerID,
+		TenantId:       defaultTenantID,
 	})
 	if err != nil {
 		handler.logger.Error("purchase grant failed", zap.Error(err))
@@ -322,6 +329,7 @@ func (handler *httpHandler) fetchWallet(ctx context.Context, userID string) (*wa
 	balanceResp, err := handler.ledgerClient.GetBalance(requestCtx, &creditv1.BalanceRequest{
 		UserId:   userID,
 		LedgerId: defaultLedgerID,
+		TenantId: defaultTenantID,
 	})
 	if err != nil {
 		return nil, err
@@ -334,6 +342,7 @@ func (handler *httpHandler) fetchWallet(ctx context.Context, userID string) (*wa
 		Limit:         WalletHistoryLimit(),
 		BeforeUnixUtc: time.Now().UTC().Add(time.Second).Unix(),
 		LedgerId:      defaultLedgerID,
+		TenantId:      defaultTenantID,
 	})
 	if err != nil {
 		return nil, err

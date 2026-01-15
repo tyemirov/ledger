@@ -21,6 +21,10 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Allow a single user_id to own multiple ledger accounts (introduce a ledger/account namespace or composite key).
     - Update storage constraints, API inputs, and reservation/entry lookups to include the ledger identifier.
     - Provide a migration path for existing single-ledger data.
+- [x] [LG-207] (P2) Introduce first-class multi-tenant support (tenant_id). Resolved: tenant_id required across API/service/store/schema; demo/docs/examples updated; no migration path.
+  - Require tenant_id in API/service/store boundaries and schema keys.
+    - Update demo/docs/examples to send tenant_id alongside ledger_id and user_id.
+    - Skip migration path (backward compatibility not required).
 
 
 ## BugFixes (302–399)

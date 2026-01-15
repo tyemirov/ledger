@@ -30,8 +30,8 @@ func NewService(store Store, now func() int64, options ...ServiceOption) (*Servi
 }
 
 // Balance returns total and available (total minus active holds).
-func (service *Service) Balance(ctx context.Context, userID UserID, ledgerID LedgerID) (Balance, error) {
-	accountID, err := service.store.GetOrCreateAccountID(ctx, userID, ledgerID)
+func (service *Service) Balance(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID) (Balance, error) {
+	accountID, err := service.store.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
 	if err != nil {
 		return Balance{}, err
 	}
@@ -55,9 +55,9 @@ func (service *Service) Balance(ctx context.Context, userID UserID, ledgerID Led
 }
 
 // Grant appends a positive grant (optionally expiring).
-func (service *Service) Grant(ctx context.Context, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON) error {
+func (service *Service) Grant(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON) error {
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
-		accountID, err := transactionStore.GetOrCreateAccountID(ctx, userID, ledgerID)
+		accountID, err := transactionStore.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
 		if err != nil {
 			return err
 		}
@@ -78,6 +78,7 @@ func (service *Service) Grant(ctx context.Context, userID UserID, ledgerID Ledge
 	})
 	service.logOperation(ctx, OperationLog{
 		Operation:      operationGrant,
+		TenantID:       tenantID,
 		UserID:         userID,
 		LedgerID:       ledgerID,
 		Amount:         amount.ToAmountCents(),
@@ -89,9 +90,9 @@ func (service *Service) Grant(ctx context.Context, userID UserID, ledgerID Ledge
 }
 
 // Reserve appends a negative hold if sufficient available balance.
-func (service *Service) Reserve(ctx context.Context, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
+func (service *Service) Reserve(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
-		accountID, err := transactionStore.GetOrCreateAccountID(ctx, userID, ledgerID)
+		accountID, err := transactionStore.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
 		if err != nil {
 			return err
 		}
@@ -136,6 +137,7 @@ func (service *Service) Reserve(ctx context.Context, userID UserID, ledgerID Led
 	reservationRef := reservationID
 	service.logOperation(ctx, OperationLog{
 		Operation:      operationReserve,
+		TenantID:       tenantID,
 		UserID:         userID,
 		LedgerID:       ledgerID,
 		ReservationID:  &reservationRef,
@@ -148,9 +150,9 @@ func (service *Service) Reserve(ctx context.Context, userID UserID, ledgerID Led
 }
 
 // Capture finalizes a reservation by reversing the hold and spending the funds with distinct idempotency keys.
-func (service *Service) Capture(ctx context.Context, userID UserID, ledgerID LedgerID, reservationID ReservationID, idempotencyKey IdempotencyKey, amount PositiveAmountCents, metadata MetadataJSON) error {
+func (service *Service) Capture(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, reservationID ReservationID, idempotencyKey IdempotencyKey, amount PositiveAmountCents, metadata MetadataJSON) error {
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
-		accountID, err := transactionStore.GetOrCreateAccountID(ctx, userID, ledgerID)
+		accountID, err := transactionStore.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
 		if err != nil {
 			return err
 		}
@@ -210,6 +212,7 @@ func (service *Service) Capture(ctx context.Context, userID UserID, ledgerID Led
 	reservationRef := reservationID
 	service.logOperation(ctx, OperationLog{
 		Operation:      operationCapture,
+		TenantID:       tenantID,
 		UserID:         userID,
 		LedgerID:       ledgerID,
 		ReservationID:  &reservationRef,
@@ -222,10 +225,10 @@ func (service *Service) Capture(ctx context.Context, userID UserID, ledgerID Led
 }
 
 // Release cancels a reservation by writing a reverse-hold entry.
-func (service *Service) Release(ctx context.Context, userID UserID, ledgerID LedgerID, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
+func (service *Service) Release(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
 	var reservationAmount AmountCents
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
-		accountID, err := transactionStore.GetOrCreateAccountID(ctx, userID, ledgerID)
+		accountID, err := transactionStore.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
 		if err != nil {
 			return err
 		}
@@ -258,6 +261,7 @@ func (service *Service) Release(ctx context.Context, userID UserID, ledgerID Led
 	reservationRef := reservationID
 	service.logOperation(ctx, OperationLog{
 		Operation:      operationRelease,
+		TenantID:       tenantID,
 		UserID:         userID,
 		LedgerID:       ledgerID,
 		ReservationID:  &reservationRef,

@@ -105,6 +105,7 @@ type BalanceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	LedgerId      string                 `protobuf:"bytes,2,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
+	TenantId      string                 `protobuf:"bytes,3,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -149,6 +150,13 @@ func (x *BalanceRequest) GetUserId() string {
 func (x *BalanceRequest) GetLedgerId() string {
 	if x != nil {
 		return x.LedgerId
+	}
+	return ""
+}
+
+func (x *BalanceRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
 	}
 	return ""
 }
@@ -213,6 +221,7 @@ type GrantRequest struct {
 	ExpiresAtUnixUtc int64                  `protobuf:"varint,4,opt,name=expires_at_unix_utc,json=expiresAtUnixUtc,proto3" json:"expires_at_unix_utc,omitempty"`
 	MetadataJson     string                 `protobuf:"bytes,5,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
 	LedgerId         string                 `protobuf:"bytes,6,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
+	TenantId         string                 `protobuf:"bytes,7,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -289,6 +298,13 @@ func (x *GrantRequest) GetLedgerId() string {
 	return ""
 }
 
+func (x *GrantRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
 type ReserveRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	UserId         string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -297,6 +313,7 @@ type ReserveRequest struct {
 	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	MetadataJson   string                 `protobuf:"bytes,5,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
 	LedgerId       string                 `protobuf:"bytes,6,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
+	TenantId       string                 `protobuf:"bytes,7,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -373,6 +390,13 @@ func (x *ReserveRequest) GetLedgerId() string {
 	return ""
 }
 
+func (x *ReserveRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
 type CaptureRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	UserId         string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -381,6 +405,7 @@ type CaptureRequest struct {
 	AmountCents    int64                  `protobuf:"varint,4,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
 	MetadataJson   string                 `protobuf:"bytes,5,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
 	LedgerId       string                 `protobuf:"bytes,6,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
+	TenantId       string                 `protobuf:"bytes,7,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -457,6 +482,13 @@ func (x *CaptureRequest) GetLedgerId() string {
 	return ""
 }
 
+func (x *CaptureRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
 type ReleaseRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	UserId         string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -464,6 +496,7 @@ type ReleaseRequest struct {
 	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	MetadataJson   string                 `protobuf:"bytes,4,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
 	LedgerId       string                 `protobuf:"bytes,5,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
+	TenantId       string                 `protobuf:"bytes,6,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -533,6 +566,13 @@ func (x *ReleaseRequest) GetLedgerId() string {
 	return ""
 }
 
+func (x *ReleaseRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
 type SpendRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	UserId         string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -540,6 +580,7 @@ type SpendRequest struct {
 	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	MetadataJson   string                 `protobuf:"bytes,4,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
 	LedgerId       string                 `protobuf:"bytes,5,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
+	TenantId       string                 `protobuf:"bytes,6,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -605,6 +646,13 @@ func (x *SpendRequest) GetMetadataJson() string {
 func (x *SpendRequest) GetLedgerId() string {
 	if x != nil {
 		return x.LedgerId
+	}
+	return ""
+}
+
+func (x *SpendRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
 	}
 	return ""
 }
@@ -723,6 +771,7 @@ type ListEntriesRequest struct {
 	BeforeUnixUtc int64                  `protobuf:"varint,2,opt,name=before_unix_utc,json=beforeUnixUtc,proto3" json:"before_unix_utc,omitempty"`
 	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	LedgerId      string                 `protobuf:"bytes,4,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
+	TenantId      string                 `protobuf:"bytes,5,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -785,6 +834,13 @@ func (x *ListEntriesRequest) GetLedgerId() string {
 	return ""
 }
 
+func (x *ListEntriesRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
 type ListEntriesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Entries       []*Entry               `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
@@ -836,47 +892,53 @@ const file_api_credit_v1_credit_proto_rawDesc = "" +
 	"\x1aapi/credit/v1/credit.proto\x12\tcredit.v1\"\a\n" +
 	"\x05Empty\"+\n" +
 	"\x06Amount\x12!\n" +
-	"\famount_cents\x18\x01 \x01(\x03R\vamountCents\"F\n" +
+	"\famount_cents\x18\x01 \x01(\x03R\vamountCents\"c\n" +
 	"\x0eBalanceRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1b\n" +
-	"\tledger_id\x18\x02 \x01(\tR\bledgerId\"[\n" +
+	"\tledger_id\x18\x02 \x01(\tR\bledgerId\x12\x1b\n" +
+	"\ttenant_id\x18\x03 \x01(\tR\btenantId\"[\n" +
 	"\x0fBalanceResponse\x12\x1f\n" +
 	"\vtotal_cents\x18\x01 \x01(\x03R\n" +
 	"totalCents\x12'\n" +
-	"\x0favailable_cents\x18\x02 \x01(\x03R\x0eavailableCents\"\xe4\x01\n" +
+	"\x0favailable_cents\x18\x02 \x01(\x03R\x0eavailableCents\"\x81\x02\n" +
 	"\fGrantRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12!\n" +
 	"\famount_cents\x18\x02 \x01(\x03R\vamountCents\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12-\n" +
 	"\x13expires_at_unix_utc\x18\x04 \x01(\x03R\x10expiresAtUnixUtc\x12#\n" +
 	"\rmetadata_json\x18\x05 \x01(\tR\fmetadataJson\x12\x1b\n" +
-	"\tledger_id\x18\x06 \x01(\tR\bledgerId\"\xde\x01\n" +
+	"\tledger_id\x18\x06 \x01(\tR\bledgerId\x12\x1b\n" +
+	"\ttenant_id\x18\a \x01(\tR\btenantId\"\xfb\x01\n" +
 	"\x0eReserveRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12!\n" +
 	"\famount_cents\x18\x02 \x01(\x03R\vamountCents\x12%\n" +
 	"\x0ereservation_id\x18\x03 \x01(\tR\rreservationId\x12'\n" +
 	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x12#\n" +
 	"\rmetadata_json\x18\x05 \x01(\tR\fmetadataJson\x12\x1b\n" +
-	"\tledger_id\x18\x06 \x01(\tR\bledgerId\"\xde\x01\n" +
+	"\tledger_id\x18\x06 \x01(\tR\bledgerId\x12\x1b\n" +
+	"\ttenant_id\x18\a \x01(\tR\btenantId\"\xfb\x01\n" +
 	"\x0eCaptureRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12%\n" +
 	"\x0ereservation_id\x18\x02 \x01(\tR\rreservationId\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12!\n" +
 	"\famount_cents\x18\x04 \x01(\x03R\vamountCents\x12#\n" +
 	"\rmetadata_json\x18\x05 \x01(\tR\fmetadataJson\x12\x1b\n" +
-	"\tledger_id\x18\x06 \x01(\tR\bledgerId\"\xbb\x01\n" +
+	"\tledger_id\x18\x06 \x01(\tR\bledgerId\x12\x1b\n" +
+	"\ttenant_id\x18\a \x01(\tR\btenantId\"\xd8\x01\n" +
 	"\x0eReleaseRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12%\n" +
 	"\x0ereservation_id\x18\x02 \x01(\tR\rreservationId\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12#\n" +
 	"\rmetadata_json\x18\x04 \x01(\tR\fmetadataJson\x12\x1b\n" +
-	"\tledger_id\x18\x05 \x01(\tR\bledgerId\"\xb5\x01\n" +
+	"\tledger_id\x18\x05 \x01(\tR\bledgerId\x12\x1b\n" +
+	"\ttenant_id\x18\x06 \x01(\tR\btenantId\"\xd2\x01\n" +
 	"\fSpendRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12!\n" +
 	"\famount_cents\x18\x02 \x01(\x03R\vamountCents\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12#\n" +
 	"\rmetadata_json\x18\x04 \x01(\tR\fmetadataJson\x12\x1b\n" +
-	"\tledger_id\x18\x05 \x01(\tR\bledgerId\"\xc6\x02\n" +
+	"\tledger_id\x18\x05 \x01(\tR\bledgerId\x12\x1b\n" +
+	"\ttenant_id\x18\x06 \x01(\tR\btenantId\"\xc6\x02\n" +
 	"\x05Entry\x12\x19\n" +
 	"\bentry_id\x18\x01 \x01(\tR\aentryId\x12\x1d\n" +
 	"\n" +
@@ -887,12 +949,13 @@ const file_api_credit_v1_credit_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12-\n" +
 	"\x13expires_at_unix_utc\x18\a \x01(\x03R\x10expiresAtUnixUtc\x12#\n" +
 	"\rmetadata_json\x18\b \x01(\tR\fmetadataJson\x12(\n" +
-	"\x10created_unix_utc\x18\t \x01(\x03R\x0ecreatedUnixUtc\"\x88\x01\n" +
+	"\x10created_unix_utc\x18\t \x01(\x03R\x0ecreatedUnixUtc\"\xa5\x01\n" +
 	"\x12ListEntriesRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12&\n" +
 	"\x0fbefore_unix_utc\x18\x02 \x01(\x03R\rbeforeUnixUtc\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x1b\n" +
-	"\tledger_id\x18\x04 \x01(\tR\bledgerId\"A\n" +
+	"\tledger_id\x18\x04 \x01(\tR\bledgerId\x12\x1b\n" +
+	"\ttenant_id\x18\x05 \x01(\tR\btenantId\"A\n" +
 	"\x13ListEntriesResponse\x12*\n" +
 	"\aentries\x18\x01 \x03(\v2\x10.credit.v1.EntryR\aentries2\xb2\x03\n" +
 	"\rCreditService\x12C\n" +

@@ -53,17 +53,18 @@ func (store *Store) WithTx(ctx context.Context, fn func(ctx context.Context, txS
 	})
 }
 
-func (store *Store) GetOrCreateAccountID(ctx context.Context, userID ledger.UserID, ledgerID ledger.LedgerID) (ledger.AccountID, error) {
+func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.TenantID, userID ledger.UserID, ledgerID ledger.LedgerID) (ledger.AccountID, error) {
 	var account Account
 	err := store.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "user_id"}, {Name: "ledger_id"}},
+			Columns: []clause.Column{{Name: "tenant_id"}, {Name: "user_id"}, {Name: "ledger_id"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{
+				"tenant_id": clause.Expr{SQL: "excluded.tenant_id"},
 				"user_id":   clause.Expr{SQL: "excluded.user_id"},
 				"ledger_id": clause.Expr{SQL: "excluded.ledger_id"},
 			}),
 		}).
-		FirstOrCreate(&account, Account{UserID: userID.String(), LedgerID: ledgerID.String()}).Error
+		FirstOrCreate(&account, Account{TenantID: tenantID.String(), UserID: userID.String(), LedgerID: ledgerID.String()}).Error
 	if err != nil {
 		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeLookup, err)
 	}

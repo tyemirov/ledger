@@ -117,7 +117,7 @@ Below are example calls using [`grpcurl`](https://github.com/fullstorydev/grpcur
 ### Check balance
 
 ```bash
-grpcurl -plaintext -d '{"user_id":"user123","ledger_id":"default"}' localhost:50051 credit.v1.CreditService/GetBalance
+grpcurl -plaintext -d '{"tenant_id":"default","user_id":"user123","ledger_id":"default"}' localhost:50051 credit.v1.CreditService/GetBalance
 ```
 
 Response:
@@ -133,6 +133,7 @@ Response:
 
 ```bash
 grpcurl -plaintext -d '{
+  "tenant_id":"default",
   "user_id":"user123",
   "ledger_id":"default",
   "amount_cents": 1000,
@@ -146,6 +147,7 @@ grpcurl -plaintext -d '{
 
 ```bash
 grpcurl -plaintext -d '{
+  "tenant_id":"default",
   "user_id":"user123",
   "ledger_id":"default",
   "amount_cents": 500,
@@ -159,6 +161,7 @@ grpcurl -plaintext -d '{
 
 ```bash
 grpcurl -plaintext -d '{
+  "tenant_id":"default",
   "user_id":"user123",
   "ledger_id":"default",
   "reservation_id":"order-555",
@@ -172,6 +175,7 @@ grpcurl -plaintext -d '{
 
 ```bash
 grpcurl -plaintext -d '{
+  "tenant_id":"default",
   "user_id":"user123",
   "ledger_id":"default",
   "reservation_id":"order-555",
@@ -184,6 +188,7 @@ grpcurl -plaintext -d '{
 
 ```bash
 grpcurl -plaintext -d '{
+  "tenant_id":"default",
   "user_id":"user123",
   "ledger_id":"default",
   "amount_cents": 200,
@@ -196,6 +201,7 @@ grpcurl -plaintext -d '{
 
 ```bash
 grpcurl -plaintext -d '{
+  "tenant_id":"default",
   "user_id":"user123",
   "ledger_id":"default",
   "before_unix_utc": 1893456000,

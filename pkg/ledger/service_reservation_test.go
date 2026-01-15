@@ -6,7 +6,10 @@ import (
 	"testing"
 )
 
-const defaultLedgerIDValue = "ledger-default"
+const (
+	defaultLedgerIDValue = "ledger-default"
+	defaultTenantIDValue = "tenant-default"
+)
 
 func TestReserveCreatesReservationAndHoldEntry(test *testing.T) {
 	test.Parallel()
@@ -14,12 +17,13 @@ func TestReserveCreatesReservationAndHoldEntry(test *testing.T) {
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "user-123")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 	reservationID := mustReservationID(test, "res-1")
 	idempotencyKey := mustIdempotencyKey(test, "idem-1")
 	metadata := mustMetadata(test, `{"foo":"bar"}`)
 	amount := mustPositiveAmount(test, 40)
 
-	if err := service.Reserve(context.Background(), userID, ledgerID, amount, reservationID, idempotencyKey, metadata); err != nil {
+	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata); err != nil {
 		test.Fatalf("reserve: %v", err)
 	}
 
@@ -49,8 +53,9 @@ func TestBalanceComputesAvailableFunds(test *testing.T) {
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "availability-user")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 
-	balance, err := service.Balance(context.Background(), userID, ledgerID)
+	balance, err := service.Balance(context.Background(), tenantID, userID, ledgerID)
 	if err != nil {
 		test.Fatalf("balance: %v", err)
 	}
@@ -68,11 +73,12 @@ func TestGrantAppendsGrantEntry(test *testing.T) {
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "grant-user")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 	idempotencyKey := mustIdempotencyKey(test, "grant-idem")
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 75)
 
-	if err := service.Grant(context.Background(), userID, ledgerID, amount, idempotencyKey, 0, metadata); err != nil {
+	if err := service.Grant(context.Background(), tenantID, userID, ledgerID, amount, idempotencyKey, 0, metadata); err != nil {
 		test.Fatalf("grant: %v", err)
 	}
 	if len(store.entries) != 1 {
@@ -93,12 +99,13 @@ func TestReserveInsufficientFunds(test *testing.T) {
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "reserve-low")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 	reservationID := mustReservationID(test, "reserve-low")
 	idempotencyKey := mustIdempotencyKey(test, "reserve-low")
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 50)
 
-	err := service.Reserve(context.Background(), userID, ledgerID, amount, reservationID, idempotencyKey, metadata)
+	err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata)
 	if !errors.Is(err, ErrInsufficientFunds) {
 		test.Fatalf("expected ErrInsufficientFunds, got %v", err)
 	}
@@ -110,15 +117,16 @@ func TestCaptureMovesReservationToCaptured(test *testing.T) {
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "user-456")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 	reservationID := mustReservationID(test, "res-9")
 	idempotencyKey := mustIdempotencyKey(test, "idem-9")
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 60)
 
-	if err := service.Reserve(context.Background(), userID, ledgerID, amount, reservationID, idempotencyKey, metadata); err != nil {
+	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata); err != nil {
 		test.Fatalf("reserve: %v", err)
 	}
-	if err := service.Capture(context.Background(), userID, ledgerID, reservationID, idempotencyKey, amount, metadata); err != nil {
+	if err := service.Capture(context.Background(), tenantID, userID, ledgerID, reservationID, idempotencyKey, amount, metadata); err != nil {
 		test.Fatalf("capture: %v", err)
 	}
 
@@ -151,15 +159,16 @@ func TestCaptureAmountMismatch(test *testing.T) {
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "capture-mismatch")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 	reservationID := mustReservationID(test, "capture-mismatch")
 	idempotencyKey := mustIdempotencyKey(test, "capture-mismatch")
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 60)
 
-	if err := service.Reserve(context.Background(), userID, ledgerID, amount, reservationID, idempotencyKey, metadata); err != nil {
+	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata); err != nil {
 		test.Fatalf("reserve: %v", err)
 	}
-	err := service.Capture(context.Background(), userID, ledgerID, reservationID, idempotencyKey, mustPositiveAmount(test, 10), metadata)
+	err := service.Capture(context.Background(), tenantID, userID, ledgerID, reservationID, idempotencyKey, mustPositiveAmount(test, 10), metadata)
 	if !errors.Is(err, ErrInvalidAmountCents) {
 		test.Fatalf("expected ErrInvalidAmountCents, got %v", err)
 	}
@@ -171,15 +180,16 @@ func TestCaptureUsesDistinctIdempotencyKeys(test *testing.T) {
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "user-456")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 	reservationID := mustReservationID(test, "res-10")
 	idempotencyKey := mustIdempotencyKey(test, "idem-10")
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 30)
 
-	if err := service.Reserve(context.Background(), userID, ledgerID, amount, reservationID, idempotencyKey, metadata); err != nil {
+	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata); err != nil {
 		test.Fatalf("reserve: %v", err)
 	}
-	if err := service.Capture(context.Background(), userID, ledgerID, reservationID, idempotencyKey, amount, metadata); err != nil {
+	if err := service.Capture(context.Background(), tenantID, userID, ledgerID, reservationID, idempotencyKey, amount, metadata); err != nil {
 		test.Fatalf("capture: %v", err)
 	}
 
@@ -208,16 +218,17 @@ func TestReleaseUnlocksReservation(test *testing.T) {
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "user-789")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 	reservationID := mustReservationID(test, "res-77")
 	holdIdempotencyKey := mustIdempotencyKey(test, "idem-77")
 	releaseIdempotencyKey := mustIdempotencyKey(test, "idem-77-release")
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 50)
 
-	if err := service.Reserve(context.Background(), userID, ledgerID, amount, reservationID, holdIdempotencyKey, metadata); err != nil {
+	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, holdIdempotencyKey, metadata); err != nil {
 		test.Fatalf("reserve: %v", err)
 	}
-	if err := service.Release(context.Background(), userID, ledgerID, reservationID, releaseIdempotencyKey, metadata); err != nil {
+	if err := service.Release(context.Background(), tenantID, userID, ledgerID, reservationID, releaseIdempotencyKey, metadata); err != nil {
 		test.Fatalf("release: %v", err)
 	}
 	if got := len(store.entries); got != 2 {
@@ -250,8 +261,9 @@ func TestListEntriesDelegatesToStore(test *testing.T) {
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "list-user")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 
-	out, err := service.ListEntries(context.Background(), userID, ledgerID, 0, 5)
+	out, err := service.ListEntries(context.Background(), tenantID, userID, ledgerID, 0, 5)
 	if err != nil {
 		test.Fatalf("list entries: %v", err)
 	}
@@ -282,11 +294,12 @@ func TestSpendInsufficientFunds(test *testing.T) {
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "spend-low")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 	idempotencyKey := mustIdempotencyKey(test, "spend-low")
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 40)
 
-	err := service.Spend(context.Background(), userID, ledgerID, amount, idempotencyKey, metadata)
+	err := service.Spend(context.Background(), tenantID, userID, ledgerID, amount, idempotencyKey, metadata)
 	if !errors.Is(err, ErrInsufficientFunds) {
 		test.Fatalf("expected ErrInsufficientFunds, got %v", err)
 	}
@@ -298,11 +311,12 @@ func TestSpendAppendsSpendEntry(test *testing.T) {
 	service := mustNewService(test, store)
 	userID := mustUserID(test, "spend-user")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 	idempotencyKey := mustIdempotencyKey(test, "spend-idem")
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 25)
 
-	if err := service.Spend(context.Background(), userID, ledgerID, amount, idempotencyKey, metadata); err != nil {
+	if err := service.Spend(context.Background(), tenantID, userID, ledgerID, amount, idempotencyKey, metadata); err != nil {
 		test.Fatalf("spend: %v", err)
 	}
 	if len(store.entries) != 1 {
@@ -341,7 +355,7 @@ func (store *stubStore) WithTx(ctx context.Context, fn func(ctx context.Context,
 	return fn(ctx, store)
 }
 
-func (store *stubStore) GetOrCreateAccountID(ctx context.Context, userID UserID, ledgerID LedgerID) (AccountID, error) {
+func (store *stubStore) GetOrCreateAccountID(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID) (AccountID, error) {
 	return store.accountID, nil
 }
 
@@ -453,6 +467,15 @@ func mustLedgerID(test *testing.T, raw string) LedgerID {
 	value, err := NewLedgerID(raw)
 	if err != nil {
 		test.Fatalf("ledger id: %v", err)
+	}
+	return value
+}
+
+func mustTenantID(test *testing.T, raw string) TenantID {
+	test.Helper()
+	value, err := NewTenantID(raw)
+	if err != nil {
+		test.Fatalf("tenant id: %v", err)
 	}
 	return value
 }
@@ -580,7 +603,7 @@ func (store *failingStore) WithTx(ctx context.Context, fn func(ctx context.Conte
 	return fn(ctx, store)
 }
 
-func (store *failingStore) GetOrCreateAccountID(ctx context.Context, userID UserID, ledgerID LedgerID) (AccountID, error) {
+func (store *failingStore) GetOrCreateAccountID(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID) (AccountID, error) {
 	return store.accountID, nil
 }
 
