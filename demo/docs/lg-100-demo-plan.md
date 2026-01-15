@@ -54,6 +54,8 @@ Components:
   - `DEMOAPI_TAUTH_BASE_URL` (default `http://localhost:8080`) to reuse in documentation/responses.
   - `DEMOAPI_JWT_SIGNING_KEY` + `DEMOAPI_JWT_ISSUER` to set up the session validator.
   - `DEMOAPI_LEDGER_ADDR` for the gRPC endpoint (default `localhost:50051`).
+  - `DEMOAPI_DEFAULT_TENANT_ID` for ledger requests (default `default`).
+  - `DEMOAPI_DEFAULT_LEDGER_ID` for ledger requests (default `default`).
 - Wire a shared `grpc.ClientConn` to `creditv1.NewCreditServiceClient` with unary interceptors for logging/timeouts.
 - Expose the following HTTP endpoints (all JSON, served after the auth middleware):
 

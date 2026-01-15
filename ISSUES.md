@@ -25,6 +25,9 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Require tenant_id in API/service/store boundaries and schema keys.
     - Update demo/docs/examples to send tenant_id alongside ledger_id and user_id.
     - Skip migration path (backward compatibility not required).
+- [x] [LG-208] (P2) Make demo tenant_id and ledger_id defaults configurable via env. Resolved: demo config/flags use env-backed defaults; env templates/docs/tests updated, tooling passing.
+  - Add DEMOAPI_DEFAULT_TENANT_ID and DEMOAPI_DEFAULT_LEDGER_ID to demo config and env templates.
+    - Update demo handlers and docs to use config values instead of hardcoded defaults.
 
 
 ## BugFixes (302–399)

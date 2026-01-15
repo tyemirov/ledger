@@ -21,6 +21,8 @@ type Config struct {
 	LedgerAddress     string
 	LedgerInsecure    bool
 	LedgerTimeout     time.Duration
+	DefaultTenantID   string
+	DefaultLedgerID   string
 	AllowedOrigins    []string
 	SessionSigningKey string
 	SessionIssuer     string
@@ -38,6 +40,12 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.LedgerTimeout <= 0 {
 		return fmt.Errorf("ledger timeout must be greater than zero")
+	}
+	if strings.TrimSpace(cfg.DefaultTenantID) == "" {
+		return fmt.Errorf("default tenant id is required")
+	}
+	if strings.TrimSpace(cfg.DefaultLedgerID) == "" {
+		return fmt.Errorf("default ledger id is required")
 	}
 	if len(cfg.AllowedOrigins) == 0 {
 		return fmt.Errorf("at least one allowed origin is required")

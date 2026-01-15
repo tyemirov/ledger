@@ -46,6 +46,8 @@ The helper updates `demo/config.js`, all UI fallbacks, and both `.env.tauth` fil
    DEMOAPI_LEDGER_ADDR=localhost:50051 \
    DEMOAPI_LEDGER_INSECURE=true \
    DEMOAPI_LEDGER_TIMEOUT=3s \
+   DEMOAPI_DEFAULT_TENANT_ID=default \
+   DEMOAPI_DEFAULT_LEDGER_ID=default \
    DEMOAPI_ALLOWED_ORIGINS=http://localhost:8000 \
    DEMOAPI_JWT_SIGNING_KEY="secret" \
    DEMOAPI_JWT_ISSUER=mprlab-auth \
