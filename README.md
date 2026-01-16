@@ -218,11 +218,11 @@ Use the provided `Makefile` targets for local tooling:
 ```bash
 make fmt   # verifies gofmt formatting
 make lint  # runs go vet, staticcheck, and ineffassign
-make test  # executes go test with >=80% coverage enforcement for internal packages
+make test  # executes go test with >=95% coverage enforcement for internal packages
 make ci    # runs fmt + lint + test
 ```
 
-Docker Compose reads configuration from `.env.creditsvc`, so the container runtime matches the CLI flag/environment setup.
+Docker Compose reads configuration from `.env.ledger`, so the container runtime matches the CLI flag/environment setup.
 
 ---
 

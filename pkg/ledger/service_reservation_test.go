@@ -352,13 +352,22 @@ func TestSpendAppendsSpendEntry(test *testing.T) {
 }
 
 type stubStore struct {
-	accountID    AccountID
-	total        SignedAmountCents
-	reservations map[ReservationID]Reservation
-	entries      []EntryInput
-	listEntries  []Entry
-	listErr      error
-	idempotency  map[IdempotencyKey]struct{}
+	accountID              AccountID
+	total                  SignedAmountCents
+	reservations           map[ReservationID]Reservation
+	entries                []EntryInput
+	listEntries            []Entry
+	listErr                error
+	idempotency            map[IdempotencyKey]struct{}
+	getAccountError        error
+	sumTotalError          error
+	sumActiveHoldsError    error
+	createReservationError error
+	getReservationError    error
+	updateReservationError error
+	insertEntryError       error
+	insertEntryErrorAtCall int
+	insertEntryCallCount   int
 }
 
 func newStubStore(test *testing.T, initialTotal SignedAmountCents) *stubStore {
@@ -376,10 +385,19 @@ func (store *stubStore) WithTx(ctx context.Context, fn func(ctx context.Context,
 }
 
 func (store *stubStore) GetOrCreateAccountID(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID) (AccountID, error) {
+	if store.getAccountError != nil {
+		return AccountID{}, store.getAccountError
+	}
 	return store.accountID, nil
 }
 
 func (store *stubStore) InsertEntry(ctx context.Context, entryInput EntryInput) error {
+	store.insertEntryCallCount++
+	if store.insertEntryError != nil {
+		if store.insertEntryErrorAtCall == 0 || store.insertEntryErrorAtCall == store.insertEntryCallCount {
+			return store.insertEntryError
+		}
+	}
 	if _, exists := store.idempotency[entryInput.IdempotencyKey()]; exists {
 		return ErrDuplicateIdempotencyKey
 	}
@@ -393,10 +411,16 @@ func (store *stubStore) InsertEntry(ctx context.Context, entryInput EntryInput) 
 }
 
 func (store *stubStore) SumTotal(ctx context.Context, accountID AccountID, _ int64) (SignedAmountCents, error) {
+	if store.sumTotalError != nil {
+		return SignedAmountCents(0), store.sumTotalError
+	}
 	return store.total, nil
 }
 
 func (store *stubStore) SumActiveHolds(ctx context.Context, accountID AccountID, _ int64) (AmountCents, error) {
+	if store.sumActiveHoldsError != nil {
+		return AmountCents(0), store.sumActiveHoldsError
+	}
 	var sum int64
 	for _, reservation := range store.reservations {
 		if reservation.Status() == ReservationStatusActive {
@@ -407,6 +431,9 @@ func (store *stubStore) SumActiveHolds(ctx context.Context, accountID AccountID,
 }
 
 func (store *stubStore) CreateReservation(ctx context.Context, reservation Reservation) error {
+	if store.createReservationError != nil {
+		return store.createReservationError
+	}
 	reservationID := reservation.ReservationID()
 	if _, exists := store.reservations[reservationID]; exists {
 		return ErrReservationExists
@@ -416,6 +443,9 @@ func (store *stubStore) CreateReservation(ctx context.Context, reservation Reser
 }
 
 func (store *stubStore) GetReservation(ctx context.Context, accountID AccountID, reservationID ReservationID) (Reservation, error) {
+	if store.getReservationError != nil {
+		return Reservation{}, store.getReservationError
+	}
 	reservation, ok := store.reservations[reservationID]
 	if !ok {
 		return Reservation{}, ErrUnknownReservation
@@ -424,6 +454,9 @@ func (store *stubStore) GetReservation(ctx context.Context, accountID AccountID,
 }
 
 func (store *stubStore) UpdateReservationStatus(ctx context.Context, accountID AccountID, reservationID ReservationID, from, to ReservationStatus) error {
+	if store.updateReservationError != nil {
+		return store.updateReservationError
+	}
 	reservation, ok := store.reservations[reservationID]
 	if !ok {
 		return ErrUnknownReservation

@@ -28,6 +28,9 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 - [x] [LG-208] (P2) Make demo tenant_id and ledger_id defaults configurable via env. Resolved: demo config/flags use env-backed defaults; env templates/docs/tests updated, tooling passing.
   - Add DEMOAPI_DEFAULT_TENANT_ID and DEMOAPI_DEFAULT_LEDGER_ID to demo config and env templates.
     - Update demo handlers and docs to use config values instead of hardcoded defaults.
+- [x] [LG-209] (P2) Make ledger data directory configurable for Docker workflows. Resolved: data dir is only used by DATABASE_URL; no extra env added, compose mounts align to `/srv/data`, tooling passing.
+  - Add LEDGER_DATA_DIR to .env.ledger and wire compose volume targets to use it.
+    - Update compose wiring so ledger uses the configured data directory.
 
 
 ## BugFixes (302–399)
@@ -37,7 +40,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 ## Maintenance (401–499)
 
-- [ ] [LG-400] (P0) Increase test coverage to 95%.
+- [x] [LG-400] (P0) Increase test coverage to 95%. Resolved: ledger tests expanded to 96.7% coverage; coverage gate raised to 95%, tooling passing.
   Increase test coverage to 95%
 
 
