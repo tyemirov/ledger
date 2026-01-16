@@ -13,6 +13,7 @@ type OperationLogger interface {
 // OperationLog describes a state-changing ledger operation.
 type OperationLog struct {
 	Operation      string
+	TenantID       TenantID
 	UserID         UserID
 	LedgerID       LedgerID
 	ReservationID  *ReservationID
