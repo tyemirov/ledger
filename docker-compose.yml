@@ -6,9 +6,9 @@ services:
     env_file:
       - .env.ledger
     volumes:
-      - ledgerdata:/srv/data
+      - ledger-data:/srv/data
     ports:
       - "50051:50051"
 
 volumes:
-  ledgerdata: {}
+  ledger-data: {}

@@ -46,6 +46,8 @@ The helper updates `demo/config.js`, all UI fallbacks, and both `.env.tauth` fil
    DEMOAPI_LEDGER_ADDR=localhost:50051 \
    DEMOAPI_LEDGER_INSECURE=true \
    DEMOAPI_LEDGER_TIMEOUT=3s \
+   DEMOAPI_DEFAULT_TENANT_ID=default \
+   DEMOAPI_DEFAULT_LEDGER_ID=default \
    DEMOAPI_ALLOWED_ORIGINS=http://localhost:8000 \
    DEMOAPI_JWT_SIGNING_KEY="secret" \
    DEMOAPI_JWT_ISSUER=mprlab-auth \
@@ -73,7 +75,7 @@ The repository ships `demo/docker-compose.demo.yml` plus env templates so you ca
    Edit both files so `DEMOAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID.
 2. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `demo/docker-compose.demo.yml` if your machine needs a different port). The Dockerfile builds the backend from the local `demo/backend` sources:
    ```bash
-   docker compose -f demo/docker-compose.demo.yml up --build
+   docker compose -f demo/docker-compose.yml up --build
    ```
 4. Visit `http://localhost:8000` (ghttp), `http://localhost:9090/api/wallet` (demo backend), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `http://localhost:8080/demo/config.js`, so whatever Google OAuth Web Client ID you set in `demo/env.tauth` is automatically injected into `<mpr-header>`—no need to edit the HTML file manually.
 5. Stop everything with `docker compose -f demo/docker-compose.demo.yml down`.
