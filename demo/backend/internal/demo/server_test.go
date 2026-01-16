@@ -28,6 +28,8 @@ func TestDemoAPITransactionsAndPurchases(t *testing.T) {
 		LedgerAddress:     "bufnet",
 		LedgerInsecure:    true,
 		LedgerTimeout:     2 * time.Second,
+		DefaultTenantID:   "default",
+		DefaultLedgerID:   "default",
 		AllowedOrigins:    []string{"http://localhost:8000"},
 		SessionSigningKey: "secret-key",
 		SessionIssuer:     "tauth",

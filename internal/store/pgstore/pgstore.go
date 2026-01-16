@@ -34,8 +34,8 @@ const (
 	errorCodeUpdateStatus           = "update_status"
 
 	sqlInsertOrGetAccount = `
-		insert into accounts(user_id) values($1)
-		on conflict (user_id) do update set user_id = excluded.user_id
+		insert into accounts(tenant_id, user_id, ledger_id) values($1, $2, $3)
+		on conflict (tenant_id, user_id, ledger_id) do update set tenant_id = excluded.tenant_id, user_id = excluded.user_id, ledger_id = excluded.ledger_id
 		returning account_id
 	`
 
@@ -130,9 +130,9 @@ func (store *Store) WithTx(ctx context.Context, fn func(ctx context.Context, txS
 	return nil
 }
 
-func (store *Store) GetOrCreateAccountID(ctx context.Context, userID ledger.UserID) (ledger.AccountID, error) {
+func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.TenantID, userID ledger.UserID, ledgerID ledger.LedgerID) (ledger.AccountID, error) {
 	var accountIDValue string
-	err := store.pool.QueryRow(ctx, sqlInsertOrGetAccount, userID.String()).Scan(&accountIDValue)
+	err := store.pool.QueryRow(ctx, sqlInsertOrGetAccount, tenantID.String(), userID.String(), ledgerID.String()).Scan(&accountIDValue)
 	if err != nil {
 		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeLookup, err)
 	}
@@ -168,13 +168,13 @@ func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInpu
 	return nil
 }
 
-func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
+func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {
 	var sum int64
 	err := store.pool.QueryRow(ctx, sqlSumTotal, accountID.String(), atUnixUTC).Scan(&sum)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumTotal, err)
 	}
-	total, err := ledger.NewAmountCents(sum)
+	total, err := ledger.NewSignedAmountCents(sum)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
 	}
@@ -280,9 +280,9 @@ func (store *TxStore) WithTx(ctx context.Context, fn func(ctx context.Context, t
 	return fn(ctx, store)
 }
 
-func (store *TxStore) GetOrCreateAccountID(ctx context.Context, userID ledger.UserID) (ledger.AccountID, error) {
+func (store *TxStore) GetOrCreateAccountID(ctx context.Context, tenantID ledger.TenantID, userID ledger.UserID, ledgerID ledger.LedgerID) (ledger.AccountID, error) {
 	var accountIDValue string
-	err := store.tx.QueryRow(ctx, sqlInsertOrGetAccount, userID.String()).Scan(&accountIDValue)
+	err := store.tx.QueryRow(ctx, sqlInsertOrGetAccount, tenantID.String(), userID.String(), ledgerID.String()).Scan(&accountIDValue)
 	if err != nil {
 		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeLookup, err)
 	}
@@ -318,13 +318,13 @@ func (store *TxStore) InsertEntry(ctx context.Context, entryInput ledger.EntryIn
 	return nil
 }
 
-func (store *TxStore) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
+func (store *TxStore) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {
 	var sum int64
 	err := store.tx.QueryRow(ctx, sqlSumTotal, accountID.String(), atUnixUTC).Scan(&sum)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumTotal, err)
 	}
-	total, err := ledger.NewAmountCents(sum)
+	total, err := ledger.NewSignedAmountCents(sum)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
 	}
