@@ -17,6 +17,8 @@ const (
 	flagLedgerAddr     = "ledger-addr"
 	flagLedgerInsecure = "ledger-insecure"
 	flagLedgerTimeout  = "ledger-timeout"
+	flagDefaultTenant  = "default-tenant-id"
+	flagDefaultLedger  = "default-ledger-id"
 	flagAllowedOrigins = "allowed-origins"
 	flagJWTSigningKey  = "jwt-signing-key"
 	flagJWTIssuer      = "jwt-issuer"
@@ -54,6 +56,8 @@ func newRootCommand() *cobra.Command {
 	cmd.Flags().String(flagLedgerAddr, "", "ledger gRPC address (required)")
 	cmd.Flags().Bool(flagLedgerInsecure, false, "set true when connecting to an insecure ledger endpoint (required)")
 	cmd.Flags().Duration(flagLedgerTimeout, 0, "ledger RPC timeout (e.g. 3s, required)")
+	cmd.Flags().String(flagDefaultTenant, "", "default tenant id for ledger requests (required)")
+	cmd.Flags().String(flagDefaultLedger, "", "default ledger id for ledger requests (required)")
 	cmd.Flags().String(flagAllowedOrigins, "", "comma-separated list of allowed CORS origins (required)")
 	cmd.Flags().String(flagJWTSigningKey, "", "TAuth JWT signing key (required)")
 	cmd.Flags().String(flagJWTIssuer, "", "expected JWT issuer (required)")
@@ -69,7 +73,7 @@ func loadConfig(cmd *cobra.Command, cfg *demo.Config) error {
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	v.AutomaticEnv()
 
-	for _, flagName := range []string{flagListenAddr, flagLedgerAddr, flagLedgerInsecure, flagLedgerTimeout, flagAllowedOrigins, flagJWTSigningKey, flagJWTIssuer, flagJWTCookieName, flagTAuthBaseURL} {
+	for _, flagName := range []string{flagListenAddr, flagLedgerAddr, flagLedgerInsecure, flagLedgerTimeout, flagDefaultTenant, flagDefaultLedger, flagAllowedOrigins, flagJWTSigningKey, flagJWTIssuer, flagJWTCookieName, flagTAuthBaseURL} {
 		if err := v.BindPFlag(flagName, cmd.Flags().Lookup(flagName)); err != nil {
 			return err
 		}
@@ -86,6 +90,12 @@ func loadConfig(cmd *cobra.Command, cfg *demo.Config) error {
 	}
 	if !v.IsSet(flagLedgerTimeout) {
 		return fmt.Errorf("%s is required", flagLedgerTimeout)
+	}
+	if !v.IsSet(flagDefaultTenant) {
+		return fmt.Errorf("%s is required", flagDefaultTenant)
+	}
+	if !v.IsSet(flagDefaultLedger) {
+		return fmt.Errorf("%s is required", flagDefaultLedger)
 	}
 	if !v.IsSet(flagAllowedOrigins) {
 		return fmt.Errorf("%s is required", flagAllowedOrigins)
@@ -107,6 +117,8 @@ func loadConfig(cmd *cobra.Command, cfg *demo.Config) error {
 	cfg.LedgerAddress = strings.TrimSpace(v.GetString(flagLedgerAddr))
 	cfg.LedgerInsecure = v.GetBool(flagLedgerInsecure)
 	cfg.LedgerTimeout = v.GetDuration(flagLedgerTimeout)
+	cfg.DefaultTenantID = strings.TrimSpace(v.GetString(flagDefaultTenant))
+	cfg.DefaultLedgerID = strings.TrimSpace(v.GetString(flagDefaultLedger))
 	cfg.AllowedOrigins = demo.ParseAllowedOrigins(v.GetString(flagAllowedOrigins))
 	cfg.SessionSigningKey = v.GetString(flagJWTSigningKey)
 	cfg.SessionIssuer = strings.TrimSpace(v.GetString(flagJWTIssuer))

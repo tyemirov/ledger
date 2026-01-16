@@ -10,57 +10,61 @@ type recorderLogger struct {
 	entries []OperationLog
 }
 
-func (r *recorderLogger) LogOperation(_ context.Context, entry OperationLog) {
-	r.entries = append(r.entries, entry)
+func (logger *recorderLogger) LogOperation(_ context.Context, entry OperationLog) {
+	logger.entries = append(logger.entries, entry)
 }
 
-func TestServiceLogsGrantOperation(t *testing.T) {
-	baseStore := newMockStore()
+func TestServiceLogsGrantOperation(test *testing.T) {
+	test.Parallel()
+	baseStore := newMockStore(test)
 	logger := &recorderLogger{}
 	service, err := NewService(baseStore, func() int64 { return 42 }, WithOperationLogger(logger))
 	if err != nil {
-		t.Fatalf("service init failed: %v", err)
+		test.Fatalf("service init failed: %v", err)
 	}
-	user := mustUserID(t, "user-1")
-	amount := mustAmount(t, 100)
-	idem := mustIdempotencyKey(t, "grant-1")
-	metadata := mustMetadata(t, `{"action":"test"}`)
-	if err := service.Grant(context.Background(), user, amount, idem, 0, metadata); err != nil {
-		t.Fatalf("grant failed: %v", err)
+	user := mustUserID(test, "user-1")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+	amount := mustPositiveAmount(test, 100)
+	idempotencyKey := mustIdempotencyKey(test, "grant-1")
+	metadata := mustMetadata(test, `{"action":"test"}`)
+	if err := service.Grant(context.Background(), tenantID, user, ledgerID, amount, idempotencyKey, 0, metadata); err != nil {
+		test.Fatalf("grant failed: %v", err)
 	}
 	if len(logger.entries) != 1 {
-		t.Fatalf("expected one log entry, got %d", len(logger.entries))
+		test.Fatalf("expected one log entry, got %d", len(logger.entries))
 	}
 	entry := logger.entries[0]
-	if entry.Operation != "grant" || entry.UserID != user || entry.Amount != amount || entry.IdempotencyKey != idem {
-		t.Fatalf("unexpected log entry: %+v", entry)
+	if entry.Operation != operationGrant || entry.TenantID != tenantID || entry.UserID != user || entry.LedgerID != ledgerID || entry.Amount != amount.ToAmountCents() || entry.IdempotencyKey != idempotencyKey {
+		test.Fatalf("unexpected log entry: %+v", entry)
 	}
-	if entry.Error != nil || entry.Status != "ok" {
-		t.Fatalf("expected successful log entry, got %+v", entry)
+	if entry.Error != nil || entry.Status != operationStatusOK {
+		test.Fatalf("expected successful log entry, got %+v", entry)
 	}
 }
 
-func TestServiceLogsErrorStatus(t *testing.T) {
-	failingStore := &failingStore{err: errors.New("boom")}
+func TestServiceLogsErrorStatus(test *testing.T) {
+	test.Parallel()
+	failing := newFailingStore(test, errors.New("boom"))
 	logger := &recorderLogger{}
-	service, err := NewService(failingStore, func() int64 { return 1 }, WithOperationLogger(logger))
+	service, err := NewService(failing, func() int64 { return 1 }, WithOperationLogger(logger))
 	if err != nil {
-		t.Fatalf("service init failed: %v", err)
+		test.Fatalf("service init failed: %v", err)
 	}
-	user := mustUserID(t, "user-1")
-	amount := mustAmount(t, 100)
-	idem := mustIdempotencyKey(t, "grant-1")
-	metadata := mustMetadata(t, `{"action":"test"}`)
-	err = service.Grant(context.Background(), user, amount, idem, 0, metadata)
+	user := mustUserID(test, "user-1")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+	amount := mustPositiveAmount(test, 100)
+	idempotencyKey := mustIdempotencyKey(test, "grant-1")
+	metadata := mustMetadata(test, `{"action":"test"}`)
+	err = service.Grant(context.Background(), tenantID, user, ledgerID, amount, idempotencyKey, 0, metadata)
 	if err == nil {
-		t.Fatalf("expected error")
+		test.Fatalf("expected error")
 	}
 	if len(logger.entries) != 1 {
-		t.Fatalf("expected one log entry, got %d", len(logger.entries))
+		test.Fatalf("expected one log entry, got %d", len(logger.entries))
 	}
-	if logger.entries[0].Status != "error" || logger.entries[0].Error == nil {
-		t.Fatalf("expected error log entry, got %+v", logger.entries[0])
+	if logger.entries[0].Status != operationStatusError || logger.entries[0].Error == nil {
+		test.Fatalf("expected error log entry, got %+v", logger.entries[0])
 	}
 }
-
-// helper constructors reuse existing helpers defined in service_reservation_test.go.

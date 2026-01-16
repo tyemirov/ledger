@@ -8,24 +8,41 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 ## Features (114–199)
 
-## Improvements (206–299)
+## Improvements (207–299)
 
-- [ ] [LG-204] (P1) Extract ledger core into a reusable Go library.
+- [x] [LG-204] (P1) Extract ledger core into a reusable Go library. Resolved: domain types + store interfaces enforced, adapters updated, tests/ci passing.
   - Promote `internal/credit` into a public `pkg/ledger` module with explicit domain types and invariants.
     - Define a storage interface suitable for both in-process and service-hosted deployments.
     - Provide a default SQL-backed implementation (adapting existing gorm stores) while keeping the core domain independent of GORM.
-- [ ] [LG-205] (P2) Add integration documentation for service and library usage.
+- [x] [LG-205] (P2) Add integration documentation for service and library usage. Resolved: expanded integration guide with domain types, store wiring, and error contracts.
   - Document how to run ledger as a standalone gRPC microservice (config, migrations, networking) and how to consume it from other languages.
     - Document how to embed the future `pkg/ledger` library in Go services, including storage wiring, transaction patterns, and error contracts.
-- [ ] [LG-206] (P2) Support multiple ledgers per user.
+- [x] [LG-206] (P2) Support multiple ledgers per user. Resolved: ledger_id threaded through API/service/store/schema; demo/docs updated; migration path omitted per no-backward-compat requirement.
   - Allow a single user_id to own multiple ledger accounts (introduce a ledger/account namespace or composite key).
     - Update storage constraints, API inputs, and reservation/entry lookups to include the ledger identifier.
     - Provide a migration path for existing single-ledger data.
+- [x] [LG-207] (P2) Introduce first-class multi-tenant support (tenant_id). Resolved: tenant_id required across API/service/store/schema; demo/docs/examples updated; no migration path.
+  - Require tenant_id in API/service/store boundaries and schema keys.
+    - Update demo/docs/examples to send tenant_id alongside ledger_id and user_id.
+    - Skip migration path (backward compatibility not required).
+- [x] [LG-208] (P2) Make demo tenant_id and ledger_id defaults configurable via env. Resolved: demo config/flags use env-backed defaults; env templates/docs/tests updated, tooling passing.
+  - Add DEMOAPI_DEFAULT_TENANT_ID and DEMOAPI_DEFAULT_LEDGER_ID to demo config and env templates.
+    - Update demo handlers and docs to use config values instead of hardcoded defaults.
+- [x] [LG-209] (P2) Make ledger data directory configurable for Docker workflows. Resolved: data dir is only used by DATABASE_URL; no extra env added, compose mounts align to `/srv/data`, tooling passing.
+  - Add LEDGER_DATA_DIR to .env.ledger and wire compose volume targets to use it.
+    - Update compose wiring so ledger uses the configured data directory.
 
 
 ## BugFixes (302–399)
 
-## Maintenance (400–499)
+- [x] [LG-303] (P1) Allow negative totals from SumTotal so expired grants don't break balance/spend flows. Resolved: signed totals added; balance/spend now handle negatives without store errors.
+  - Remove rejection of negative sums and ensure Reserve/Spend returns ErrInsufficientFunds when totals are negative.
+
+## Maintenance (401–499)
+
+- [x] [LG-400] (P0) Increase test coverage to 95%. Resolved: ledger tests expanded to 96.7% coverage; coverage gate raised to 95%, tooling passing.
+  Increase test coverage to 95%
+
 
 ## Planning (500–599)
 *do not implement yet*

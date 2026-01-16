@@ -167,6 +167,14 @@ type userIDGetter interface {
 	GetUserId() string
 }
 
+type ledgerIDGetter interface {
+	GetLedgerId() string
+}
+
+type tenantIDGetter interface {
+	GetTenantId() string
+}
+
 func extractUserID(request interface{}) string {
 	getter, ok := request.(userIDGetter)
 	if !ok {
@@ -176,7 +184,24 @@ func extractUserID(request interface{}) string {
 	return userID
 }
 
-// newLoggingInterceptor logs every unary RPC with method, duration, status, and optional user identifier.
+func extractLedgerID(request interface{}) string {
+	getter, ok := request.(ledgerIDGetter)
+	if !ok {
+		return ""
+	}
+	ledgerID := strings.TrimSpace(getter.GetLedgerId())
+	return ledgerID
+}
+
+func extractTenantID(request interface{}) string {
+	getter, ok := request.(tenantIDGetter)
+	if !ok {
+		return ""
+	}
+	tenantID := strings.TrimSpace(getter.GetTenantId())
+	return tenantID
+}
+
 func newLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, request interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		start := time.Now()
@@ -191,6 +216,12 @@ func newLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 		if userID := extractUserID(request); userID != "" {
 			fields = append(fields, zap.String("user_id", userID))
 		}
+		if ledgerID := extractLedgerID(request); ledgerID != "" {
+			fields = append(fields, zap.String("ledger_id", ledgerID))
+		}
+		if tenantID := extractTenantID(request); tenantID != "" {
+			fields = append(fields, zap.String("tenant_id", tenantID))
+		}
 		if err != nil {
 			logger.Error("grpc request failed", append(fields, zap.Error(err))...)
 		} else {
@@ -204,10 +235,11 @@ type zapOperationLogger struct {
 	logger *zap.Logger
 }
 
-func (l *zapOperationLogger) LogOperation(_ context.Context, entry ledger.OperationLog) {
-	if l == nil || l.logger == nil {
+func (logger *zapOperationLogger) LogOperation(_ context.Context, entry ledger.OperationLog) {
+	if logger == nil || logger.logger == nil {
 		return
 	}
+	const logEventLedgerOperation = "ledger.operation"
 	status := entry.Status
 	if status == "" {
 		if entry.Error != nil {
@@ -223,11 +255,19 @@ func (l *zapOperationLogger) LogOperation(_ context.Context, entry ledger.Operat
 	if user := entry.UserID.String(); user != "" {
 		fields = append(fields, zap.String("user_id", user))
 	}
-	if entry.Amount != 0 {
-		fields = append(fields, zap.Int64("amount_cents", int64(entry.Amount)))
+	if ledgerID := entry.LedgerID.String(); ledgerID != "" {
+		fields = append(fields, zap.String("ledger_id", ledgerID))
 	}
-	if reservation := entry.ReservationID.String(); reservation != "" {
-		fields = append(fields, zap.String("reservation_id", reservation))
+	if tenantID := entry.TenantID.String(); tenantID != "" {
+		fields = append(fields, zap.String("tenant_id", tenantID))
+	}
+	if entry.Amount != 0 {
+		fields = append(fields, zap.Int64("amount_cents", entry.Amount.Int64()))
+	}
+	if entry.ReservationID != nil {
+		if reservation := entry.ReservationID.String(); reservation != "" {
+			fields = append(fields, zap.String("reservation_id", reservation))
+		}
 	}
 	if key := entry.IdempotencyKey.String(); key != "" {
 		fields = append(fields, zap.String("idempotency_key", key))
@@ -237,10 +277,10 @@ func (l *zapOperationLogger) LogOperation(_ context.Context, entry ledger.Operat
 	}
 	if entry.Error != nil {
 		fields = append(fields, zap.Error(entry.Error))
-		l.logger.Error("ledger.operation", fields...)
+		logger.logger.Error(logEventLedgerOperation, fields...)
 		return
 	}
-	l.logger.Info("ledger.operation", fields...)
+	logger.logger.Info(logEventLedgerOperation, fields...)
 }
 
 func openDatabase(ctx context.Context, dsn string) (*gorm.DB, func() error, string, error) {
@@ -292,7 +332,6 @@ func resolveDriver(dsn string) (string, string, error) {
 		sqlitePath, err := normalizeSQLitePath(path)
 		return "sqlite", sqlitePath, err
 	}
-	// Treat everything else as a direct sqlite path.
 	sqlitePath, err := normalizeSQLitePath(dsn)
 	return "sqlite", sqlitePath, err
 }
