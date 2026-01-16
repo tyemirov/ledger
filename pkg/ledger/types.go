@@ -20,6 +20,9 @@ const (
 // AmountCents is a non-negative currency value in cents.
 type AmountCents int64
 
+// SignedAmountCents is a currency value in cents that may be negative.
+type SignedAmountCents int64
+
 // PositiveAmountCents is a strictly positive currency value in cents.
 type PositiveAmountCents int64
 
@@ -120,8 +123,8 @@ type Entry struct {
 
 // Balance is the current total and available funds for an account.
 type Balance struct {
-	TotalCents     AmountCents
-	AvailableCents AmountCents
+	TotalCents     SignedAmountCents
+	AvailableCents SignedAmountCents
 }
 
 // NewUserID validates and normalizes a user id.
@@ -249,6 +252,16 @@ func NewAmountCents(raw int64) (AmountCents, error) {
 
 // Int64 returns the amount as a primitive value.
 func (amount AmountCents) Int64() int64 {
+	return int64(amount)
+}
+
+// NewSignedAmountCents returns a signed amount value.
+func NewSignedAmountCents(raw int64) (SignedAmountCents, error) {
+	return SignedAmountCents(raw), nil
+}
+
+// Int64 returns the amount as a primitive value.
+func (amount SignedAmountCents) Int64() int64 {
 	return int64(amount)
 }
 
@@ -535,7 +548,7 @@ type Store interface {
 	WithTx(ctx context.Context, fn func(ctx context.Context, txStore Store) error) error
 	GetOrCreateAccountID(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID) (AccountID, error)
 	InsertEntry(ctx context.Context, entry EntryInput) error
-	SumTotal(ctx context.Context, accountID AccountID, atUnixUTC int64) (AmountCents, error)
+	SumTotal(ctx context.Context, accountID AccountID, atUnixUTC int64) (SignedAmountCents, error)
 	SumActiveHolds(ctx context.Context, accountID AccountID, atUnixUTC int64) (AmountCents, error)
 	CreateReservation(ctx context.Context, reservation Reservation) error
 	GetReservation(ctx context.Context, accountID AccountID, reservationID ReservationID) (Reservation, error)

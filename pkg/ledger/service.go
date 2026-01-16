@@ -44,10 +44,7 @@ func (service *Service) Balance(ctx context.Context, tenantID TenantID, userID U
 	if err != nil {
 		return Balance{}, err
 	}
-	available, err := calculateAvailable(total, holds)
-	if err != nil {
-		return Balance{}, err
-	}
+	available := calculateAvailable(total, holds)
 	return Balance{
 		TotalCents:     total,
 		AvailableCents: available,
@@ -105,11 +102,9 @@ func (service *Service) Reserve(ctx context.Context, tenantID TenantID, userID U
 		if err != nil {
 			return err
 		}
-		available, err := calculateAvailable(total, holds)
-		if err != nil {
-			return err
-		}
-		if available < amount.ToAmountCents() {
+		available := calculateAvailable(total, holds)
+		amountCents := amount.ToAmountCents()
+		if available.Int64() < amountCents.Int64() {
 			return ErrInsufficientFunds
 		}
 		reservation, err := NewReservation(accountID, reservationID, amount, ReservationStatusActive)
@@ -292,11 +287,8 @@ func deriveIdempotencyKey(baseKey IdempotencyKey, suffix string) (IdempotencyKey
 	return NewIdempotencyKey(combined)
 }
 
-func calculateAvailable(total AmountCents, holds AmountCents) (AmountCents, error) {
+func calculateAvailable(total SignedAmountCents, holds AmountCents) SignedAmountCents {
 	availableRaw := total.Int64() - holds.Int64()
-	available, err := NewAmountCents(availableRaw)
-	if err != nil {
-		return 0, WrapError("service", "balance", "negative_available", ErrInvalidBalance)
-	}
-	return available, nil
+	available, _ := NewSignedAmountCents(availableRaw)
+	return available
 }

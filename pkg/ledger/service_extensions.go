@@ -18,11 +18,9 @@ func (service *Service) Spend(requestContext context.Context, tenantID TenantID,
 		if err != nil {
 			return err
 		}
-		available, err := calculateAvailable(total, holds)
-		if err != nil {
-			return err
-		}
-		if available < amount.ToAmountCents() {
+		available := calculateAvailable(total, holds)
+		amountCents := amount.ToAmountCents()
+		if available.Int64() < amountCents.Int64() {
 			return ErrInsufficientFunds
 		}
 		entryInput, err := NewEntryInput(
