@@ -23,17 +23,19 @@ func TestServiceLogsGrantOperation(test *testing.T) {
 		test.Fatalf("service init failed: %v", err)
 	}
 	user := mustUserID(test, "user-1")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 	amount := mustPositiveAmount(test, 100)
 	idempotencyKey := mustIdempotencyKey(test, "grant-1")
 	metadata := mustMetadata(test, `{"action":"test"}`)
-	if err := service.Grant(context.Background(), user, amount, idempotencyKey, 0, metadata); err != nil {
+	if err := service.Grant(context.Background(), tenantID, user, ledgerID, amount, idempotencyKey, 0, metadata); err != nil {
 		test.Fatalf("grant failed: %v", err)
 	}
 	if len(logger.entries) != 1 {
 		test.Fatalf("expected one log entry, got %d", len(logger.entries))
 	}
 	entry := logger.entries[0]
-	if entry.Operation != operationGrant || entry.UserID != user || entry.Amount != amount.ToAmountCents() || entry.IdempotencyKey != idempotencyKey {
+	if entry.Operation != operationGrant || entry.TenantID != tenantID || entry.UserID != user || entry.LedgerID != ledgerID || entry.Amount != amount.ToAmountCents() || entry.IdempotencyKey != idempotencyKey {
 		test.Fatalf("unexpected log entry: %+v", entry)
 	}
 	if entry.Error != nil || entry.Status != operationStatusOK {
@@ -50,10 +52,12 @@ func TestServiceLogsErrorStatus(test *testing.T) {
 		test.Fatalf("service init failed: %v", err)
 	}
 	user := mustUserID(test, "user-1")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
 	amount := mustPositiveAmount(test, 100)
 	idempotencyKey := mustIdempotencyKey(test, "grant-1")
 	metadata := mustMetadata(test, `{"action":"test"}`)
-	err = service.Grant(context.Background(), user, amount, idempotencyKey, 0, metadata)
+	err = service.Grant(context.Background(), tenantID, user, ledgerID, amount, idempotencyKey, 0, metadata)
 	if err == nil {
 		test.Fatalf("expected error")
 	}
