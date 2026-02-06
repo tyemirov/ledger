@@ -31,6 +31,22 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 - [x] [LG-209] (P2) Make ledger data directory configurable for Docker workflows. Resolved: data dir is only used by DATABASE_URL; no extra env added, compose mounts align to `/srv/data`, tooling passing.
   - Add LEDGER_DATA_DIR to .env.ledger and wire compose volume targets to use it.
     - Update compose wiring so ledger uses the configured data directory.
+- [ ] [LG-210] (P1) Add server-managed bootstrap grants for new accounts. Unresolved.
+  - Provide optional bootstrap configuration (amount/metadata/idempotency prefix) per tenant+ledger.
+  - Apply the bootstrap grant exactly once when an account is created (or first accessed), without requiring the caller to orchestrate a grant.
+  - Use deterministic idempotency keys so repeated calls are safe; treat duplicate idempotency as no-op.
+  - Update config/env/README and add coverage for concurrent account creation.
+- [ ] [LG-211] (P1) Add a backfill/bootstrap command for existing accounts. Unresolved.
+  - Provide a CLI/admin command to apply the configured bootstrap grant to all existing accounts missing it.
+  - Add store-level account listing/pagination to support backfill without direct SQL in callers.
+  - Treat duplicate idempotency keys as no-op; emit a summary of accounts updated vs skipped.
+  - Document the workflow and add integration tests for large account sets.
+- [ ] [LG-212] (P1) Support grant-only history and "last grant" queries in the gRPC API. Unresolved.
+  - Callers need to display "last grant" reliably without paging through large volumes of non-grant entries (holds/spends/captures).
+  - Options:
+    - Add `type` filtering (or a dedicated `ListGrants` RPC) so clients can request only grant entries.
+    - Add a `GetLastGrant` RPC that returns the most recent grant entry (entry_id, amount_cents, created_unix_utc, metadata_json).
+  - Ensure results are ordered by creation timestamp and include deterministic pagination/cursors for high-activity accounts.
 
 
 ## BugFixes (302–399)
