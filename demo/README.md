@@ -63,24 +63,24 @@ The helper updates `demo/config.js`, all UI fallbacks, and both `.env.tauth` fil
 
 ## Docker Compose Workflow
 
-The repository ships `demo/docker-compose.demo.yml` plus env templates so you can run the entire stack with one command.
+The repository ships `demo/docker-compose.yml` plus env templates so you can run the entire stack with one command. The compose stack provisions Postgres for `ledgerd` and applies `db/migrations.sql` automatically.
 
-1. From the `demo/` directory, copy the env templates:
+1. From the `demo/` directory, ensure the env files exist (copy templates if needed):
    ```bash
    cd demo
-   cp env.demoapi.example env.demoapi
-   cp env.tauth.example env.tauth
+   cp -n .env.demoapi.example .env.demoapi
+   cp -n .env.tauth.example .env.tauth
    cd -
    ```
    Edit both files so `DEMOAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID.
-2. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `demo/docker-compose.demo.yml` if your machine needs a different port). The Dockerfile builds the backend from the local `demo/backend` sources:
+2. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `demo/docker-compose.yml` if your machine needs a different port). The Dockerfile builds the backend from the local `demo/backend` sources:
    ```bash
    docker compose -f demo/docker-compose.yml up --build
    ```
-4. Visit `http://localhost:8000` (ghttp), `http://localhost:9090/api/wallet` (demo backend), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `http://localhost:8080/demo/config.js`, so whatever Google OAuth Web Client ID you set in `demo/env.tauth` is automatically injected into `<mpr-header>`—no need to edit the HTML file manually.
-5. Stop everything with `docker compose -f demo/docker-compose.demo.yml down`.
+3. Visit `http://localhost:8000` (ghttp), `http://localhost:9090/api/wallet` (demo backend), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `http://localhost:8080/demo/config.js`, so whatever Google OAuth Web Client ID you set in `demo/.env.tauth` is automatically injected into `<mpr-header>`—no need to edit the HTML file manually.
+4. Stop everything with `docker compose -f demo/docker-compose.yml down`.
 
-Volumes `ledger_data` and `tauth_data` persist ledger entries plus refresh tokens. Remove them with `docker volume rm ledger_ledger_data ledger_tauth_data` if you need a fresh state.
+Volumes `ledger_postgres_data` and `tauth_data` persist ledger entries plus refresh tokens. Remove them with `docker volume rm ledger_ledger_postgres_data ledger_tauth_data` if you need a fresh state.
 
 ## Scenario Checklist
 

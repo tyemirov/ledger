@@ -48,6 +48,8 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
     - Add a `GetLastGrant` RPC that returns the most recent grant entry (entry_id, amount_cents, created_unix_utc, metadata_json).
   - Ensure results are ordered by creation timestamp and include deterministic pagination/cursors for high-activity accounts.
 
+- [x] [LG-213] (P1) Use PostgreSQL in Docker Compose orchestration (replace SQLite). Resolved: root + demo compose now provision Postgres and run `db/migrations.sql` via a one-shot migrator; `.env.ledger` defaults to Postgres; docs updated; `make ci` passing.
+
 
 ## BugFixes (302–399)
 

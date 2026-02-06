@@ -17,6 +17,8 @@ SQLite databases are created automatically. For Postgres, apply the schema first
 psql -h localhost -U postgres -d credit -f db/migrations.sql
 ```
 
+When using the repository `docker-compose.yml`, the `migrate` service applies `db/migrations.sql` automatically before `ledgerd` starts.
+
 The server prepares the schema, listens for gRPC requests, and logs every RPC (method, duration, code, user_id when present). Deploy the gRPC port on a private interface or internal network, then front it with your gateway for authentication and rate limiting. Integration steps for any language:
 
 * Generate gRPC stubs from `api/credit/v1/credit.proto`.
