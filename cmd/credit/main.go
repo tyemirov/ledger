@@ -97,14 +97,10 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = defaultGRPCListenAddr
 	}
-	if cfg.DatabaseURL == "" {
-		return fmt.Errorf("database url is required")
-	}
-	if cfg.ListenAddr == "" {
-		return fmt.Errorf("listen addr is required")
-	}
 	return nil
 }
+
+type listenFunc func(network, address string) (net.Listener, error)
 
 func runServer(ctx context.Context, cfg *runtimeConfig) error {
 	logger, err := zap.NewProduction()
@@ -113,6 +109,10 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 	}
 	defer func() { _ = logger.Sync() }()
 
+	return runServerWithListen(ctx, cfg, logger, net.Listen)
+}
+
+func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Logger, listen listenFunc) error {
 	gormDB, cleanup, driver, err := openDatabase(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("database open: %w", err)
@@ -131,7 +131,7 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 		return fmt.Errorf("ledger service init: %w", err)
 	}
 
-	lis, err := net.Listen("tcp", cfg.ListenAddr)
+	lis, err := listen("tcp", cfg.ListenAddr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
@@ -316,6 +316,15 @@ func openDatabase(ctx context.Context, dsn string) (*gorm.DB, func() error, stri
 func resolveDriver(dsn string) (string, string, error) {
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
 		return "postgres", "", nil
+	}
+	if strings.Contains(dsn, "://") && !strings.HasPrefix(dsn, "sqlite://") {
+		u, err := url.Parse(dsn)
+		if err != nil {
+			return "", "", fmt.Errorf("parse database url: %w", err)
+		}
+		if u.Scheme != "" && u.Scheme != "postgres" && u.Scheme != "postgresql" {
+			return u.Scheme, "", nil
+		}
 	}
 	if strings.HasPrefix(dsn, "sqlite://") {
 		u, err := url.Parse(dsn)

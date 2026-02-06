@@ -63,6 +63,10 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 - [x] [LG-400] (P0) Increase test coverage to 95%. Resolved: ledger tests expanded to 96.7% coverage; coverage gate raised to 95%, tooling passing.
   Increase test coverage to 95%
 
+- [x] [LG-401] (P0) Enforce coverage gate across the entire Go module. Resolved: `make test-unit` now computes module-wide coverage (excluding generated `api/credit/v1`); service/store integration tests added; `make ci` passing with total coverage 95.2%.
+  - Current `make test` only enforces coverage for `pkg/ledger`, leaving `cmd/credit` + `internal/*` effectively untested.
+  - Update coverage gate to measure module-wide coverage (excluding generated protobuf package) and add integration tests that exercise the service end-to-end.
+
 
 ## Planning (500–599)
 *do not implement yet*
