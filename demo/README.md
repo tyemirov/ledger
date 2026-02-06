@@ -63,7 +63,7 @@ The helper updates `demo/config.js`, all UI fallbacks, and both `.env.tauth` fil
 
 ## Docker Compose Workflow
 
-The repository ships `demo/docker-compose.yml` plus env templates so you can run the entire stack with one command. The compose stack provisions Postgres for `ledgerd` and applies `db/migrations.sql` automatically.
+The repository ships `demo/docker-compose.yml` plus env templates so you can run the entire stack with one command. The compose stack provisions Postgres for `ledgerd`, and `ledgerd` applies its schema automatically via GORM on startup.
 
 1. From the `demo/` directory, ensure the env files exist (copy templates if needed):
    ```bash

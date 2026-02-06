@@ -354,24 +354,23 @@ func normalizeSQLitePath(path string) (string, error) {
 }
 
 func prepareSchema(db *gorm.DB, driver string) error {
-	if driver != "sqlite" {
-		return nil
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		return fmt.Errorf("sql database: %w", err)
-	}
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
+	if driver == "sqlite" {
+		sqlDB, err := db.DB()
+		if err != nil {
+			return fmt.Errorf("sql database: %w", err)
+		}
+		sqlDB.SetMaxOpenConns(1)
+		sqlDB.SetMaxIdleConns(1)
 
-	if err := db.Exec("PRAGMA journal_mode=WAL;").Error; err != nil {
-		return fmt.Errorf("pragma journal_mode: %w", err)
-	}
-	if err := db.Exec("PRAGMA busy_timeout=5000;").Error; err != nil {
-		return fmt.Errorf("pragma busy_timeout: %w", err)
-	}
-	if err := db.Exec("PRAGMA foreign_keys=ON;").Error; err != nil {
-		return fmt.Errorf("pragma foreign_keys: %w", err)
+		if err := db.Exec("PRAGMA journal_mode=WAL;").Error; err != nil {
+			return fmt.Errorf("pragma journal_mode: %w", err)
+		}
+		if err := db.Exec("PRAGMA busy_timeout=5000;").Error; err != nil {
+			return fmt.Errorf("pragma busy_timeout: %w", err)
+		}
+		if err := db.Exec("PRAGMA foreign_keys=ON;").Error; err != nil {
+			return fmt.Errorf("pragma foreign_keys: %w", err)
+		}
 	}
 	if err := db.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}, &gormstore.Reservation{}); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)

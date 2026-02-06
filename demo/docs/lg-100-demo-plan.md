@@ -96,7 +96,7 @@ Components:
 
 ### Local Orchestration / Compose
 - Provide `demo/docker-compose.yml` with services:
-  - `postgres` + a one-shot `migrate` step applying `db/migrations.sql`.
+  - `postgres` for `ledgerd` (schema applied automatically by `ledgerd`).
   - `ledger`: runs `ledgerd` against Postgres (via `../.env.ledger`).
   - `tauth`: builds from `tools/TAuth` or pulls published image; loads `.env.tauth`.
   - `demoapi`: builds from the repo, depends on ledger + tauth, shares `APP_JWT_SIGNING_KEY`.

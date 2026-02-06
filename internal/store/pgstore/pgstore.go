@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,6 +13,7 @@ import (
 
 const (
 	constraintAccountIdempotencyKey = "ledger_entries_account_id_idempotency_key_key"
+	constraintLedgerEntriesPrimary  = "ledger_entries_pkey"
 	constraintReservationPrimary    = "reservations_pkey"
 	pgUniqueViolationCode           = "23505"
 	errorOperationStore             = "store"
@@ -34,7 +36,7 @@ const (
 	errorCodeUpdateStatus           = "update_status"
 
 	sqlInsertOrGetAccount = `
-		insert into accounts(tenant_id, user_id, ledger_id) values($1, $2, $3)
+		insert into accounts(account_id, tenant_id, user_id, ledger_id, created_at) values($1, $2, $3, $4, now())
 		on conflict (tenant_id, user_id, ledger_id) do update set tenant_id = excluded.tenant_id, user_id = excluded.user_id, ledger_id = excluded.ledger_id
 		returning account_id
 	`
@@ -44,11 +46,11 @@ const (
 			entry_id, account_id, type, amount_cents, reservation_id, idempotency_key, expires_at, metadata, created_at
 		)
 		values(
-			gen_random_uuid(), $1, $2, $3,
-			nullif($4,''), $5,
-			to_timestamp(nullif($6,0)),
-			coalesce(nullif($7,''),'{}')::jsonb,
-			to_timestamp($8)
+			$1, $2, $3, $4,
+			nullif($5,''), $6,
+			to_timestamp(nullif($7,0)),
+			coalesce(nullif($8,''),'{}')::jsonb,
+			to_timestamp($9)
 		)
 	`
 
@@ -64,8 +66,8 @@ const (
 	`
 
 	sqlInsertReservation = `
-		insert into reservations(account_id, reservation_id, amount_cents, status)
-		values ($1, $2, $3, $4)
+		insert into reservations(account_id, reservation_id, amount_cents, status, created_at, updated_at)
+		values ($1, $2, $3, $4, now(), now())
 	`
 
 	sqlSelectReservation = `
@@ -132,7 +134,8 @@ func (store *Store) WithTx(ctx context.Context, fn func(ctx context.Context, txS
 
 func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.TenantID, userID ledger.UserID, ledgerID ledger.LedgerID) (ledger.AccountID, error) {
 	var accountIDValue string
-	err := store.pool.QueryRow(ctx, sqlInsertOrGetAccount, tenantID.String(), userID.String(), ledgerID.String()).Scan(&accountIDValue)
+	candidateAccountID := uuid.NewString()
+	err := store.pool.QueryRow(ctx, sqlInsertOrGetAccount, candidateAccountID, tenantID.String(), userID.String(), ledgerID.String()).Scan(&accountIDValue)
 	if err != nil {
 		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeLookup, err)
 	}
@@ -149,7 +152,9 @@ func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInpu
 	if hasReservation {
 		reservationID = reservationValue.String()
 	}
+	candidateEntryID := uuid.NewString()
 	_, err := store.pool.Exec(ctx, sqlInsertEntry,
+		candidateEntryID,
 		entryInput.AccountID().String(),
 		entryInput.Type().String(),
 		entryInput.AmountCents().Int64(),
@@ -282,7 +287,8 @@ func (store *TxStore) WithTx(ctx context.Context, fn func(ctx context.Context, t
 
 func (store *TxStore) GetOrCreateAccountID(ctx context.Context, tenantID ledger.TenantID, userID ledger.UserID, ledgerID ledger.LedgerID) (ledger.AccountID, error) {
 	var accountIDValue string
-	err := store.tx.QueryRow(ctx, sqlInsertOrGetAccount, tenantID.String(), userID.String(), ledgerID.String()).Scan(&accountIDValue)
+	candidateAccountID := uuid.NewString()
+	err := store.tx.QueryRow(ctx, sqlInsertOrGetAccount, candidateAccountID, tenantID.String(), userID.String(), ledgerID.String()).Scan(&accountIDValue)
 	if err != nil {
 		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeLookup, err)
 	}
@@ -299,7 +305,9 @@ func (store *TxStore) InsertEntry(ctx context.Context, entryInput ledger.EntryIn
 	if hasReservation {
 		reservationID = reservationValue.String()
 	}
+	candidateEntryID := uuid.NewString()
 	_, err := store.tx.Exec(ctx, sqlInsertEntry,
+		candidateEntryID,
 		entryInput.AccountID().String(),
 		entryInput.Type().String(),
 		entryInput.AmountCents().Int64(),
@@ -511,9 +519,16 @@ func wrapStoreError(subject string, code string, err error) error {
 func isIdempotencyConflict(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		if pgErr.Code == pgUniqueViolationCode && pgErr.ConstraintName == constraintAccountIdempotencyKey {
+		if pgErr.Code != pgUniqueViolationCode {
+			return false
+		}
+		if pgErr.ConstraintName == constraintLedgerEntriesPrimary {
+			return false
+		}
+		if pgErr.ConstraintName == constraintAccountIdempotencyKey {
 			return true
 		}
+		return true
 	}
 	return false
 }

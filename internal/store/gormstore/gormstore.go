@@ -15,6 +15,7 @@ import (
 
 const (
 	constraintAccountIdempotencyKey = "ledger_entries_account_id_idempotency_key_key"
+	constraintLedgerEntriesPrimary  = "ledger_entries_pkey"
 	constraintReservationPrimary    = "reservations_pkey"
 	defaultMetadataJSON             = "{}"
 	pgUniqueViolationCode           = "23505"
@@ -321,7 +322,16 @@ func isIdempotencyConflict(err error) bool {
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		return pgErr.Code == pgUniqueViolationCode && pgErr.ConstraintName == constraintAccountIdempotencyKey
+		if pgErr.Code != pgUniqueViolationCode {
+			return false
+		}
+		if pgErr.ConstraintName == constraintLedgerEntriesPrimary {
+			return false
+		}
+		if pgErr.ConstraintName == constraintAccountIdempotencyKey {
+			return true
+		}
+		return true
 	}
 	var sqliteErr *gosqlite.Error
 	if errors.As(err, &sqliteErr) {
@@ -339,7 +349,13 @@ func isReservationConflict(err error) bool {
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		return pgErr.Code == pgUniqueViolationCode && pgErr.ConstraintName == constraintReservationPrimary
+		if pgErr.Code != pgUniqueViolationCode {
+			return false
+		}
+		if pgErr.ConstraintName == constraintReservationPrimary {
+			return true
+		}
+		return true
 	}
 	var sqliteErr *gosqlite.Error
 	if errors.As(err, &sqliteErr) {
