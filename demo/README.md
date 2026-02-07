@@ -84,7 +84,7 @@ The repository ships `demo/docker-compose.yml` plus env templates so you can run
    cd demo
    make configure-google-client-id GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
    ```
-2. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `demo/docker-compose.yml` if your machine needs a different port). The Dockerfile builds the backend from the local `demo/backend` sources:
+2. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `demo/docker-compose.yml` if your machine needs a different port). Docker Compose builds `ledgerd` from the repository `Dockerfile` (so Postgres schema changes land with the branch) and builds the demo backend from the local `demo/backend` sources:
    ```bash
    docker compose up --build
    ```

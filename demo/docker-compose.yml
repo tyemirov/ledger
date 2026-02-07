@@ -15,9 +15,11 @@ services:
     restart: unless-stopped
 
   ledger:
-    image: ghcr.io/tyemirov/ledger:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: ledger-ledger:local
     container_name: ledger-ledger
-    pull_policy: always
     env_file:
       - ../.env.ledger
     depends_on:
