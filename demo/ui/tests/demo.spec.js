@@ -66,6 +66,19 @@ test('bootstrap, spend, insufficient, purchase flows', async ({ page }) => {
     return JSON.parse(raw);
   });
   expect(footerThemeConfig?.modes?.length).toBe(4);
+  const footerLinksCollection = await page.evaluate(() => {
+    const footer = document.querySelector('mpr-footer');
+    if (!footer) {
+      return null;
+    }
+    const raw = footer.getAttribute('links-collection');
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw);
+  });
+  expect(footerLinksCollection?.text).toBe('Built by Marco Polo Research Lab');
+  expect(footerLinksCollection?.links?.length).toBe(10);
   await page.waitForTimeout(500);
   const exposureWallet = await page.evaluate(() => typeof window.__demoTestRenderWallet);
   if (exposureWallet !== 'function') {
@@ -208,6 +221,19 @@ test('bootstrap, spend, insufficient, purchase flows', async ({ page }) => {
     return JSON.parse(raw);
   });
   expect(footerThemeConfig2?.modes?.length).toBe(4);
+  const footerLinksCollection2 = await page.evaluate(() => {
+    const footer = document.querySelector('mpr-footer');
+    if (!footer) {
+      return null;
+    }
+    const raw = footer.getAttribute('links-collection');
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw);
+  });
+  expect(footerLinksCollection2?.text).toBe('Built by Marco Polo Research Lab');
+  expect(footerLinksCollection2?.links?.length).toBe(10);
   await page.waitForTimeout(500);
   const exposure = await page.evaluate(() => typeof window.__demoTestRenderWallet);
   if (exposure !== 'function') {
