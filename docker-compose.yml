@@ -4,24 +4,13 @@ services:
     env_file:
       - .env.postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 3s
       timeout: 3s
       retries: 20
     volumes:
       - ledger-postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
-
-  migrate:
-    image: postgres:16-alpine
-    env_file:
-      - .env.postgres
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./db/migrations.sql:/migrations.sql:ro
-    command: ["sh", "-c", "psql -v ON_ERROR_STOP=1 -f /migrations.sql"]
 
   ledgerd:
     build:
@@ -32,8 +21,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
     ports:
       - "50051:50051"
     restart: unless-stopped

@@ -49,10 +49,35 @@ const filesToUpdate = [
   path.join(projectRoot, 'ui', 'index.html'),
 ];
 
+const tauthConfigPath = path.join(projectRoot, 'tauth.config.yaml');
+
 const envFiles = [
   path.join(projectRoot, '.env.tauth'),
   path.join(projectRoot, '.env.tauth.example'),
 ];
+
+/**
+ * @param {string} source
+ * @param {string} key
+ * @param {string} newValue
+ * @returns {string}
+ */
+function replaceYamlStringValue(source, key, newValue) {
+  const jsonValue = JSON.stringify(newValue);
+  const doubleQuotedPattern = new RegExp(`^([\\t ]*${key}:\\s*)\"[^\"]*\"\\s*$`, 'm');
+  if (doubleQuotedPattern.test(source)) {
+    return source.replace(doubleQuotedPattern, `$1${jsonValue}`);
+  }
+  const singleQuotedPattern = new RegExp(`^([\\t ]*${key}:\\s*)'[^']*'\\s*$`, 'm');
+  if (singleQuotedPattern.test(source)) {
+    return source.replace(singleQuotedPattern, `$1${jsonValue}`);
+  }
+  const barePattern = new RegExp(`^([\\t ]*${key}:\\s*)[^\\s#]+\\s*$`, 'm');
+  if (barePattern.test(source)) {
+    return source.replace(barePattern, `$1${newValue}`);
+  }
+  return source;
+}
 
 if (shouldUpdateLiterals) {
   filesToUpdate.forEach((filePath) => {
@@ -68,6 +93,15 @@ if (shouldUpdateLiterals) {
   });
 } else {
   console.log(`googleClientId already set to ${normalizedId}; syncing TAuth env files only.`);
+}
+
+if (fs.existsSync(tauthConfigPath)) {
+  const original = fs.readFileSync(tauthConfigPath, 'utf8');
+  const updated = replaceYamlStringValue(original, 'google_web_client_id', normalizedId);
+  if (original !== updated) {
+    fs.writeFileSync(tauthConfigPath, updated);
+    console.log(`Updated ${path.relative(projectRoot, tauthConfigPath)}`);
+  }
 }
 
 envFiles.forEach((filePath) => {

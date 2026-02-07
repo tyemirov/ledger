@@ -17,3 +17,7 @@ docs/workflows
 qodana.yaml
 .idea/
 bin/
+
+# Local TLS materials for demo HTTPS entrypoint (never commit).
+demo/certs/*
+!demo/certs/README.md

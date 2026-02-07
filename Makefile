@@ -28,8 +28,7 @@ lint: tools
 test: test-unit
 
 test-unit:
-	go test $(UNIT_TEST_PACKAGES)
-	go test ./pkg/ledger -coverprofile=coverage.out -covermode=count
+	go test $(UNIT_TEST_PACKAGES) -coverprofile=coverage.out -covermode=count
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 95.0) { print "coverage below 95%"; exit 1 } }'
 
 ci: check-format lint test-unit

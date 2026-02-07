@@ -6,7 +6,7 @@ services:
     env_file:
       - ../.env.postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -14,30 +14,17 @@ services:
       - ledger_postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
-  migrate:
-    image: postgres:16-alpine
-    container_name: ledger-migrate
-    pull_policy: always
-    env_file:
-      - ../.env.postgres
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ../db/migrations.sql:/migrations.sql:ro
-    command: ["sh", "-c", "psql -v ON_ERROR_STOP=1 -f /migrations.sql"]
-
   ledger:
-    image: ghcr.io/tyemirov/ledger:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: ledger-ledger:local
     container_name: ledger-ledger
-    pull_policy: always
     env_file:
       - ../.env.ledger
     depends_on:
       postgres:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
     ports:
       - "50051:50051"
     restart: unless-stopped
@@ -50,8 +37,9 @@ services:
       - ./.env.tauth
     volumes:
       - tauth_data:/data
+      - ./tauth.config.yaml:/config.yaml:ro
     ports:
-      - "8080:8080"
+      - "8081:8080"
     restart: unless-stopped
 
   demoapi:
@@ -73,14 +61,33 @@ services:
     image: ghcr.io/tyemirov/ghttp:latest
     container_name: ledger-ghttp
     pull_policy: always
-    command: ["--directory", "/data", "8000"]
+    command:
+      [
+        "--directory",
+        "/data",
+        "--tls-cert",
+        "/certs/computercat-cert.pem",
+        "--tls-key",
+        "/certs/computercat-key.pem",
+        "--proxy",
+        "/api=http://demoapi:9090",
+        "--proxy",
+        "/auth=http://tauth:8080",
+        "--proxy",
+        "/me=http://tauth:8080",
+        "--proxy",
+        "/tauth.js=http://tauth:8080",
+        "4443",
+      ]
     ports:
-      - "8000:8000"
+      - "4443:4443"
     volumes:
       - ./ui:/data:ro
       - ./config.js:/data/config.js:ro
+      - ./certs:/certs:ro
     depends_on:
       - demoapi
+      - tauth
     restart: unless-stopped
 
 volumes:

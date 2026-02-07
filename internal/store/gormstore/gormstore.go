@@ -15,6 +15,7 @@ import (
 
 const (
 	constraintAccountIdempotencyKey = "ledger_entries_account_id_idempotency_key_key"
+	constraintLedgerEntriesPrimary  = "ledger_entries_pkey"
 	constraintReservationPrimary    = "reservations_pkey"
 	defaultMetadataJSON             = "{}"
 	pgUniqueViolationCode           = "23505"
@@ -87,6 +88,11 @@ func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInpu
 		value := reservationValue.String()
 		reservationID = &value
 	}
+	createdUnixUTC := entryInput.CreatedUnixUTC()
+	createdAt := time.Now().UTC()
+	if createdUnixUTC != 0 {
+		createdAt = time.Unix(createdUnixUTC, 0).UTC()
+	}
 	entry := LedgerEntry{
 		AccountID:      entryInput.AccountID().String(),
 		Type:           entryInput.Type().String(),
@@ -95,10 +101,7 @@ func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInpu
 		IdempotencyKey: entryInput.IdempotencyKey().String(),
 		ExpiresAt:      expiresAt,
 		Metadata:       datatypesJSON(entryInput.MetadataJSON().String()),
-		CreatedAt:      time.Unix(entryInput.CreatedUnixUTC(), 0).UTC(),
-	}
-	if entry.CreatedAt.IsZero() {
-		entry.CreatedAt = time.Now().UTC()
+		CreatedAt:      createdAt,
 	}
 	err := store.db.WithContext(ctx).Create(&entry).Error
 	if isIdempotencyConflict(err) {
@@ -123,11 +126,7 @@ func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, at
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumTotal, err)
 	}
-	total, err := ledger.NewSignedAmountCents(sum.Total)
-	if err != nil {
-		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
-	}
-	return total, nil
+	return ledger.SignedAmountCents(sum.Total), nil
 }
 
 func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
@@ -321,7 +320,16 @@ func isIdempotencyConflict(err error) bool {
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		return pgErr.Code == pgUniqueViolationCode && pgErr.ConstraintName == constraintAccountIdempotencyKey
+		if pgErr.Code != pgUniqueViolationCode {
+			return false
+		}
+		if pgErr.ConstraintName == constraintLedgerEntriesPrimary {
+			return false
+		}
+		if pgErr.ConstraintName == constraintAccountIdempotencyKey {
+			return true
+		}
+		return true
 	}
 	var sqliteErr *gosqlite.Error
 	if errors.As(err, &sqliteErr) {
@@ -339,7 +347,13 @@ func isReservationConflict(err error) bool {
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		return pgErr.Code == pgUniqueViolationCode && pgErr.ConstraintName == constraintReservationPrimary
+		if pgErr.Code != pgUniqueViolationCode {
+			return false
+		}
+		if pgErr.ConstraintName == constraintReservationPrimary {
+			return true
+		}
+		return true
 	}
 	var sqliteErr *gosqlite.Error
 	if errors.As(err, &sqliteErr) {
