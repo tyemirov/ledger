@@ -8,9 +8,10 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css"
     />
-    <script defer src="./config.js"></script>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./config.js"></script>
+    <script src="./load-auth-client.js"></script>
     <script defer src="./config-apply.js"></script>
-    <script defer src="./load-auth-client.js"></script>
     <script
       defer
       src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/module.esm.js"
@@ -29,11 +30,12 @@
       brand-label="Ledger Demo"
       brand-href="/"
       nav-links='[{ "label": "Docs", "href": "https://github.com/tyemirov/ledger" }]'
-      site-id="991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com"
-      base-url="http://localhost:8080"
-      login-path="/auth/google"
-      logout-path="/auth/logout"
-      nonce-path="/auth/nonce"
+      google-site-id="991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com"
+      tauth-tenant-id="default"
+      tauth-url="http://localhost:8080"
+      tauth-login-path="/auth/google"
+      tauth-logout-path="/auth/logout"
+      tauth-nonce-path="/auth/nonce"
       settings-label="Account"
       settings="true"
     ></mpr-header>

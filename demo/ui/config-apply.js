@@ -45,12 +45,12 @@
   }
 
   if (resolved.googleClientId) {
-    headerElement.setAttribute('site-id', resolved.googleClientId);
+    headerElement.setAttribute('google-site-id', resolved.googleClientId);
   }
   if (resolved.tauthBaseUrl) {
-    headerElement.setAttribute('base-url', resolved.tauthBaseUrl);
+    headerElement.setAttribute('tauth-url', resolved.tauthBaseUrl);
   }
-  headerElement.setAttribute('login-path', '/auth/google');
-  headerElement.setAttribute('logout-path', '/auth/logout');
-  headerElement.setAttribute('nonce-path', '/auth/nonce');
+  headerElement.setAttribute('tauth-login-path', '/auth/google');
+  headerElement.setAttribute('tauth-logout-path', '/auth/logout');
+  headerElement.setAttribute('tauth-nonce-path', '/auth/nonce');
 })();
