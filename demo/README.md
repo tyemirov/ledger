@@ -86,10 +86,10 @@ The repository ships `demo/docker-compose.yml` plus env templates so you can run
    ```
 2. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `demo/docker-compose.yml` if your machine needs a different port). The Dockerfile builds the backend from the local `demo/backend` sources:
    ```bash
-   docker compose -f demo/docker-compose.yml up --build
+   docker compose up --build
    ```
 3. Visit `https://localhost:8080` (ghttp), `http://localhost:9090/api/wallet` (demo backend), and `http://localhost:8081` (TAuth) to confirm connectivity. The UI reads configuration from `/config.js` (served by ghttp), so edits to `demo/config.js` are picked up automatically on reload.
-4. Stop everything with `docker compose -f demo/docker-compose.yml down`.
+4. Stop everything with `docker compose down`.
 
 Volumes `ledger_postgres_data` and `tauth_data` persist ledger entries plus refresh tokens. Remove them with `docker volume rm ledger_ledger_postgres_data ledger_tauth_data` if you need a fresh state.
 
