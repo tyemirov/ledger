@@ -11,7 +11,7 @@ const resolvedOrigin =
   window.location.origin.trim() &&
   window.location.origin !== 'null'
     ? window.location.origin.trim().replace(/\/+$/, '')
-    : 'https://localhost:8080';
+    : 'https://localhost:4443';
 window.DEMO_LEDGER_CONFIG = Object.freeze({
   tauthBaseUrl: resolvedOrigin,
   apiBaseUrl: resolvedOrigin,

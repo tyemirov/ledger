@@ -12,7 +12,7 @@
     window.location.origin.trim() &&
     window.location.origin !== 'null'
       ? window.location.origin.trim().replace(/\/+$/, '')
-      : 'https://localhost:8080';
+      : 'https://localhost:4443';
 
   const DEFAULTS = Object.freeze({
     tauthBaseUrl: FALLBACK_ORIGIN,

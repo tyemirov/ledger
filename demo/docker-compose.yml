@@ -75,11 +75,10 @@ services:
         "/me=http://tauth:8080",
         "--proxy",
         "/tauth.js=http://tauth:8080",
-        "8080",
+        "4443",
       ]
     ports:
-      - "8080:8080"
-      - "4443:8080"
+      - "4443:4443"
     volumes:
       - ./ui:/data:ro
       - ./config.js:/data/config.js:ro

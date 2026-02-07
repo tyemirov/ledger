@@ -10,7 +10,7 @@ const FALLBACK_ORIGIN =
   window.location.origin.trim() &&
   window.location.origin !== 'null'
     ? window.location.origin.trim().replace(/\/+$/, '')
-    : 'https://localhost:8080';
+    : 'https://localhost:4443';
 
 const DEFAULT_CONFIG = {
   tauthBaseUrl: FALLBACK_ORIGIN,

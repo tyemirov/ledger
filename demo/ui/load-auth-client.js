@@ -16,7 +16,7 @@
       : '';
   const baseUrl = typeof config.tauthBaseUrl === 'string' && config.tauthBaseUrl.trim()
     ? config.tauthBaseUrl.trim().replace(/\/+$/, '')
-    : fallbackOrigin || 'https://localhost:8080';
+    : fallbackOrigin || 'https://localhost:4443';
   const scriptUrl = `${baseUrl}/tauth.js`;
 
   const escapeHtml = (value) =>
