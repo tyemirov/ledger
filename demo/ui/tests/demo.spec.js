@@ -54,6 +54,18 @@ test('bootstrap, spend, insufficient, purchase flows', async ({ page }) => {
   });
 
   await page.goto(`http://127.0.0.1:${serverPort}/index.html`);
+  const footerThemeConfig = await page.evaluate(() => {
+    const footer = document.querySelector('mpr-footer');
+    if (!footer) {
+      return null;
+    }
+    const raw = footer.getAttribute('theme-config');
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw);
+  });
+  expect(footerThemeConfig?.modes?.length).toBe(4);
   await page.waitForTimeout(500);
   const exposureWallet = await page.evaluate(() => typeof window.__demoTestRenderWallet);
   if (exposureWallet !== 'function') {
@@ -184,6 +196,18 @@ test('bootstrap, spend, insufficient, purchase flows', async ({ page }) => {
   page.on('pageerror', (err) => console.log('PAGE ERROR:', err.message));
 
   await page.goto(`http://127.0.0.1:${serverPort}/index.html`);
+  const footerThemeConfig2 = await page.evaluate(() => {
+    const footer = document.querySelector('mpr-footer');
+    if (!footer) {
+      return null;
+    }
+    const raw = footer.getAttribute('theme-config');
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw);
+  });
+  expect(footerThemeConfig2?.modes?.length).toBe(4);
   await page.waitForTimeout(500);
   const exposure = await page.evaluate(() => typeof window.__demoTestRenderWallet);
   if (exposure !== 'function') {

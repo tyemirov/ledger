@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-mpr-theme="light">
+<html lang="en" data-mpr-theme="light" data-demo-palette="default">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -24,7 +24,7 @@
     ></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
-  <body data-mpr-theme="light">
+  <body data-mpr-theme="light" data-demo-palette="default">
     <mpr-header
       id="demo-header"
       brand-label="Ledger Demo"
@@ -133,7 +133,7 @@
       "
       links-collection='{"style":"drop-up","text":"Explore","links":[{ "label": "Repository", "url": "https://github.com/tyemirov/ledger" },{ "label": "mpr-ui docs", "url": "https://github.com/MarcoPoloResearchLab/mpr-ui" }]}'
       theme-switcher="square"
-      theme-config='{"attribute":"data-mpr-theme","targets":["body"],"initialMode":"light","modes":["light","dark"]}'
+      theme-config='{"attribute":"data-mpr-theme","targets":["body"],"initialMode":"default-light","modes":[{"value":"default-light","attributeValue":"light","dataset":{"demo-palette":"default"}},{"value":"sunrise-light","attributeValue":"light","dataset":{"demo-palette":"sunrise"}},{"value":"default-dark","attributeValue":"dark","dataset":{"demo-palette":"default"}},{"value":"forest-dark","attributeValue":"dark","dataset":{"demo-palette":"forest"}}]}'
     ></mpr-footer>
 
     <script type="module" src="./app.js"></script>
