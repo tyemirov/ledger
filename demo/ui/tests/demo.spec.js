@@ -9,6 +9,23 @@ const DEMO_PROFILE = {
   user_email: 'demo@example.com',
 };
 
+const EXPECTED_FOOTER_LINKS_COLLECTION = {
+  style: 'drop-up',
+  text: 'Built by Marco Polo Research Lab',
+  links: [
+    { label: 'Marco Polo Research Lab', url: 'https://mprlab.com' },
+    { label: 'Gravity Notes', url: 'https://gravity.mprlab.com' },
+    { label: 'LoopAware', url: 'https://loopaware.mprlab.com' },
+    { label: 'Allergy Wheel', url: 'https://allergy.mprlab.com' },
+    { label: 'Social Threader', url: 'https://threader.mprlab.com' },
+    { label: 'RSVP', url: 'https://rsvp.mprlab.com' },
+    { label: 'Countdown Calendar', url: 'https://countdown.mprlab.com' },
+    { label: 'LLM Crossword', url: 'https://llm-crossword.mprlab.com' },
+    { label: 'Prompt Bubbles', url: 'https://prompts.mprlab.com' },
+    { label: 'Wallpapers', url: 'https://wallpapers.mprlab.com' },
+  ],
+};
+
 let server;
 let serverPort;
 
@@ -66,6 +83,18 @@ test('bootstrap, spend, insufficient, purchase flows', async ({ page }) => {
     return JSON.parse(raw);
   });
   expect(footerThemeConfig?.modes?.length).toBe(4);
+  const footerLinksCollection = await page.evaluate(() => {
+    const footer = document.querySelector('mpr-footer');
+    if (!footer) {
+      return null;
+    }
+    const raw = footer.getAttribute('links-collection');
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw);
+  });
+  expect(footerLinksCollection).toEqual(EXPECTED_FOOTER_LINKS_COLLECTION);
   await page.waitForTimeout(500);
   const exposureWallet = await page.evaluate(() => typeof window.__demoTestRenderWallet);
   if (exposureWallet !== 'function') {
@@ -208,6 +237,18 @@ test('bootstrap, spend, insufficient, purchase flows', async ({ page }) => {
     return JSON.parse(raw);
   });
   expect(footerThemeConfig2?.modes?.length).toBe(4);
+  const footerLinksCollection2 = await page.evaluate(() => {
+    const footer = document.querySelector('mpr-footer');
+    if (!footer) {
+      return null;
+    }
+    const raw = footer.getAttribute('links-collection');
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw);
+  });
+  expect(footerLinksCollection2).toEqual(EXPECTED_FOOTER_LINKS_COLLECTION);
   await page.waitForTimeout(500);
   const exposure = await page.evaluate(() => typeof window.__demoTestRenderWallet);
   if (exposure !== 'function') {

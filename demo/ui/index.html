@@ -29,7 +29,8 @@
       id="demo-header"
       brand-label="Ledger Demo"
       brand-href="/"
-      nav-links='[{ "label": "Docs", "href": "https://github.com/tyemirov/ledger" }]'
+      nav-links='[{ "label": "Docs", "href": "https://github.com/tyemirov/ledger/blob/master/docs/integration.md" }]'
+      theme-config='{"attribute":"data-mpr-theme","targets":["body"],"modes":[{"value":"default-light","attributeValue":"light","dataset":{"demo-palette":"default"}},{"value":"sunrise-light","attributeValue":"light","dataset":{"demo-palette":"sunrise"}},{"value":"default-dark","attributeValue":"dark","dataset":{"demo-palette":"default"}},{"value":"forest-dark","attributeValue":"dark","dataset":{"demo-palette":"forest"}}]}'
       google-site-id="991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com"
       tauth-tenant-id="default"
       tauth-url="https://localhost:4443"
@@ -48,11 +49,6 @@
             when you run out. All actions go through the ledger service via demoapi.
           </p>
           <div class="status" id="status-banner" role="status" aria-live="polite"></div>
-        </div>
-        <div class="session-card" id="session-card">
-          <p class="session-label">Session</p>
-          <p class="session-value" data-session-state>Awaiting sign-in…</p>
-          <p class="session-meta" data-session-email></p>
         </div>
       </section>
 
@@ -122,6 +118,47 @@
       </section>
     </main>
 
+    <div
+      id="account-modal"
+      class="account-modal"
+      data-mpr-modal="container"
+      data-mpr-modal-open="false"
+      aria-hidden="true"
+    >
+      <div data-mpr-modal="backdrop" data-account-modal="backdrop"></div>
+      <div
+        class="account-modal__dialog"
+        data-mpr-modal="dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="account-modal-title"
+        tabindex="-1"
+      >
+        <header data-mpr-modal="header">
+          <h2 id="account-modal-title" data-mpr-modal="title">Account</h2>
+          <button
+            type="button"
+            data-mpr-modal="close"
+            data-account-modal="close"
+            aria-label="Close account details"
+          >
+            &times;
+          </button>
+        </header>
+        <div class="account-modal__body" data-mpr-modal="body">
+          <div class="account-details">
+            <div class="account-details__avatar">
+              <img id="account-avatar" alt="" />
+            </div>
+            <div class="account-details__info">
+              <p class="account-details__name" id="account-name">--</p>
+              <p class="account-details__email" id="account-email">--</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <mpr-footer
       id="page-footer"
       prefix-text="Built with mpr-ui"
@@ -131,7 +168,22 @@
         <p>This demo uses TAuth for authentication and stores session cookies locally.</p>
         <p>No data is shared beyond ledger entries needed for the demonstration.</p>
       "
-      links-collection='{"style":"drop-up","text":"Explore","links":[{ "label": "Repository", "url": "https://github.com/tyemirov/ledger" },{ "label": "mpr-ui docs", "url": "https://github.com/MarcoPoloResearchLab/mpr-ui" }]}'
+      links-collection='{
+        "style": "drop-up",
+        "text": "Built by Marco Polo Research Lab",
+        "links": [
+          { "label": "Marco Polo Research Lab", "url": "https://mprlab.com" },
+          { "label": "Gravity Notes", "url": "https://gravity.mprlab.com" },
+          { "label": "LoopAware", "url": "https://loopaware.mprlab.com" },
+          { "label": "Allergy Wheel", "url": "https://allergy.mprlab.com" },
+          { "label": "Social Threader", "url": "https://threader.mprlab.com" },
+          { "label": "RSVP", "url": "https://rsvp.mprlab.com" },
+          { "label": "Countdown Calendar", "url": "https://countdown.mprlab.com" },
+          { "label": "LLM Crossword", "url": "https://llm-crossword.mprlab.com" },
+          { "label": "Prompt Bubbles", "url": "https://prompts.mprlab.com" },
+          { "label": "Wallpapers", "url": "https://wallpapers.mprlab.com" }
+        ]
+      }'
       theme-switcher="square"
       theme-config='{"attribute":"data-mpr-theme","targets":["body"],"initialMode":"default-light","modes":[{"value":"default-light","attributeValue":"light","dataset":{"demo-palette":"default"}},{"value":"sunrise-light","attributeValue":"light","dataset":{"demo-palette":"sunrise"}},{"value":"default-dark","attributeValue":"dark","dataset":{"demo-palette":"default"}},{"value":"forest-dark","attributeValue":"dark","dataset":{"demo-palette":"forest"}}]}'
     ></mpr-footer>
