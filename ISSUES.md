@@ -101,6 +101,8 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 - [x] [LG-412] (P1) Demo UI: footer theme switcher does not switch themes. Resolved: header now uses the same 4-mode theme-config as footer so themeManager config isn't overridden; Playwright coverage added; `cd demo && make ci` passing.
 
+- [x] [LG-413] (P2) Demo UI: "Docs" header link should open an actual local docs page (not the GitHub repo root). Resolved: header link now points to `/docs.html`; local docs page added; Playwright coverage added; `cd demo && make ci` passing.
+
 
 ## Planning (500–599)
 *do not implement yet*
