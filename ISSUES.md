@@ -79,6 +79,10 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Demo page currently renders largely unstyled because it uses custom classnames without a CSS file.
   - `mpr-ui` auth bootstrap expects `window.initAuthClient` to exist when `mpr-ui.js` runs; the current dynamic loader can race and prevent auth events (wallet never loads).
 
+- [x] [LG-405] (P1) Demo stack: serve the UI over HTTPS on `:8080` via ghttp using the computercat TLS cert/key and proxy auth/API routes through the same origin. Resolved: ghttp now terminates TLS on host `:8080` using `demo/certs`, proxies `/api` + TAuth routes, and demo docs/config point at `https://localhost:8080`; `make ci` + `cd demo && make ci` passing.
+  - Replace the HTTP-only `:8000` demo UI entrypoint with `https://localhost:8080`.
+  - Wire ghttp TLS with the `computercat-cert.pem` / `computercat-key.pem` pair and proxy `/api`, `/auth`, `/me`, `/tauth.js` to the backing services.
+
 
 ## Planning (500–599)
 *do not implement yet*

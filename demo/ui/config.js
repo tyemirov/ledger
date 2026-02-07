@@ -10,10 +10,10 @@
   window.DEMO_LEDGER_CONFIG = Object.freeze({
     tauthBaseUrl: typeof injected.tauthBaseUrl === 'string' && injected.tauthBaseUrl.trim()
       ? injected.tauthBaseUrl.trim()
-      : 'http://localhost:8080',
+      : 'https://localhost:8080',
     apiBaseUrl: typeof injected.apiBaseUrl === 'string' && injected.apiBaseUrl.trim()
       ? injected.apiBaseUrl.trim()
-      : 'http://localhost:9090',
+      : 'https://localhost:8080',
     googleClientId: typeof injected.googleClientId === 'string' && injected.googleClientId.trim()
       ? injected.googleClientId.trim()
       : '991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com',

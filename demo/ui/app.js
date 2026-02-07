@@ -3,8 +3,8 @@
 
 const SPEND_COINS = 5;
 const DEFAULT_CONFIG = {
-  tauthBaseUrl: 'http://localhost:8080',
-  apiBaseUrl: 'http://localhost:9090',
+  tauthBaseUrl: 'https://localhost:8080',
+  apiBaseUrl: 'https://localhost:8080',
   googleClientId: '991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com',
 };
 
