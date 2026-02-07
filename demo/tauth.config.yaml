@@ -11,7 +11,7 @@ server:
 tenants:
   - id: "default"
     allow_insecure_http: true
-    cookie_domain: "localhost"
+    cookie_domain: ""
     google_web_client_id: "991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com"
     jwt_signing_key: "bG9jYWwtc2lnbmluZy1rZXktc2FtcGxlLXRlc3QtMTIzNDU2Nzg5MA=="
     session_cookie_name: "app_session"

@@ -83,6 +83,8 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Replace the HTTP-only `:8000` demo UI entrypoint with `https://localhost:4443`.
   - Wire ghttp TLS with the `computercat-cert.pem` / `computercat-key.pem` pair and proxy `/api`, `/auth`, `/me`, `/tauth.js` to the backing services.
 
+- [x] [LG-406] (P1) Demo stack: make TAuth cookies host-only so auth works on `computercat.tyemirov.net` and LAN origins. Resolved: demo TAuth `cookie_domain`/`APP_COOKIE_DOMAIN` now empty (host-only), so cookies are issued for the active origin; `make ci` + `cd demo && make ci` passing.
+
 
 ## Planning (500–599)
 *do not implement yet*
