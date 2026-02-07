@@ -79,6 +79,7 @@ services:
       ]
     ports:
       - "8080:8080"
+      - "4443:8080"
     volumes:
       - ./ui:/data:ro
       - ./config.js:/data/config.js:ro

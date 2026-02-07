@@ -4,6 +4,8 @@ server:
   cors_allowed_origins:
     - "https://localhost:8080"
     - "https://127.0.0.1:8080"
+    - "https://localhost:4443"
+    - "https://127.0.0.1:4443"
     - "https://computercat.tyemirov.net:4443"
   database_url: "sqlite:///data/tauth.db"
   enable_tenant_header_override: false
@@ -22,4 +24,6 @@ tenants:
     tenant_origins:
       - "https://localhost:8080"
       - "https://127.0.0.1:8080"
+      - "https://localhost:4443"
+      - "https://127.0.0.1:4443"
       - "https://computercat.tyemirov.net:4443"
