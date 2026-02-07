@@ -101,19 +101,110 @@ const (
 	`
 )
 
+type queryRow interface {
+	Scan(dest ...any) error
+}
+
+type queryRows interface {
+	Next() bool
+	Scan(dest ...any) error
+	Err() error
+	Close()
+}
+
+type queryExecutor interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, arguments ...any) queryRow
+	Query(ctx context.Context, sql string, arguments ...any) (queryRows, error)
+}
+
+type transaction interface {
+	queryExecutor
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
+}
+
+type connectionPool interface {
+	queryExecutor
+	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (transaction, error)
+}
+
+type pgxPool interface {
+	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, arguments ...any) pgx.Row
+	Query(ctx context.Context, sql string, arguments ...any) (pgx.Rows, error)
+}
+
+type pgxPoolAdapter struct {
+	pool pgxPool
+}
+
+func (adapter pgxPoolAdapter) BeginTx(ctx context.Context, txOptions pgx.TxOptions) (transaction, error) {
+	tx, err := adapter.pool.BeginTx(ctx, txOptions)
+	if err != nil {
+		return nil, err
+	}
+	return pgxTxAdapter{tx: tx}, nil
+}
+
+func (adapter pgxPoolAdapter) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+	return adapter.pool.Exec(ctx, sql, arguments...)
+}
+
+func (adapter pgxPoolAdapter) QueryRow(ctx context.Context, sql string, arguments ...any) queryRow {
+	return adapter.pool.QueryRow(ctx, sql, arguments...)
+}
+
+func (adapter pgxPoolAdapter) Query(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+	return adapter.pool.Query(ctx, sql, arguments...)
+}
+
+type pgxTx interface {
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, arguments ...any) pgx.Row
+	Query(ctx context.Context, sql string, arguments ...any) (pgx.Rows, error)
+}
+
+type pgxTxAdapter struct {
+	tx pgxTx
+}
+
+func (adapter pgxTxAdapter) Commit(ctx context.Context) error {
+	return adapter.tx.Commit(ctx)
+}
+
+func (adapter pgxTxAdapter) Rollback(ctx context.Context) error {
+	return adapter.tx.Rollback(ctx)
+}
+
+func (adapter pgxTxAdapter) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+	return adapter.tx.Exec(ctx, sql, arguments...)
+}
+
+func (adapter pgxTxAdapter) QueryRow(ctx context.Context, sql string, arguments ...any) queryRow {
+	return adapter.tx.QueryRow(ctx, sql, arguments...)
+}
+
+func (adapter pgxTxAdapter) Query(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+	return adapter.tx.Query(ctx, sql, arguments...)
+}
+
 // Store implements ledger.Store using a pgx connection pool (autocommit).
 type Store struct {
-	pool *pgxpool.Pool
+	pool connectionPool
 }
 
 // TxStore implements ledger.Store for an active transaction.
 type TxStore struct {
-	tx pgx.Tx
+	tx transaction
 }
 
 // New returns a Store backed by a pgx pool.
 func New(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+	return &Store{pool: pgxPoolAdapter{pool: pool}}
 }
 
 func (store *Store) WithTx(ctx context.Context, fn func(ctx context.Context, txStore ledger.Store) error) error {
@@ -179,11 +270,7 @@ func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, at
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumTotal, err)
 	}
-	total, err := ledger.NewSignedAmountCents(sum)
-	if err != nil {
-		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
-	}
-	return total, nil
+	return ledger.SignedAmountCents(sum), nil
 }
 
 func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
@@ -332,11 +419,7 @@ func (store *TxStore) SumTotal(ctx context.Context, accountID ledger.AccountID, 
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumTotal, err)
 	}
-	total, err := ledger.NewSignedAmountCents(sum)
-	if err != nil {
-		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
-	}
-	return total, nil
+	return ledger.SignedAmountCents(sum), nil
 }
 
 func (store *TxStore) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
@@ -434,7 +517,7 @@ func (store *TxStore) ListEntries(ctx context.Context, accountID ledger.AccountI
 	return entries, nil
 }
 
-func scanEntries(rows pgx.Rows) ([]ledger.Entry, error) {
+func scanEntries(rows queryRows) ([]ledger.Entry, error) {
 	entries := make([]ledger.Entry, 0, 32)
 	for rows.Next() {
 		var (

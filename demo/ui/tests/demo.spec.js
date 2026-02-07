@@ -46,8 +46,11 @@ test('bootstrap, spend, insufficient, purchase flows', async ({ page }) => {
   await page.route('**/config.js', async (route) => {
     await route.fulfill({ contentType: 'application/javascript', body: '' });
   });
-  await page.route('**/static/auth-client.js', async (route) => {
-    await route.fulfill({ contentType: 'application/javascript', body: '' });
+  await page.route('**/tauth.js', async (route) => {
+    await route.fulfill({
+      contentType: 'application/javascript',
+      body: "window.initAuthClient = ({ onUnauthenticated }) => { if (typeof onUnauthenticated === 'function') { onUnauthenticated(); } return Promise.resolve(); };",
+    });
   });
 
   await page.goto(`http://127.0.0.1:${serverPort}/index.html`);
@@ -170,8 +173,11 @@ test('bootstrap, spend, insufficient, purchase flows', async ({ page }) => {
   await page.route('**/config.js', async (route) => {
     await route.fulfill({ contentType: 'application/javascript', body: '' });
   });
-  await page.route('**/static/auth-client.js', async (route) => {
-    await route.fulfill({ contentType: 'application/javascript', body: '' });
+  await page.route('**/tauth.js', async (route) => {
+    await route.fulfill({
+      contentType: 'application/javascript',
+      body: "window.initAuthClient = ({ onUnauthenticated }) => { if (typeof onUnauthenticated === 'function') { onUnauthenticated(); } return Promise.resolve(); };",
+    });
   });
 
   page.on('console', (msg) => console.log('PAGE LOG:', msg.text()));

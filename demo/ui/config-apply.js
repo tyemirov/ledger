@@ -6,9 +6,17 @@
     return;
   }
 
+  const FALLBACK_ORIGIN =
+    window.location &&
+    typeof window.location.origin === 'string' &&
+    window.location.origin.trim() &&
+    window.location.origin !== 'null'
+      ? window.location.origin.trim().replace(/\/+$/, '')
+      : 'https://localhost:4443';
+
   const DEFAULTS = Object.freeze({
-    tauthBaseUrl: 'http://localhost:8080',
-    apiBaseUrl: 'http://localhost:9090',
+    tauthBaseUrl: FALLBACK_ORIGIN,
+    apiBaseUrl: FALLBACK_ORIGIN,
     googleClientId: '991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com',
   });
 
@@ -45,12 +53,12 @@
   }
 
   if (resolved.googleClientId) {
-    headerElement.setAttribute('site-id', resolved.googleClientId);
+    headerElement.setAttribute('google-site-id', resolved.googleClientId);
   }
   if (resolved.tauthBaseUrl) {
-    headerElement.setAttribute('base-url', resolved.tauthBaseUrl);
+    headerElement.setAttribute('tauth-url', resolved.tauthBaseUrl);
   }
-  headerElement.setAttribute('login-path', '/auth/google');
-  headerElement.setAttribute('logout-path', '/auth/logout');
-  headerElement.setAttribute('nonce-path', '/auth/nonce');
+  headerElement.setAttribute('tauth-login-path', '/auth/google');
+  headerElement.setAttribute('tauth-logout-path', '/auth/logout');
+  headerElement.setAttribute('tauth-nonce-path', '/auth/nonce');
 })();
