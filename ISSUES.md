@@ -93,6 +93,18 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 - [x] [LG-408] (P1) Demo UI: keep mpr-ui and page styles on the same light/dark theme (avoid mixed palettes). Resolved: `data-mpr-theme` is now the single source of truth (set on `<html>`/`<body>` and toggled via the footer theme switcher); custom demo CSS now keys off `data-mpr-theme`; `cd demo && make ci` passing.
 
+- [x] [LG-409] (P2) Demo UI: remove the header Account/settings button. Resolved: removed `<mpr-header>` settings attributes so the Account button no longer renders; `make ci` + `cd demo && make ci` passing.
+
+- [x] [LG-410] (P2) Demo UI: square theme switcher should expose four modes (not two). Resolved: footer theme-config now defines 4 modes (default-light, sunrise-light, default-dark, forest-dark) and demo CSS keys palette overrides off `data-demo-palette`; `make ci` + `cd demo && make ci` passing.
+
+- [x] [LG-411] (P2) Demo UI: show account details (photo/name/email) from the header user menu; remove the hero session card. Resolved: added a user-menu action that opens an account-details modal; removed the session card; Playwright coverage added; `make ci` + `cd demo && make ci` passing.
+
+- [x] [LG-412] (P1) Demo UI: footer theme switcher does not switch themes. Resolved: header now uses the same 4-mode theme-config as footer so themeManager config isn't overridden; Playwright coverage added; `cd demo && make ci` passing.
+
+- [x] [LG-413] (P2) Demo UI: "Docs" header link should open the rendered integration guide (not the GitHub repo root). Resolved: header now points to `docs/integration.md` on GitHub; Playwright coverage added; `cd demo && make ci` passing.
+
+- [x] [LG-414] (P2) Demo UI: footer links menu should match the mpr-ui demo site catalog ("Built by Marco Polo Research Lab"). Resolved: footer dropdown updated to the mpr-ui site catalog; Playwright assertions added; `cd demo && make ci` passing.
+
 
 ## Planning (500–599)
 *do not implement yet*

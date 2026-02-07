@@ -2,6 +2,13 @@
 'use strict';
 
 const SPEND_COINS = 5;
+const USER_MENU_ACCOUNT_ACTION = 'account-details';
+const USER_MENU_ITEMS = JSON.stringify([
+  {
+    label: 'Account details',
+    action: USER_MENU_ACCOUNT_ACTION,
+  },
+]);
 
 const FALLBACK_ORIGIN =
   typeof window === 'object' &&
@@ -33,18 +40,26 @@ const selectors = {
   entryList: document.getElementById('entry-list'),
   entryCount: document.getElementById('entry-count'),
   purchaseForm: /** @type {HTMLFormElement|null} */ (document.getElementById('purchase-form')),
-  sessionState: document.querySelector('[data-session-state]'),
-  sessionEmail: document.querySelector('[data-session-email]'),
+  accountModal: document.getElementById('account-modal'),
+  accountModalDialog: /** @type {HTMLElement|null} */ (document.querySelector('#account-modal [data-mpr-modal="dialog"]')),
+  accountModalBackdrop: /** @type {HTMLElement|null} */ (document.querySelector('#account-modal [data-account-modal="backdrop"]')),
+  accountModalClose: /** @type {HTMLButtonElement|null} */ (document.querySelector('#account-modal [data-account-modal="close"]')),
+  accountAvatar: /** @type {HTMLImageElement|null} */ (document.getElementById('account-avatar')),
+  accountName: document.getElementById('account-name'),
+  accountEmail: document.getElementById('account-email'),
 };
 
 const config = normalizeConfig(window.DEMO_LEDGER_CONFIG || {});
 applyHeaderConfig(config);
 attachAuthEventHandlers();
+attachAccountMenuHandlers();
 wireUI();
 renderWallet(null);
 renderEntries([]);
 setBusy(false);
 setStatus('Sign in to continue.', 'info');
+syncUserMenuItems();
+bootstrapExistingSession();
 
 function normalizeConfig(raw) {
   return {
@@ -78,9 +93,34 @@ function attachAuthEventHandlers() {
   });
 }
 
+function attachAccountMenuHandlers() {
+  document.addEventListener('mpr-user:menu-item', (event) => {
+    if (event?.detail?.action !== USER_MENU_ACCOUNT_ACTION) {
+      return;
+    }
+    openAccountModal();
+  });
+  if (selectors.accountModalBackdrop) {
+    selectors.accountModalBackdrop.addEventListener('click', () => closeAccountModal());
+  }
+  if (selectors.accountModalClose) {
+    selectors.accountModalClose.addEventListener('click', () => closeAccountModal());
+  }
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') {
+      return;
+    }
+    if (!isAccountModalOpen()) {
+      return;
+    }
+    closeAccountModal();
+  });
+}
+
 function handleAuthenticated(profile) {
   state.profile = profile;
-  updateSession(profile);
+  renderAccountDetails(profile);
+  syncUserMenuItems();
   setStatus('Signed in. Bootstrapping wallet…', 'info');
   setBusy(true);
   bootstrapWallet()
@@ -96,7 +136,8 @@ function handleAuthenticated(profile) {
 function resetUI() {
   state.wallet = null;
   state.profile = null;
-  updateSession(null);
+  renderAccountDetails(null);
+  closeAccountModal();
   renderWallet(null);
   renderEntries([]);
   setBusy(false);
@@ -145,17 +186,109 @@ function setStatus(message, level) {
   selectors.status.dataset.level = level || 'info';
 }
 
-function updateSession(profile) {
-  if (!selectors.sessionState || !selectors.sessionEmail) {
+function renderAccountDetails(profile) {
+  if (selectors.accountAvatar) {
+    const avatarUrl = profile?.avatar_url || '';
+    if (avatarUrl) {
+      selectors.accountAvatar.src = avatarUrl;
+    } else {
+      selectors.accountAvatar.removeAttribute('src');
+    }
+    selectors.accountAvatar.alt = profile?.display ? `${profile.display} avatar` : '';
+  }
+  if (selectors.accountName) {
+    selectors.accountName.textContent = profile?.display || 'Account';
+  }
+  if (selectors.accountEmail) {
+    selectors.accountEmail.textContent = profile?.user_email || '';
+  }
+}
+
+function resolveAccountProfile() {
+  if (state.profile) {
+    return state.profile;
+  }
+  const userMenu = document.querySelector('#demo-header mpr-user');
+  if (!userMenu) {
+    return null;
+  }
+  const resolved = {
+    user_id: userMenu.getAttribute('data-user-id') || '',
+    user_email: userMenu.getAttribute('data-user-email') || '',
+    display: userMenu.getAttribute('data-user-display') || '',
+    avatar_url: userMenu.getAttribute('data-user-avatar-url') || '',
+  };
+  if (!resolved.user_email && !resolved.display && !resolved.avatar_url) {
+    return null;
+  }
+  return resolved;
+}
+
+function isAccountModalOpen() {
+  return selectors.accountModal?.getAttribute('data-mpr-modal-open') === 'true';
+}
+
+function openAccountModal() {
+  if (!selectors.accountModal) {
     return;
   }
-  if (!profile) {
-    selectors.sessionState.textContent = 'Signed out';
-    selectors.sessionEmail.textContent = '';
+  renderAccountDetails(resolveAccountProfile());
+  selectors.accountModal.setAttribute('data-mpr-modal-open', 'true');
+  selectors.accountModal.setAttribute('aria-hidden', 'false');
+  if (selectors.accountModalDialog && typeof selectors.accountModalDialog.focus === 'function') {
+    selectors.accountModalDialog.focus();
+  }
+}
+
+function closeAccountModal() {
+  if (!selectors.accountModal) {
     return;
   }
-  selectors.sessionState.textContent = profile.display || 'Authenticated';
-  selectors.sessionEmail.textContent = profile.user_email || '';
+  selectors.accountModal.setAttribute('data-mpr-modal-open', 'false');
+  selectors.accountModal.setAttribute('aria-hidden', 'true');
+}
+
+function syncUserMenuItems() {
+  const header = document.getElementById('demo-header');
+  if (!header || typeof header.querySelector !== 'function') {
+    return;
+  }
+
+  const apply = () => {
+    const userMenu = header.querySelector('mpr-user');
+    if (!userMenu || typeof userMenu.setAttribute !== 'function') {
+      return false;
+    }
+    userMenu.setAttribute('menu-items', USER_MENU_ITEMS);
+    return true;
+  };
+
+  if (apply()) {
+    return;
+  }
+
+  const observer = new MutationObserver(() => {
+    if (apply()) {
+      observer.disconnect();
+    }
+  });
+  observer.observe(header, { childList: true, subtree: true });
+}
+
+function bootstrapExistingSession() {
+  if (typeof window !== 'object' || typeof window.getCurrentUser !== 'function') {
+    return;
+  }
+
+  Promise.resolve()
+    .then(() => window.getCurrentUser())
+    .then((profile) => {
+      if (!profile) {
+        return;
+      }
+      handleAuthenticated(profile);
+    })
+    .catch(() => {});
 }
 
 async function bootstrapWallet() {
