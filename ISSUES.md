@@ -103,6 +103,8 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 - [x] [LG-413] (P2) Demo UI: "Docs" header link should open the rendered integration guide (not the GitHub repo root). Resolved: header now points to `docs/integration.md` on GitHub; Playwright coverage added; `cd demo && make ci` passing.
 
+- [x] [LG-414] (P2) Demo UI: footer links menu should match the mpr-ui demo site catalog ("Built by Marco Polo Research Lab"). Resolved: footer dropdown updated to the mpr-ui site catalog; Playwright assertions added; `cd demo && make ci` passing.
+
 
 ## Planning (500–599)
 *do not implement yet*
