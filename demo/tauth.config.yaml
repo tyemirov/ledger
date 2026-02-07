@@ -2,15 +2,16 @@ server:
   listen_addr: ":8080"
   enable_cors: true
   cors_allowed_origins:
-    - "http://localhost:8000"
-    - "http://127.0.0.1:8000"
+    - "https://localhost:4443"
+    - "https://127.0.0.1:4443"
+    - "https://computercat.tyemirov.net:4443"
   database_url: "sqlite:///data/tauth.db"
   enable_tenant_header_override: false
 
 tenants:
   - id: "default"
     allow_insecure_http: true
-    cookie_domain: "localhost"
+    cookie_domain: ""
     google_web_client_id: "991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com"
     jwt_signing_key: "bG9jYWwtc2lnbmluZy1rZXktc2FtcGxlLXRlc3QtMTIzNDU2Nzg5MA=="
     session_cookie_name: "app_session"
@@ -19,5 +20,6 @@ tenants:
     refresh_ttl: "720h"
     nonce_ttl: "5m"
     tenant_origins:
-      - "http://localhost:8000"
-      - "http://127.0.0.1:8000"
+      - "https://localhost:4443"
+      - "https://127.0.0.1:4443"
+      - "https://computercat.tyemirov.net:4443"
