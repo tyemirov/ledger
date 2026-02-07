@@ -7,9 +7,16 @@
   }
 
   const config = window.DEMO_LEDGER_CONFIG || {};
+  const fallbackOrigin =
+    window.location &&
+    typeof window.location.origin === 'string' &&
+    window.location.origin.trim() &&
+    window.location.origin !== 'null'
+      ? window.location.origin.trim().replace(/\/+$/, '')
+      : '';
   const baseUrl = typeof config.tauthBaseUrl === 'string' && config.tauthBaseUrl.trim()
     ? config.tauthBaseUrl.trim().replace(/\/+$/, '')
-    : 'http://localhost:8080';
+    : fallbackOrigin || 'https://localhost:4443';
   const scriptUrl = `${baseUrl}/tauth.js`;
 
   const escapeHtml = (value) =>

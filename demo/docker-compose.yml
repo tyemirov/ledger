@@ -15,9 +15,11 @@ services:
     restart: unless-stopped
 
   ledger:
-    image: ghcr.io/tyemirov/ledger:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: ledger-ledger:local
     container_name: ledger-ledger
-    pull_policy: always
     env_file:
       - ../.env.ledger
     depends_on:
@@ -37,7 +39,7 @@ services:
       - tauth_data:/data
       - ./tauth.config.yaml:/config.yaml:ro
     ports:
-      - "8080:8080"
+      - "8081:8080"
     restart: unless-stopped
 
   demoapi:
@@ -59,14 +61,33 @@ services:
     image: ghcr.io/tyemirov/ghttp:latest
     container_name: ledger-ghttp
     pull_policy: always
-    command: ["--directory", "/data", "8000"]
+    command:
+      [
+        "--directory",
+        "/data",
+        "--tls-cert",
+        "/certs/computercat-cert.pem",
+        "--tls-key",
+        "/certs/computercat-key.pem",
+        "--proxy",
+        "/api=http://demoapi:9090",
+        "--proxy",
+        "/auth=http://tauth:8080",
+        "--proxy",
+        "/me=http://tauth:8080",
+        "--proxy",
+        "/tauth.js=http://tauth:8080",
+        "4443",
+      ]
     ports:
-      - "8000:8000"
+      - "4443:4443"
     volumes:
       - ./ui:/data:ro
       - ./config.js:/data/config.js:ro
+      - ./certs:/certs:ro
     depends_on:
       - demoapi
+      - tauth
     restart: unless-stopped
 
 volumes:

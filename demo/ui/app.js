@@ -2,9 +2,19 @@
 'use strict';
 
 const SPEND_COINS = 5;
+
+const FALLBACK_ORIGIN =
+  typeof window === 'object' &&
+  window.location &&
+  typeof window.location.origin === 'string' &&
+  window.location.origin.trim() &&
+  window.location.origin !== 'null'
+    ? window.location.origin.trim().replace(/\/+$/, '')
+    : 'https://localhost:4443';
+
 const DEFAULT_CONFIG = {
-  tauthBaseUrl: 'http://localhost:8080',
-  apiBaseUrl: 'http://localhost:9090',
+  tauthBaseUrl: FALLBACK_ORIGIN,
+  apiBaseUrl: FALLBACK_ORIGIN,
   googleClientId: '991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com',
 };
 
