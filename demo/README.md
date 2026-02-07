@@ -5,9 +5,9 @@ This document describes how to run the end-to-end wallet scenario that combines 
 ## Components
 
 1. **ledgerd** (`cmd/credit`) – append-only ledger exposed via gRPC on `:50051`.
-2. **TAuth** (`tools/TAuth`) – Google Sign-In + JWT session issuer on `:8080`.
+2. **TAuth** (`tools/TAuth`) – Google Sign-In + JWT session issuer (proxied through ghttp in the Compose workflow).
 3. **demo backend** (`backend/cmd/demo`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
-4. **ghttp** (`ghcr.io/tyemirov/ghttp`) – static server for `demo/ui` on `:8000`.
+4. **ghttp** (`ghcr.io/tyemirov/ghttp`) – HTTPS entrypoint for `demo/ui` on `:4443` with proxy routes for `/api` and TAuth endpoints.
 
 ## Google OAuth Client ID
 
@@ -29,12 +29,12 @@ The helper updates `demo/config.js`, all UI fallbacks, and both `.env.tauth` fil
 2. **TAuth** (run from `tools/TAuth` and reuse its README instructions)
    ```bash
    cd tools/TAuth
-   APP_LISTEN_ADDR=:8080 \
+   APP_LISTEN_ADDR=:8081 \
    APP_GOOGLE_WEB_CLIENT_ID="your-client-id.apps.googleusercontent.com" \
    APP_JWT_SIGNING_KEY="secret" \
    APP_COOKIE_DOMAIN=localhost \
    APP_ENABLE_CORS=true \
-   APP_CORS_ALLOWED_ORIGINS=http://localhost:8000 \
+   APP_CORS_ALLOWED_ORIGINS=https://localhost:4443 \
    APP_DEV_INSECURE_HTTP=true \
    APP_DATABASE_URL=sqlite:///data/tauth.db \
    go run ./cmd/server
@@ -48,18 +48,25 @@ The helper updates `demo/config.js`, all UI fallbacks, and both `.env.tauth` fil
    DEMOAPI_LEDGER_TIMEOUT=3s \
    DEMOAPI_DEFAULT_TENANT_ID=default \
    DEMOAPI_DEFAULT_LEDGER_ID=default \
-   DEMOAPI_ALLOWED_ORIGINS=http://localhost:8000 \
+   DEMOAPI_ALLOWED_ORIGINS=https://localhost:4443 \
    DEMOAPI_JWT_SIGNING_KEY="secret" \
-   DEMOAPI_JWT_ISSUER=mprlab-auth \
+   DEMOAPI_JWT_ISSUER=tauth \
    DEMOAPI_JWT_COOKIE_NAME=app_session \
-   DEMOAPI_TAUTH_BASE_URL=http://localhost:8080 \
+   DEMOAPI_TAUTH_BASE_URL=http://localhost:8081 \
    go run ./cmd/demo
    ```
 4. **Static UI** (requires `ghttp` binary or Docker image)
    ```bash
-   ghttp --directory demo/ui 8000
+   ghttp 4443 \
+     --directory demo/ui \
+     --tls-cert demo/certs/computercat-cert.pem \
+     --tls-key demo/certs/computercat-key.pem \
+     --proxy /api=http://localhost:9090 \
+     --proxy /auth=http://localhost:8081 \
+     --proxy /me=http://localhost:8081 \
+     --proxy /tauth.js=http://localhost:8081
    ```
-5. Open `http://localhost:8000` and sign in via the header button. The UI will automatically bootstrap the wallet and call `/api/transactions` and `/api/purchases` as you interact with the buttons.
+5. Open `https://localhost:4443` and sign in via the header button. The UI will automatically bootstrap the wallet and call `/api/transactions` and `/api/purchases` as you interact with the buttons.
 
 ## Docker Compose Workflow
 
@@ -72,13 +79,17 @@ The repository ships `demo/docker-compose.yml` plus env templates so you can run
    cp -n .env.tauth.example .env.tauth
    cd -
    ```
-   Edit both files so `DEMOAPI_JWT_SIGNING_KEY` matches `APP_JWT_SIGNING_KEY` and provide your Google OAuth Web Client ID.
-2. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `demo/docker-compose.yml` if your machine needs a different port). The Dockerfile builds the backend from the local `demo/backend` sources:
+   Keep `DEMOAPI_JWT_SIGNING_KEY` aligned with the `jwt_signing_key` in `demo/tauth.config.yaml`. If you need to change the Google OAuth Web Client ID, run:
    ```bash
-   docker compose -f demo/docker-compose.yml up --build
+   cd demo
+   make configure-google-client-id GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
    ```
-3. Visit `http://localhost:8000` (ghttp), `http://localhost:9090/api/wallet` (demo backend), and `http://localhost:8080` (TAuth) to confirm connectivity. The UI loads `http://localhost:8080/demo/config.js`, so whatever Google OAuth Web Client ID you set in `demo/.env.tauth` is automatically injected into `<mpr-header>`—no need to edit the HTML file manually.
-4. Stop everything with `docker compose -f demo/docker-compose.yml down`.
+2. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `demo/docker-compose.yml` if your machine needs a different port). Docker Compose builds `ledgerd` from the repository `Dockerfile` (so Postgres schema changes land with the branch) and builds the demo backend from the local `demo/backend` sources:
+   ```bash
+   docker compose up --build
+   ```
+3. Visit `https://localhost:4443` (ghttp), `http://localhost:9090/api/wallet` (demo backend), and `http://localhost:8081` (TAuth) to confirm connectivity. The UI reads configuration from `/config.js` (served by ghttp), so edits to `demo/config.js` are picked up automatically on reload.
+4. Stop everything with `docker compose down`.
 
 Volumes `ledger_postgres_data` and `tauth_data` persist ledger entries plus refresh tokens. Remove them with `docker volume rm ledger_ledger_postgres_data ledger_tauth_data` if you need a fresh state.
 

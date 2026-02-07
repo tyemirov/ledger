@@ -2,17 +2,32 @@
 'use strict';
 
 (function loadAuthHelper() {
+  if (typeof window !== 'object' || typeof document !== 'object') {
+    return;
+  }
+
   const config = window.DEMO_LEDGER_CONFIG || {};
+  const fallbackOrigin =
+    window.location &&
+    typeof window.location.origin === 'string' &&
+    window.location.origin.trim() &&
+    window.location.origin !== 'null'
+      ? window.location.origin.trim().replace(/\/+$/, '')
+      : '';
   const baseUrl = typeof config.tauthBaseUrl === 'string' && config.tauthBaseUrl.trim()
     ? config.tauthBaseUrl.trim().replace(/\/+$/, '')
-    : 'http://localhost:8080';
-  const script = document.createElement('script');
-  script.defer = true;
-  script.crossOrigin = 'anonymous';
-  script.src = `${baseUrl}/static/auth-client.js`;
-  window.DEMO_LEDGER_AUTH_CLIENT_PROMISE = new Promise((resolve, reject) => {
-    script.onload = () => resolve(true);
-    script.onerror = () => reject(new Error('failed to load auth-client.js'));
-  });
-  document.head.appendChild(script);
+    : fallbackOrigin || 'https://localhost:4443';
+  const scriptUrl = `${baseUrl}/tauth.js`;
+
+  const escapeHtml = (value) =>
+    String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+
+  document.write(
+    `<script src="${escapeHtml(scriptUrl)}"></script>`,
+  );
 })();
