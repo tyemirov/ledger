@@ -164,6 +164,22 @@ func TestOpenDatabaseSQLiteAndUnsupportedScheme(test *testing.T) {
 		test.Fatalf("cleanup: %v", err)
 	}
 
+	tempDir := test.TempDir()
+	fileDSN := "file://" + filepath.Join(tempDir, "ledger.db")
+	db, cleanup, driver, err = openDatabase(ctx, fileDSN)
+	if err != nil {
+		test.Fatalf("open sqlite file url: %v", err)
+	}
+	if driver != "sqlite" {
+		test.Fatalf("expected sqlite driver, got %q", driver)
+	}
+	if db == nil || cleanup == nil {
+		test.Fatalf("expected db and cleanup")
+	}
+	if err := cleanup(); err != nil {
+		test.Fatalf("cleanup: %v", err)
+	}
+
 	_, _, _, err = openDatabase(ctx, "mysql://root:pass@localhost:3306/db")
 	if err == nil {
 		test.Fatalf("expected error")
