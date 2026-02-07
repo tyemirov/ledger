@@ -36,8 +36,18 @@ test('shows Google sign-in button via mpr-ui header', async ({ page }) => {
   await page.route('**/config.js', async (route) => {
     await route.fulfill({ contentType: 'application/javascript', body: '' });
   });
-  await page.route('**/static/auth-client.js', async (route) => {
-    await route.fulfill({ contentType: 'application/javascript', body: '' });
+  await page.route('**/tauth.js', async (route) => {
+    await route.fulfill({
+      contentType: 'application/javascript',
+      body: "window.initAuthClient = ({ onUnauthenticated }) => { if (typeof onUnauthenticated === 'function') { onUnauthenticated(); } return Promise.resolve(); };",
+    });
+  });
+  await page.route('**/gsi/client', async (route) => {
+    await route.fulfill({
+      contentType: 'application/javascript',
+      body:
+        "window.google = window.google || {}; window.google.accounts = window.google.accounts || {}; window.google.accounts.id = window.google.accounts.id || { initialize() {}, renderButton(target) { const button = document.createElement('button'); button.textContent = 'Sign in'; target.replaceChildren(button); }, prompt() {} };",
+    });
   });
 
   await page.goto(`http://127.0.0.1:${serverPort}/index.html`);

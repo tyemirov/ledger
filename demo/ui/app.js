@@ -2,9 +2,19 @@
 'use strict';
 
 const SPEND_COINS = 5;
+
+const FALLBACK_ORIGIN =
+  typeof window === 'object' &&
+  window.location &&
+  typeof window.location.origin === 'string' &&
+  window.location.origin.trim() &&
+  window.location.origin !== 'null'
+    ? window.location.origin.trim().replace(/\/+$/, '')
+    : 'https://localhost:4443';
+
 const DEFAULT_CONFIG = {
-  tauthBaseUrl: 'http://localhost:8080',
-  apiBaseUrl: 'http://localhost:9090',
+  tauthBaseUrl: FALLBACK_ORIGIN,
+  apiBaseUrl: FALLBACK_ORIGIN,
   googleClientId: '991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com',
 };
 
@@ -31,6 +41,9 @@ const config = normalizeConfig(window.DEMO_LEDGER_CONFIG || {});
 applyHeaderConfig(config);
 attachAuthEventHandlers();
 wireUI();
+renderWallet(null);
+renderEntries([]);
+setBusy(false);
 setStatus('Sign in to continue.', 'info');
 
 function normalizeConfig(raw) {
@@ -69,11 +82,14 @@ function handleAuthenticated(profile) {
   state.profile = profile;
   updateSession(profile);
   setStatus('Signed in. Bootstrapping wallet…', 'info');
+  setBusy(true);
   bootstrapWallet()
     .then(loadWallet)
+    .then(() => setBusy(false))
     .catch((error) => {
       console.error(error);
       setStatus('Failed to bootstrap wallet.', 'error');
+      setBusy(false);
     });
 }
 
@@ -83,6 +99,7 @@ function resetUI() {
   updateSession(null);
   renderWallet(null);
   renderEntries([]);
+  setBusy(false);
   setStatus('Signed out. Sign in to continue.', 'info');
 }
 
@@ -113,11 +130,11 @@ function applyHeaderConfig(currentConfig) {
   if (!header) {
     return;
   }
-  header.setAttribute('site-id', currentConfig.googleClientId);
-  header.setAttribute('base-url', currentConfig.tauthBaseUrl);
-  header.setAttribute('login-path', '/auth/google');
-  header.setAttribute('logout-path', '/auth/logout');
-  header.setAttribute('nonce-path', '/auth/nonce');
+  header.setAttribute('google-site-id', currentConfig.googleClientId);
+  header.setAttribute('tauth-url', currentConfig.tauthBaseUrl);
+  header.setAttribute('tauth-login-path', '/auth/google');
+  header.setAttribute('tauth-logout-path', '/auth/logout');
+  header.setAttribute('tauth-nonce-path', '/auth/nonce');
 }
 
 function setStatus(message, level) {
@@ -201,13 +218,13 @@ function setBusy(isBusy) {
   }
   if (selectors.purchaseForm) {
     selectors.purchaseForm.querySelectorAll('button, input').forEach((element) => {
-      element.disabled = isBusy;
+      element.disabled = isBusy || !state.profile;
     });
   }
 }
 
 function canSpend() {
-  if (!state.wallet) {
+  if (!state.profile || !state.wallet) {
     return false;
   }
   return state.wallet.balance?.available_coins >= SPEND_COINS;
