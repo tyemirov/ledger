@@ -37,6 +37,11 @@ func TestResolveDriver(test *testing.T) {
 		{name: "postgres", input: "postgres://postgres:postgres@localhost:5432/credit?sslmode=disable", wantDriver: "postgres"},
 		{name: "postgresql", input: "postgresql://postgres:postgres@localhost:5432/credit?sslmode=disable", wantDriver: "postgres"},
 		{name: "unknown url scheme", input: "mysql://root:pass@localhost:3306/db", wantDriver: "mysql"},
+		{name: "sqlite file url", input: "file:///tmp/ledger.db", wantDriver: "sqlite", wantSQLitePath: true},
+		{name: "sqlite file shared memory", input: "file::memory:?cache=shared", wantDriver: "sqlite", wantSQLitePath: true},
+		{name: "sqlite file url unsupported host", input: "file://remotehost/tmp/ledger.db", wantErr: true},
+		{name: "sqlite file url missing path", input: "file://localhost", wantErr: true},
+		{name: "sqlite file url parse error", input: "file://%zz", wantErr: true},
 		{name: "sqlite url", input: "sqlite:///tmp/ledger.db", wantDriver: "sqlite", wantSQLitePath: true},
 		{name: "sqlite raw path", input: "ledger.db", wantDriver: "sqlite", wantSQLitePath: true},
 		{name: "sqlite url parse error", input: "sqlite://%zz", wantErr: true},
@@ -134,6 +139,36 @@ func TestOpenDatabaseSQLiteAndUnsupportedScheme(test *testing.T) {
 	db, cleanup, driver, err := openDatabase(ctx, "sqlite://:memory:")
 	if err != nil {
 		test.Fatalf("open sqlite: %v", err)
+	}
+	if driver != "sqlite" {
+		test.Fatalf("expected sqlite driver, got %q", driver)
+	}
+	if db == nil || cleanup == nil {
+		test.Fatalf("expected db and cleanup")
+	}
+	if err := cleanup(); err != nil {
+		test.Fatalf("cleanup: %v", err)
+	}
+
+	db, cleanup, driver, err = openDatabase(ctx, "file::memory:?cache=shared")
+	if err != nil {
+		test.Fatalf("open sqlite file: %v", err)
+	}
+	if driver != "sqlite" {
+		test.Fatalf("expected sqlite driver, got %q", driver)
+	}
+	if db == nil || cleanup == nil {
+		test.Fatalf("expected db and cleanup")
+	}
+	if err := cleanup(); err != nil {
+		test.Fatalf("cleanup: %v", err)
+	}
+
+	tempDir := test.TempDir()
+	fileDSN := "file://" + filepath.Join(tempDir, "ledger.db")
+	db, cleanup, driver, err = openDatabase(ctx, fileDSN)
+	if err != nil {
+		test.Fatalf("open sqlite file url: %v", err)
 	}
 	if driver != "sqlite" {
 		test.Fatalf("expected sqlite driver, got %q", driver)

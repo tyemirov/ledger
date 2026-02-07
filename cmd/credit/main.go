@@ -317,6 +317,13 @@ func resolveDriver(dsn string) (string, string, error) {
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
 		return "postgres", "", nil
 	}
+	if strings.HasPrefix(dsn, "file:") {
+		sqliteDSN, err := normalizeSQLiteFileDSN(dsn)
+		if err != nil {
+			return "", "", err
+		}
+		return "sqlite", sqliteDSN, nil
+	}
 	if strings.Contains(dsn, "://") && !strings.HasPrefix(dsn, "sqlite://") {
 		u, err := url.Parse(dsn)
 		if err != nil {
@@ -343,6 +350,26 @@ func resolveDriver(dsn string) (string, string, error) {
 	}
 	sqlitePath, err := normalizeSQLitePath(dsn)
 	return "sqlite", sqlitePath, err
+}
+
+func normalizeSQLiteFileDSN(dsn string) (string, error) {
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		return "", fmt.Errorf("parse sqlite file url: %w", err)
+	}
+	if parsed.Opaque != "" {
+		return dsn, nil
+	}
+	if parsed.Host != "" && parsed.Host != "localhost" {
+		return "", fmt.Errorf("parse sqlite file url: unsupported host %q", parsed.Host)
+	}
+	if strings.TrimSpace(parsed.Path) == "" {
+		return "", fmt.Errorf("parse sqlite file url: missing path")
+	}
+	if _, err := normalizeSQLitePath(parsed.Path); err != nil {
+		return "", err
+	}
+	return dsn, nil
 }
 
 func normalizeSQLitePath(path string) (string, error) {
