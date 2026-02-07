@@ -35,7 +35,7 @@ test.afterAll(async () => {
   }
 });
 
-test('header Docs link opens local docs page', async ({ page }) => {
+test('header Docs link points at the rendered integration doc on GitHub', async ({ page }) => {
   await page.route('**/config.js', async (route) => {
     await route.fulfill({ contentType: 'application/javascript', body: '' });
   });
@@ -69,13 +69,8 @@ test('header Docs link opens local docs page', async ({ page }) => {
 
   const docsLink = page.getByRole('link', { name: 'Docs' });
   await expect(docsLink).toBeVisible();
-  await expect(docsLink).toHaveAttribute('href', '/docs.html');
-
-  const popupPromise = page.waitForEvent('popup').catch(() => null);
-  await docsLink.click();
-  const popup = await popupPromise;
-
-  const docsPage = popup ?? page;
-  await docsPage.waitForLoadState('domcontentloaded');
-  await expect(docsPage.getByRole('heading', { name: 'Ledger Integration Guide' })).toBeVisible();
+  await expect(docsLink).toHaveAttribute(
+    'href',
+    'https://github.com/tyemirov/ledger/blob/master/docs/integration.md',
+  );
 });
