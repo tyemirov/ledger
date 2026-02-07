@@ -48,16 +48,48 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
     - Add a `GetLastGrant` RPC that returns the most recent grant entry (entry_id, amount_cents, created_unix_utc, metadata_json).
   - Ensure results are ordered by creation timestamp and include deterministic pagination/cursors for high-activity accounts.
 
+- [x] [LG-213] (P1) Use PostgreSQL in Docker Compose orchestration (replace SQLite). Resolved: root + demo compose now provision Postgres and run `db/migrations.sql` via a one-shot migrator; `.env.ledger` defaults to Postgres; docs updated; `make ci` passing.
+
+- [x] [LG-214] (P1) Run Postgres migrations via GORM (remove manual SQL migrator). Resolved: `ledgerd` now `AutoMigrate`s for SQLite+Postgres; compose `migrate` services removed; `db/migrations.sql` deleted; docs updated; `make ci` passing.
+
 
 ## BugFixes (302–399)
 
 - [x] [LG-303] (P1) Allow negative totals from SumTotal so expired grants don't break balance/spend flows. Resolved: signed totals added; balance/spend now handle negatives without store errors.
   - Remove rejection of negative sums and ensure Reserve/Spend returns ErrInsufficientFunds when totals are negative.
 
+- [x] [LG-304] (P1) Treat file:// SQLite DSNs as sqlite, not unsupported. Resolved: `resolveDriver` now maps `file:` DSNs to sqlite and preserves `file::memory:?cache=shared`; coverage restored and `make ci` passing.
+  - `cmd/credit` resolveDriver currently returns `file` as an unsupported database scheme when the DSN is `file://...`.
+  - Ensure file-based SQLite DSNs like `file:///tmp/ledger.db` and `file::memory:?cache=shared` are treated as sqlite and continue to work.
+
 ## Maintenance (401–499)
 
 - [x] [LG-400] (P0) Increase test coverage to 95%. Resolved: ledger tests expanded to 96.7% coverage; coverage gate raised to 95%, tooling passing.
   Increase test coverage to 95%
+
+- [x] [LG-401] (P0) Enforce coverage gate across the entire Go module. Resolved: `make test-unit` now computes module-wide coverage (excluding generated `api/credit/v1`); service/store integration tests added; `make ci` passing with total coverage 95.2%.
+  - Current `make test` only enforces coverage for `pkg/ledger`, leaving `cmd/credit` + `internal/*` effectively untested.
+  - Update coverage gate to measure module-wide coverage (excluding generated protobuf package) and add integration tests that exercise the service end-to-end.
+
+- [x] [LG-402] (P1) Fix demo backend Docker build failing due to outdated ledger proto dependency. Resolved: bumped `demo/backend` dependency on `github.com/MarkoPoloResearchLab/ledger` so generated proto includes `tenant_id`/`ledger_id`; `go test ./...` and demo `docker build` passing.
+  - `demo/backend` imports `github.com/MarkoPoloResearchLab/ledger/api/credit/v1` but pins an older module version missing `tenant_id`/`ledger_id` fields, breaking `demo/Dockerfile` builds.
+  - Update `demo/backend/go.mod` to a ledger module version that matches the current API and ensure `demo/docker-compose.yml` builds succeed.
+
+- [x] [LG-403] (P1) Fix demo Compose TAuth container failing to start without config.yaml. Resolved: added `demo/tauth.config.yaml` + compose mount and `TAUTH_CONFIG_FILE`; updated demo UI to load `tauth.js` from TAuth and aligned demo issuer to `tauth`.
+  - Current `demo/docker-compose.yml` uses `ghcr.io/tyemirov/tauth:latest`, which now requires a YAML config file (defaults to `config.yaml`) and exits if it is missing.
+  - Provide a minimal demo `config.yaml` and wire it into compose via volume mount + `TAUTH_CONFIG_FILE`.
+
+- [x] [LG-404] (P1) Demo UI: apply missing styles and fix TAuth script load order so wallet/actions work. Resolved: added `demo/ui/styles.css`; updated `<mpr-header>` to `tauth-*`/`google-site-id`/`tauth-tenant-id`; ensured `tauth.js` is present before `mpr-ui.js` boots; UI now renders balances and disables actions until authenticated; `make ci` + `cd demo && make ci` passing.
+  - Demo page currently renders largely unstyled because it uses custom classnames without a CSS file.
+  - `mpr-ui` auth bootstrap expects `window.initAuthClient` to exist when `mpr-ui.js` runs; the current dynamic loader can race and prevent auth events (wallet never loads).
+
+- [x] [LG-405] (P1) Demo stack: serve the UI over HTTPS on `:4443` via ghttp using the computercat TLS cert/key and proxy auth/API routes through the same origin. Resolved: ghttp now terminates TLS on host `:4443` using `demo/certs`, proxies `/api` + TAuth routes, and demo docs/config derive base URLs from the current origin; `make ci` + `cd demo && make ci` passing.
+  - Replace the HTTP-only `:8000` demo UI entrypoint with `https://localhost:4443`.
+  - Wire ghttp TLS with the `computercat-cert.pem` / `computercat-key.pem` pair and proxy `/api`, `/auth`, `/me`, `/tauth.js` to the backing services.
+
+- [x] [LG-406] (P1) Demo stack: make TAuth cookies host-only so auth works on `computercat.tyemirov.net` and LAN origins. Resolved: demo TAuth `cookie_domain`/`APP_COOKIE_DOMAIN` now empty (host-only), so cookies are issued for the active origin; `make ci` + `cd demo && make ci` passing.
+
+- [x] [LG-407] (P1) Demo stack: ensure Postgres schema is migrated by GORM when running Compose. Resolved: `demo/docker-compose.yml` now builds `ledgerd` from the repo `Dockerfile` (includes LG-214 Postgres `AutoMigrate`) so fresh Postgres volumes get tables automatically; `make ci` + `cd demo && make ci` passing.
 
 
 ## Planning (500–599)

@@ -68,12 +68,8 @@ Install dependencies:
 go mod tidy
 ```
 
-When targeting PostgreSQL, run the SQL migrations:
-
-```bash
-psql -h localhost -U postgres -d credit -f db/migrations.sql
-```
-(SQLite creates its schema automatically on startup.)
+When targeting PostgreSQL, ensure the database exists and set `DATABASE_URL` accordingly.
+The service applies its schema automatically via GORM on startup (same as SQLite).
 
 Generate gRPC code (if you modify `.proto` files):
 
@@ -228,7 +224,9 @@ Docker Compose reads configuration from `.env.ledger`, so the container runtime 
 
 ## Database Selection
 
-The service now runs on SQLite by default (file path via `DATABASE_URL=sqlite:///...`). To use PostgreSQL instead, set `DATABASE_URL` to a Postgres DSN (for example `postgres://...`) and run the SQL migrations in `db/migrations.sql`. The CLI automatically chooses the correct GORM driver based on the URL scheme.
+The CLI defaults to SQLite when `DATABASE_URL` is not set (file path via `DATABASE_URL=sqlite:///...`). The provided Docker Compose stack provisions PostgreSQL by default; `ledgerd` applies its schema automatically via GORM on startup.
+
+To run against Postgres outside Compose, set `DATABASE_URL` to a Postgres DSN (for example `postgres://...`) and ensure the database exists. The server chooses the correct GORM driver based on the URL scheme.
 
 ---
 

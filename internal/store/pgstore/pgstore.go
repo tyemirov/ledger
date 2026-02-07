@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,6 +13,7 @@ import (
 
 const (
 	constraintAccountIdempotencyKey = "ledger_entries_account_id_idempotency_key_key"
+	constraintLedgerEntriesPrimary  = "ledger_entries_pkey"
 	constraintReservationPrimary    = "reservations_pkey"
 	pgUniqueViolationCode           = "23505"
 	errorOperationStore             = "store"
@@ -34,7 +36,7 @@ const (
 	errorCodeUpdateStatus           = "update_status"
 
 	sqlInsertOrGetAccount = `
-		insert into accounts(tenant_id, user_id, ledger_id) values($1, $2, $3)
+		insert into accounts(account_id, tenant_id, user_id, ledger_id, created_at) values($1, $2, $3, $4, now())
 		on conflict (tenant_id, user_id, ledger_id) do update set tenant_id = excluded.tenant_id, user_id = excluded.user_id, ledger_id = excluded.ledger_id
 		returning account_id
 	`
@@ -44,11 +46,11 @@ const (
 			entry_id, account_id, type, amount_cents, reservation_id, idempotency_key, expires_at, metadata, created_at
 		)
 		values(
-			gen_random_uuid(), $1, $2, $3,
-			nullif($4,''), $5,
-			to_timestamp(nullif($6,0)),
-			coalesce(nullif($7,''),'{}')::jsonb,
-			to_timestamp($8)
+			$1, $2, $3, $4,
+			nullif($5,''), $6,
+			to_timestamp(nullif($7,0)),
+			coalesce(nullif($8,''),'{}')::jsonb,
+			to_timestamp($9)
 		)
 	`
 
@@ -64,8 +66,8 @@ const (
 	`
 
 	sqlInsertReservation = `
-		insert into reservations(account_id, reservation_id, amount_cents, status)
-		values ($1, $2, $3, $4)
+		insert into reservations(account_id, reservation_id, amount_cents, status, created_at, updated_at)
+		values ($1, $2, $3, $4, now(), now())
 	`
 
 	sqlSelectReservation = `
@@ -99,19 +101,110 @@ const (
 	`
 )
 
+type queryRow interface {
+	Scan(dest ...any) error
+}
+
+type queryRows interface {
+	Next() bool
+	Scan(dest ...any) error
+	Err() error
+	Close()
+}
+
+type queryExecutor interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, arguments ...any) queryRow
+	Query(ctx context.Context, sql string, arguments ...any) (queryRows, error)
+}
+
+type transaction interface {
+	queryExecutor
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
+}
+
+type connectionPool interface {
+	queryExecutor
+	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (transaction, error)
+}
+
+type pgxPool interface {
+	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, arguments ...any) pgx.Row
+	Query(ctx context.Context, sql string, arguments ...any) (pgx.Rows, error)
+}
+
+type pgxPoolAdapter struct {
+	pool pgxPool
+}
+
+func (adapter pgxPoolAdapter) BeginTx(ctx context.Context, txOptions pgx.TxOptions) (transaction, error) {
+	tx, err := adapter.pool.BeginTx(ctx, txOptions)
+	if err != nil {
+		return nil, err
+	}
+	return pgxTxAdapter{tx: tx}, nil
+}
+
+func (adapter pgxPoolAdapter) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+	return adapter.pool.Exec(ctx, sql, arguments...)
+}
+
+func (adapter pgxPoolAdapter) QueryRow(ctx context.Context, sql string, arguments ...any) queryRow {
+	return adapter.pool.QueryRow(ctx, sql, arguments...)
+}
+
+func (adapter pgxPoolAdapter) Query(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+	return adapter.pool.Query(ctx, sql, arguments...)
+}
+
+type pgxTx interface {
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, arguments ...any) pgx.Row
+	Query(ctx context.Context, sql string, arguments ...any) (pgx.Rows, error)
+}
+
+type pgxTxAdapter struct {
+	tx pgxTx
+}
+
+func (adapter pgxTxAdapter) Commit(ctx context.Context) error {
+	return adapter.tx.Commit(ctx)
+}
+
+func (adapter pgxTxAdapter) Rollback(ctx context.Context) error {
+	return adapter.tx.Rollback(ctx)
+}
+
+func (adapter pgxTxAdapter) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+	return adapter.tx.Exec(ctx, sql, arguments...)
+}
+
+func (adapter pgxTxAdapter) QueryRow(ctx context.Context, sql string, arguments ...any) queryRow {
+	return adapter.tx.QueryRow(ctx, sql, arguments...)
+}
+
+func (adapter pgxTxAdapter) Query(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+	return adapter.tx.Query(ctx, sql, arguments...)
+}
+
 // Store implements ledger.Store using a pgx connection pool (autocommit).
 type Store struct {
-	pool *pgxpool.Pool
+	pool connectionPool
 }
 
 // TxStore implements ledger.Store for an active transaction.
 type TxStore struct {
-	tx pgx.Tx
+	tx transaction
 }
 
 // New returns a Store backed by a pgx pool.
 func New(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+	return &Store{pool: pgxPoolAdapter{pool: pool}}
 }
 
 func (store *Store) WithTx(ctx context.Context, fn func(ctx context.Context, txStore ledger.Store) error) error {
@@ -132,7 +225,8 @@ func (store *Store) WithTx(ctx context.Context, fn func(ctx context.Context, txS
 
 func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.TenantID, userID ledger.UserID, ledgerID ledger.LedgerID) (ledger.AccountID, error) {
 	var accountIDValue string
-	err := store.pool.QueryRow(ctx, sqlInsertOrGetAccount, tenantID.String(), userID.String(), ledgerID.String()).Scan(&accountIDValue)
+	candidateAccountID := uuid.NewString()
+	err := store.pool.QueryRow(ctx, sqlInsertOrGetAccount, candidateAccountID, tenantID.String(), userID.String(), ledgerID.String()).Scan(&accountIDValue)
 	if err != nil {
 		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeLookup, err)
 	}
@@ -149,7 +243,9 @@ func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInpu
 	if hasReservation {
 		reservationID = reservationValue.String()
 	}
+	candidateEntryID := uuid.NewString()
 	_, err := store.pool.Exec(ctx, sqlInsertEntry,
+		candidateEntryID,
 		entryInput.AccountID().String(),
 		entryInput.Type().String(),
 		entryInput.AmountCents().Int64(),
@@ -174,11 +270,7 @@ func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, at
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumTotal, err)
 	}
-	total, err := ledger.NewSignedAmountCents(sum)
-	if err != nil {
-		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
-	}
-	return total, nil
+	return ledger.SignedAmountCents(sum), nil
 }
 
 func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
@@ -282,7 +374,8 @@ func (store *TxStore) WithTx(ctx context.Context, fn func(ctx context.Context, t
 
 func (store *TxStore) GetOrCreateAccountID(ctx context.Context, tenantID ledger.TenantID, userID ledger.UserID, ledgerID ledger.LedgerID) (ledger.AccountID, error) {
 	var accountIDValue string
-	err := store.tx.QueryRow(ctx, sqlInsertOrGetAccount, tenantID.String(), userID.String(), ledgerID.String()).Scan(&accountIDValue)
+	candidateAccountID := uuid.NewString()
+	err := store.tx.QueryRow(ctx, sqlInsertOrGetAccount, candidateAccountID, tenantID.String(), userID.String(), ledgerID.String()).Scan(&accountIDValue)
 	if err != nil {
 		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeLookup, err)
 	}
@@ -299,7 +392,9 @@ func (store *TxStore) InsertEntry(ctx context.Context, entryInput ledger.EntryIn
 	if hasReservation {
 		reservationID = reservationValue.String()
 	}
+	candidateEntryID := uuid.NewString()
 	_, err := store.tx.Exec(ctx, sqlInsertEntry,
+		candidateEntryID,
 		entryInput.AccountID().String(),
 		entryInput.Type().String(),
 		entryInput.AmountCents().Int64(),
@@ -324,11 +419,7 @@ func (store *TxStore) SumTotal(ctx context.Context, accountID ledger.AccountID, 
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumTotal, err)
 	}
-	total, err := ledger.NewSignedAmountCents(sum)
-	if err != nil {
-		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
-	}
-	return total, nil
+	return ledger.SignedAmountCents(sum), nil
 }
 
 func (store *TxStore) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
@@ -426,7 +517,7 @@ func (store *TxStore) ListEntries(ctx context.Context, accountID ledger.AccountI
 	return entries, nil
 }
 
-func scanEntries(rows pgx.Rows) ([]ledger.Entry, error) {
+func scanEntries(rows queryRows) ([]ledger.Entry, error) {
 	entries := make([]ledger.Entry, 0, 32)
 	for rows.Next() {
 		var (
@@ -511,9 +602,16 @@ func wrapStoreError(subject string, code string, err error) error {
 func isIdempotencyConflict(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		if pgErr.Code == pgUniqueViolationCode && pgErr.ConstraintName == constraintAccountIdempotencyKey {
+		if pgErr.Code != pgUniqueViolationCode {
+			return false
+		}
+		if pgErr.ConstraintName == constraintLedgerEntriesPrimary {
+			return false
+		}
+		if pgErr.ConstraintName == constraintAccountIdempotencyKey {
 			return true
 		}
+		return true
 	}
 	return false
 }

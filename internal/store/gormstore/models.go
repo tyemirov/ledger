@@ -29,8 +29,8 @@ func (account *Account) BeforeCreate(tx *gorm.DB) error {
 // LedgerEntry mirrors the ledger_entries table.
 type LedgerEntry struct {
 	EntryID        string         `gorm:"type:uuid;primaryKey"`
-	AccountID      string         `gorm:"type:uuid;not null;index:idx_ledger_account_created,priority:1"`
-	Type           string         `gorm:"type:ledger_type;not null"`
+	AccountID      string         `gorm:"type:uuid;not null;index:idx_ledger_account_created,priority:1;index:idx_ledger_account_reservation,priority:1;index:uniq_entry_idem,unique,priority:1"`
+	Type           string         `gorm:"not null"`
 	AmountCents    int64          `gorm:"not null"`
 	ReservationID  *string        `gorm:"index:idx_ledger_account_reservation,priority:2"`
 	IdempotencyKey string         `gorm:"not null;index:uniq_entry_idem,unique,priority:2"`
@@ -53,7 +53,7 @@ type Reservation struct {
 	AccountID     string    `gorm:"type:uuid;primaryKey"`
 	ReservationID string    `gorm:"primaryKey"`
 	AmountCents   int64     `gorm:"not null"`
-	Status        string    `gorm:"type:reservation_status;not null"`
+	Status        string    `gorm:"not null"`
 	CreatedAt     time.Time `gorm:"not null"`
 	UpdatedAt     time.Time `gorm:"not null"`
 }

@@ -95,10 +95,11 @@ Components:
 - Serve the UI directory via `ghttp --directory demo/ui 8000` (adds markdown rendering and zap logs for free). This keeps front-end static and origin-isolated from the APIs.
 
 ### Local Orchestration / Compose
-- Add `demo/docker-compose.demo.yml` with services:
-  - `ledger`: runs `ledgerd` with SQLite volume `./tmp/data:/app/data`.
+- Provide `demo/docker-compose.yml` with services:
+  - `postgres` for `ledgerd` (schema applied automatically by `ledgerd`).
+  - `ledger`: runs `ledgerd` against Postgres (via `../.env.ledger`).
   - `tauth`: builds from `tools/TAuth` or pulls published image; loads `.env.tauth`.
-  - `demo`: builds from the repo, depends on ledger + tauth, shares `APP_JWT_SIGNING_KEY`.
+  - `demoapi`: builds from the repo, depends on ledger + tauth, shares `APP_JWT_SIGNING_KEY`.
 - `ghttp`: uses `ghcr.io/tyemirov/ghttp:latest`, mounts `demo/ui`, serves on `8000`.
 - Provide a Dockerfile inside `demo/` that builds the demo backend from the local `demo/backend` sources when the `demo/` directory is copied to another host.
 - Provide `scripts/demo-up.sh` wrapper (optional) that exports the needed env variables and launches the binaries directly for contributors who prefer the Go toolchain over Compose.
@@ -125,7 +126,7 @@ Components:
 ## Deliverables for Implementing LG-101
 - `backend/cmd/demo` binary + supporting `backend/internal/demo/...` packages.
 - Static UI assets under `demo/ui/` with `mpr-ui` components + JS glue.
-- `demo/docker-compose.demo.yml` (or instructions for running binaries manually) plus `.env.demoapi.example` capturing required env vars.
+- `demo/docker-compose.yml` (or instructions for running binaries manually) plus `.env.demoapi.example` capturing required env vars.
 - Documentation snippet (README section or `docs/demo.md`) that references this plan, lists ports, and explains how to run the demo.
 - Integration tests verifying ledger balances for the three required scenarios.
 
