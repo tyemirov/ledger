@@ -97,6 +97,8 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 - [x] [LG-410] (P2) Demo UI: square theme switcher should expose four modes (not two). Resolved: footer theme-config now defines 4 modes (default-light, sunrise-light, default-dark, forest-dark) and demo CSS keys palette overrides off `data-demo-palette`; `make ci` + `cd demo && make ci` passing.
 
+- [x] [LG-411] (P2) Demo UI: show account details (photo/name/email) from the header user menu; remove the hero session card. Resolved: added a user-menu action that opens an account-details modal; removed the session card; Playwright coverage added; `make ci` + `cd demo && make ci` passing.
+
 
 ## Planning (500–599)
 *do not implement yet*

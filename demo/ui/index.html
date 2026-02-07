@@ -49,11 +49,6 @@
           </p>
           <div class="status" id="status-banner" role="status" aria-live="polite"></div>
         </div>
-        <div class="session-card" id="session-card">
-          <p class="session-label">Session</p>
-          <p class="session-value" data-session-state>Awaiting sign-in…</p>
-          <p class="session-meta" data-session-email></p>
-        </div>
       </section>
 
       <section class="cards">
@@ -121,6 +116,47 @@
         <ul class="history__list" id="entry-list" aria-live="polite"></ul>
       </section>
     </main>
+
+    <div
+      id="account-modal"
+      class="account-modal"
+      data-mpr-modal="container"
+      data-mpr-modal-open="false"
+      aria-hidden="true"
+    >
+      <div data-mpr-modal="backdrop" data-account-modal="backdrop"></div>
+      <div
+        class="account-modal__dialog"
+        data-mpr-modal="dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="account-modal-title"
+        tabindex="-1"
+      >
+        <header data-mpr-modal="header">
+          <h2 id="account-modal-title" data-mpr-modal="title">Account</h2>
+          <button
+            type="button"
+            data-mpr-modal="close"
+            data-account-modal="close"
+            aria-label="Close account details"
+          >
+            &times;
+          </button>
+        </header>
+        <div class="account-modal__body" data-mpr-modal="body">
+          <div class="account-details">
+            <div class="account-details__avatar">
+              <img id="account-avatar" alt="" />
+            </div>
+            <div class="account-details__info">
+              <p class="account-details__name" id="account-name">--</p>
+              <p class="account-details__email" id="account-email">--</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <mpr-footer
       id="page-footer"

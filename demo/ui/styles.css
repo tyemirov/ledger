@@ -78,7 +78,7 @@ main.layout {
 
 .hero {
   display: grid;
-  grid-template-columns: 1.5fr 0.7fr;
+  grid-template-columns: 1fr;
   gap: 1.75rem;
   align-items: start;
 }
@@ -139,47 +139,56 @@ h2 {
   background: color-mix(in srgb, #ef4444, transparent 90%);
 }
 
-.session-card {
-  border: 1px solid var(--demo-border);
-  border-radius: var(--demo-radius);
-  padding: 1.25rem 1.25rem 1.1rem;
-  background: var(--demo-surface);
-  box-shadow: var(--demo-shadow);
-  position: relative;
+.account-modal {
+  --mpr-modal-top-offset: 88px;
+  --mpr-modal-bottom-offset: 104px;
+}
+
+.account-modal__body[data-mpr-modal='body'] {
+  border-style: solid;
+  border-color: var(--demo-border);
+  background: color-mix(in srgb, var(--demo-surface), transparent 4%);
+  color: var(--demo-text);
+  align-items: stretch;
+  justify-content: flex-start;
+  text-align: left;
+  min-height: auto;
+}
+
+.account-details {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.account-details__avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
   overflow: hidden;
+  background: color-mix(in srgb, var(--demo-border), transparent 55%);
+  border: 1px solid var(--demo-border);
+  flex: 0 0 auto;
 }
 
-.session-card::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  background:
-    radial-gradient(220px 120px at 15% 15%, rgba(14, 165, 233, 0.2), transparent 70%),
-    radial-gradient(260px 160px at 92% 8%, rgba(34, 197, 94, 0.16), transparent 70%);
-  opacity: 0.9;
-  pointer-events: none;
+.account-details__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
-.session-card > * {
-  position: relative;
-}
-
-.session-label {
+.account-details__name {
   margin: 0;
-  font-size: 0.9rem;
+  font-weight: 700;
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+
+.account-details__email {
+  margin: 0.3rem 0 0;
   color: var(--demo-muted);
-}
-
-.session-value {
-  margin: 0.35rem 0 0;
-  font-weight: 600;
-  font-size: 1.1rem;
-}
-
-.session-meta {
-  margin: 0.35rem 0 0;
   font-size: 0.95rem;
-  color: var(--demo-muted);
 }
 
 .cards {
