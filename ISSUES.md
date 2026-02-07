@@ -99,6 +99,8 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 - [x] [LG-411] (P2) Demo UI: show account details (photo/name/email) from the header user menu; remove the hero session card. Resolved: added a user-menu action that opens an account-details modal; removed the session card; Playwright coverage added; `make ci` + `cd demo && make ci` passing.
 
+- [x] [LG-412] (P1) Demo UI: footer theme switcher does not switch themes. Resolved: header now uses the same 4-mode theme-config as footer so themeManager config isn't overridden; Playwright coverage added; `cd demo && make ci` passing.
+
 
 ## Planning (500–599)
 *do not implement yet*
