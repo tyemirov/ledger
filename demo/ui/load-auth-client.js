@@ -9,10 +9,10 @@
   const script = document.createElement('script');
   script.defer = true;
   script.crossOrigin = 'anonymous';
-  script.src = `${baseUrl}/static/auth-client.js`;
+  script.src = `${baseUrl}/tauth.js`;
   window.DEMO_LEDGER_AUTH_CLIENT_PROMISE = new Promise((resolve, reject) => {
     script.onload = () => resolve(true);
-    script.onerror = () => reject(new Error('failed to load auth-client.js'));
+    script.onerror = () => reject(new Error('failed to load tauth.js'));
   });
   document.head.appendChild(script);
 })();
