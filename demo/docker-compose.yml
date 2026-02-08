@@ -21,12 +21,14 @@ services:
     image: ledger-ledger:local
     container_name: ledger-ledger
     env_file:
-      - ../.env.ledger
+      - ./.env.ledger.sqlite
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "50051:50051"
+    volumes:
+        - ledger_data:/srv/data
     restart: unless-stopped
 
   tauth:
@@ -93,3 +95,4 @@ services:
 volumes:
   ledger_postgres_data:
   tauth_data:
+  ledger_data:
