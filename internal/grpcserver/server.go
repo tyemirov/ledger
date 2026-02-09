@@ -16,11 +16,13 @@ import (
 const (
 	errorInsufficientFunds       = "insufficient_funds"
 	errorUnknownReservation      = "unknown_reservation"
+	errorUnknownEntry            = "unknown_entry"
 	errorDuplicateIdempotencyKey = "duplicate_idempotency_key"
 	errorInvalidUserID           = "invalid_user_id"
 	errorInvalidLedgerID         = "invalid_ledger_id"
 	errorInvalidTenantID         = "invalid_tenant_id"
 	errorInvalidReservationID    = "invalid_reservation_id"
+	errorInvalidEntryID          = "invalid_entry_id"
 	errorInvalidIdempotencyKey   = "invalid_idempotency_key"
 	errorInvalidAmount           = "invalid_amount_cents"
 	errorInvalidMetadata         = "invalid_metadata_json"
@@ -34,6 +36,9 @@ const (
 	errorInternal                = "internal"
 	errorReservationExists       = "reservation_exists"
 	errorReservationClosed       = "reservation_closed"
+	errorMissingRefundOriginal   = "missing_refund_original"
+	errorInvalidRefundOriginal   = "invalid_refund_original"
+	errorRefundExceedsDebit      = "refund_exceeds_debit"
 
 	defaultListEntriesLimit = 50
 	maxListEntriesLimit     = 200
@@ -242,6 +247,59 @@ func (service *CreditServiceServer) Spend(ctx context.Context, request *creditv1
 	return &creditv1.Empty{EntryId: entry.EntryID().String(), CreatedUnixUtc: entry.CreatedUnixUTC()}, nil
 }
 
+func (service *CreditServiceServer) Refund(ctx context.Context, request *creditv1.RefundRequest) (*creditv1.RefundResponse, error) {
+	userID, err := ledger.NewUserID(request.GetUserId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	ledgerID, err := ledger.NewLedgerID(request.GetLedgerId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	tenantID, err := ledger.NewTenantID(request.GetTenantId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	amount, err := ledger.NewPositiveAmountCents(request.GetAmountCents())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	idem, err := ledger.NewIdempotencyKey(request.GetIdempotencyKey())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	metadata, err := ledger.NewMetadataJSON(request.GetMetadataJson())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+
+	if request.GetOriginalEntryId() != "" {
+		originalEntryID, err := ledger.NewEntryID(request.GetOriginalEntryId())
+		if err != nil {
+			return nil, mapToGRPCError(err)
+		}
+		entry, operationError := service.creditService.RefundByEntryIDEntry(ctx, tenantID, userID, ledgerID, originalEntryID, amount, idem, metadata)
+		if operationError != nil {
+			return nil, mapToGRPCError(operationError)
+		}
+		return &creditv1.RefundResponse{EntryId: entry.EntryID().String(), CreatedUnixUtc: entry.CreatedUnixUTC()}, nil
+	}
+
+	if request.GetOriginalIdempotencyKey() != "" {
+		originalIdempotencyKey, err := ledger.NewIdempotencyKey(request.GetOriginalIdempotencyKey())
+		if err != nil {
+			return nil, mapToGRPCError(err)
+		}
+		entry, operationError := service.creditService.RefundByOriginalIdempotencyKeyEntry(ctx, tenantID, userID, ledgerID, originalIdempotencyKey, amount, idem, metadata)
+		if operationError != nil {
+			return nil, mapToGRPCError(operationError)
+		}
+		return &creditv1.RefundResponse{EntryId: entry.EntryID().String(), CreatedUnixUtc: entry.CreatedUnixUTC()}, nil
+	}
+
+	return nil, status.Error(codes.InvalidArgument, errorMissingRefundOriginal)
+}
+
 func (service *CreditServiceServer) Batch(ctx context.Context, request *creditv1.BatchRequest) (*creditv1.BatchResponse, error) {
 	account := request.GetAccount()
 	if account == nil {
@@ -393,6 +451,48 @@ func (service *CreditServiceServer) Batch(ctx context.Context, request *creditv1
 				IdempotencyKey: idem,
 				Metadata:       metadata,
 			}
+		case *creditv1.BatchOperation_Refund:
+			if operationValue.Refund == nil {
+				return nil, status.Error(codes.InvalidArgument, errorMissingBatchOperation)
+			}
+			amount, err := ledger.NewPositiveAmountCents(operationValue.Refund.GetAmountCents())
+			if err != nil {
+				return nil, mapToGRPCError(err)
+			}
+			idem, err := ledger.NewIdempotencyKey(operationValue.Refund.GetIdempotencyKey())
+			if err != nil {
+				return nil, mapToGRPCError(err)
+			}
+			metadata, err := ledger.NewMetadataJSON(operationValue.Refund.GetMetadataJson())
+			if err != nil {
+				return nil, mapToGRPCError(err)
+			}
+
+			var originalEntryID *ledger.EntryID
+			var originalIdempotencyKey *ledger.IdempotencyKey
+			if operationValue.Refund.GetOriginalEntryId() != "" {
+				parsedOriginalEntryID, err := ledger.NewEntryID(operationValue.Refund.GetOriginalEntryId())
+				if err != nil {
+					return nil, mapToGRPCError(err)
+				}
+				originalEntryID = &parsedOriginalEntryID
+			} else if operationValue.Refund.GetOriginalIdempotencyKey() != "" {
+				parsedOriginalIdempotencyKey, err := ledger.NewIdempotencyKey(operationValue.Refund.GetOriginalIdempotencyKey())
+				if err != nil {
+					return nil, mapToGRPCError(err)
+				}
+				originalIdempotencyKey = &parsedOriginalIdempotencyKey
+			} else {
+				return nil, status.Error(codes.InvalidArgument, errorMissingRefundOriginal)
+			}
+
+			parsedOperation.Refund = &ledger.BatchRefundOperation{
+				OriginalEntryID:        originalEntryID,
+				OriginalIdempotencyKey: originalIdempotencyKey,
+				Amount:                 amount,
+				IdempotencyKey:         idem,
+				Metadata:               metadata,
+			}
 		default:
 			return nil, status.Error(codes.InvalidArgument, errorMissingBatchOperation)
 		}
@@ -512,6 +612,11 @@ func (service *CreditServiceServer) ListEntries(ctx context.Context, request *cr
 		if hasReservation {
 			reservationIDValue = reservationID.String()
 		}
+		refundOfEntryIDValue := ""
+		refundOfEntryID, hasRefundOf := entryRecord.RefundOfEntryID()
+		if hasRefundOf {
+			refundOfEntryIDValue = refundOfEntryID.String()
+		}
 		response.Entries = append(response.Entries, &creditv1.Entry{
 			EntryId:          entryRecord.EntryID().String(),
 			AccountId:        entryRecord.AccountID().String(),
@@ -522,6 +627,7 @@ func (service *CreditServiceServer) ListEntries(ctx context.Context, request *cr
 			ExpiresAtUnixUtc: entryRecord.ExpiresAtUnixUTC(),
 			MetadataJson:     entryRecord.MetadataJSON().String(),
 			CreatedUnixUtc:   entryRecord.CreatedUnixUTC(),
+			RefundOfEntryId:  refundOfEntryIDValue,
 		})
 	}
 	return response, nil
@@ -550,6 +656,9 @@ func mapToBatchErrorCode(source error) string {
 	if errors.Is(source, ledger.ErrInvalidReservationID) {
 		return errorInvalidReservationID
 	}
+	if errors.Is(source, ledger.ErrInvalidEntryID) {
+		return errorInvalidEntryID
+	}
 	if errors.Is(source, ledger.ErrInvalidIdempotencyKey) {
 		return errorInvalidIdempotencyKey
 	}
@@ -568,6 +677,9 @@ func mapToBatchErrorCode(source error) string {
 	if errors.Is(source, ledger.ErrUnknownReservation) {
 		return errorUnknownReservation
 	}
+	if errors.Is(source, ledger.ErrUnknownEntry) {
+		return errorUnknownEntry
+	}
 	if errors.Is(source, ledger.ErrDuplicateIdempotencyKey) {
 		return errorDuplicateIdempotencyKey
 	}
@@ -576,6 +688,12 @@ func mapToBatchErrorCode(source error) string {
 	}
 	if errors.Is(source, ledger.ErrReservationClosed) {
 		return errorReservationClosed
+	}
+	if errors.Is(source, ledger.ErrInvalidRefundOriginal) {
+		return errorInvalidRefundOriginal
+	}
+	if errors.Is(source, ledger.ErrRefundExceedsDebit) {
+		return errorRefundExceedsDebit
 	}
 
 	var operationError ledger.OperationError
@@ -598,6 +716,9 @@ func mapToGRPCError(source error) error {
 	if errors.Is(source, ledger.ErrInvalidReservationID) {
 		return status.Error(codes.InvalidArgument, errorInvalidReservationID)
 	}
+	if errors.Is(source, ledger.ErrInvalidEntryID) {
+		return status.Error(codes.InvalidArgument, errorInvalidEntryID)
+	}
 	if errors.Is(source, ledger.ErrInvalidIdempotencyKey) {
 		return status.Error(codes.InvalidArgument, errorInvalidIdempotencyKey)
 	}
@@ -616,6 +737,9 @@ func mapToGRPCError(source error) error {
 	if errors.Is(source, ledger.ErrUnknownReservation) {
 		return status.Error(codes.NotFound, errorUnknownReservation)
 	}
+	if errors.Is(source, ledger.ErrUnknownEntry) {
+		return status.Error(codes.NotFound, errorUnknownEntry)
+	}
 	if errors.Is(source, ledger.ErrDuplicateIdempotencyKey) {
 		return status.Error(codes.AlreadyExists, errorDuplicateIdempotencyKey)
 	}
@@ -624,6 +748,12 @@ func mapToGRPCError(source error) error {
 	}
 	if errors.Is(source, ledger.ErrReservationClosed) {
 		return status.Error(codes.FailedPrecondition, errorReservationClosed)
+	}
+	if errors.Is(source, ledger.ErrInvalidRefundOriginal) {
+		return status.Error(codes.FailedPrecondition, errorInvalidRefundOriginal)
+	}
+	if errors.Is(source, ledger.ErrRefundExceedsDebit) {
+		return status.Error(codes.FailedPrecondition, errorRefundExceedsDebit)
 	}
 	return status.Error(codes.Internal, source.Error())
 }

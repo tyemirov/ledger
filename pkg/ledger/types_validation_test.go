@@ -29,7 +29,7 @@ func TestEntryReservationIDAbsent(test *testing.T) {
 	metadata := mustMetadata(test, metadataValue)
 	amount := mustEntryAmount(test, 10)
 
-	entry, err := NewEntry(entryID, accountID, EntryGrant, amount, nil, idempotencyKey, 0, metadata, 100)
+	entry, err := NewEntry(entryID, accountID, EntryGrant, amount, nil, nil, idempotencyKey, 0, metadata, 100)
 	if err != nil {
 		test.Fatalf("entry: %v", err)
 	}
@@ -190,6 +190,7 @@ func TestNewEntryInputValidation(test *testing.T) {
 				testCase.entryType,
 				testCase.amount,
 				testCase.reservationID,
+				nil,
 				testCase.idempotency,
 				0,
 				testCase.metadata,
@@ -209,7 +210,7 @@ func TestNewEntryRejectsInvalidEntryID(test *testing.T) {
 	metadata := mustMetadata(test, metadataValue)
 	amount := mustEntryAmount(test, 15)
 
-	_, err := NewEntry(EntryID{}, accountID, EntryGrant, amount, nil, idempotencyKey, 0, metadata, 100)
+	_, err := NewEntry(EntryID{}, accountID, EntryGrant, amount, nil, nil, idempotencyKey, 0, metadata, 100)
 	if !errors.Is(err, ErrInvalidEntryID) {
 		test.Fatalf(errorMismatchMessage, ErrInvalidEntryID, err)
 	}

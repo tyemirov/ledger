@@ -72,6 +72,24 @@ message SpendRequest {
   string tenant_id = 6;
 }
 
+message RefundRequest {
+  string user_id = 1;
+  string ledger_id = 2;
+  string tenant_id = 3;
+  oneof original {
+    string original_entry_id = 4;
+    string original_idempotency_key = 5;
+  }
+  int64 amount_cents = 6;
+  string idempotency_key = 7;
+  string metadata_json = 8;
+}
+
+message RefundResponse {
+  string entry_id = 1;
+  int64 created_unix_utc = 2;
+}
+
 message Entry {
   string entry_id = 1;
   string account_id = 2;
@@ -82,6 +100,7 @@ message Entry {
   int64 expires_at_unix_utc = 7;
   string metadata_json = 8;
   int64 created_unix_utc = 9;
+  string refund_of_entry_id = 10;
 }
 
 message ListEntriesRequest {
@@ -138,6 +157,16 @@ message BatchSpendOp {
   string metadata_json = 3;
 }
 
+message BatchRefundOp {
+  oneof original {
+    string original_entry_id = 1;
+    string original_idempotency_key = 2;
+  }
+  int64 amount_cents = 3;
+  string idempotency_key = 4;
+  string metadata_json = 5;
+}
+
 message BatchOperation {
   string operation_id = 1;
   oneof operation {
@@ -146,6 +175,7 @@ message BatchOperation {
     BatchReserveOp reserve = 4;
     BatchCaptureOp capture = 5;
     BatchReleaseOp release = 6;
+    BatchRefundOp refund = 7;
   }
 }
 
@@ -176,6 +206,7 @@ service CreditService {
   rpc Capture(CaptureRequest) returns (Empty);
   rpc Release(ReleaseRequest) returns (Empty);
   rpc Spend(SpendRequest) returns (Empty);
+  rpc Refund(RefundRequest) returns (RefundResponse);
   rpc Batch(BatchRequest) returns (BatchResponse);
   rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse);
 }

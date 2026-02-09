@@ -62,15 +62,19 @@ func TestMapToGRPCError(test *testing.T) {
 		{name: "invalid ledger id", input: ledger.ErrInvalidLedgerID, wantCode: codes.InvalidArgument, wantMessage: errorInvalidLedgerID},
 		{name: "invalid tenant id", input: ledger.ErrInvalidTenantID, wantCode: codes.InvalidArgument, wantMessage: errorInvalidTenantID},
 		{name: "invalid reservation id", input: ledger.ErrInvalidReservationID, wantCode: codes.InvalidArgument, wantMessage: errorInvalidReservationID},
+		{name: "invalid entry id", input: ledger.ErrInvalidEntryID, wantCode: codes.InvalidArgument, wantMessage: errorInvalidEntryID},
 		{name: "invalid idempotency key", input: ledger.ErrInvalidIdempotencyKey, wantCode: codes.InvalidArgument, wantMessage: errorInvalidIdempotencyKey},
 		{name: "invalid amount", input: ledger.ErrInvalidAmountCents, wantCode: codes.InvalidArgument, wantMessage: errorInvalidAmount},
 		{name: "invalid metadata", input: ledger.ErrInvalidMetadataJSON, wantCode: codes.InvalidArgument, wantMessage: errorInvalidMetadata},
 		{name: "invalid entry type", input: ledger.ErrInvalidEntryType, wantCode: codes.InvalidArgument, wantMessage: errorInvalidEntryType},
 		{name: "insufficient funds", input: ledger.ErrInsufficientFunds, wantCode: codes.FailedPrecondition, wantMessage: errorInsufficientFunds},
 		{name: "unknown reservation", input: ledger.ErrUnknownReservation, wantCode: codes.NotFound, wantMessage: errorUnknownReservation},
+		{name: "unknown entry", input: ledger.ErrUnknownEntry, wantCode: codes.NotFound, wantMessage: errorUnknownEntry},
 		{name: "duplicate idempotency", input: ledger.ErrDuplicateIdempotencyKey, wantCode: codes.AlreadyExists, wantMessage: errorDuplicateIdempotencyKey},
 		{name: "reservation exists", input: ledger.ErrReservationExists, wantCode: codes.AlreadyExists, wantMessage: errorReservationExists},
 		{name: "reservation closed", input: ledger.ErrReservationClosed, wantCode: codes.FailedPrecondition, wantMessage: errorReservationClosed},
+		{name: "invalid refund original", input: ledger.ErrInvalidRefundOriginal, wantCode: codes.FailedPrecondition, wantMessage: errorInvalidRefundOriginal},
+		{name: "refund exceeds debit", input: ledger.ErrRefundExceedsDebit, wantCode: codes.FailedPrecondition, wantMessage: errorRefundExceedsDebit},
 		{name: "fallback", input: errors.New("boom"), wantCode: codes.Internal, wantMessage: "boom"},
 	}
 	for _, testCase := range testCases {
@@ -103,15 +107,19 @@ func TestMapToBatchErrorCode(test *testing.T) {
 		{name: "invalid ledger id", input: ledger.ErrInvalidLedgerID, wantCode: errorInvalidLedgerID},
 		{name: "invalid tenant id", input: ledger.ErrInvalidTenantID, wantCode: errorInvalidTenantID},
 		{name: "invalid reservation id", input: ledger.ErrInvalidReservationID, wantCode: errorInvalidReservationID},
+		{name: "invalid entry id", input: ledger.ErrInvalidEntryID, wantCode: errorInvalidEntryID},
 		{name: "invalid idempotency key", input: ledger.ErrInvalidIdempotencyKey, wantCode: errorInvalidIdempotencyKey},
 		{name: "invalid amount", input: ledger.ErrInvalidAmountCents, wantCode: errorInvalidAmount},
 		{name: "invalid metadata", input: ledger.ErrInvalidMetadataJSON, wantCode: errorInvalidMetadata},
 		{name: "invalid entry type", input: ledger.ErrInvalidEntryType, wantCode: errorInvalidEntryType},
 		{name: "insufficient funds", input: ledger.ErrInsufficientFunds, wantCode: errorInsufficientFunds},
 		{name: "unknown reservation", input: ledger.ErrUnknownReservation, wantCode: errorUnknownReservation},
+		{name: "unknown entry", input: ledger.ErrUnknownEntry, wantCode: errorUnknownEntry},
 		{name: "duplicate idempotency", input: ledger.ErrDuplicateIdempotencyKey, wantCode: errorDuplicateIdempotencyKey},
 		{name: "reservation exists", input: ledger.ErrReservationExists, wantCode: errorReservationExists},
 		{name: "reservation closed", input: ledger.ErrReservationClosed, wantCode: errorReservationClosed},
+		{name: "invalid refund original", input: ledger.ErrInvalidRefundOriginal, wantCode: errorInvalidRefundOriginal},
+		{name: "refund exceeds debit", input: ledger.ErrRefundExceedsDebit, wantCode: errorRefundExceedsDebit},
 		{name: "operation error", input: ledger.WrapError("store", "entry", "insert", errors.New("boom")), wantCode: "store.entry.insert"},
 		{name: "fallback", input: errors.New("boom"), wantCode: errorInternal},
 	}
@@ -448,6 +456,644 @@ func TestCreditServiceServerFlow(test *testing.T) {
 	}
 }
 
+func TestCreditServiceServerRefundSpendFlow(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    1000,
+		IdempotencyKey: "grant-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+
+	spendResponse, err := server.Spend(ctx, &creditv1.SpendRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    200,
+		IdempotencyKey: "spend-1",
+		MetadataJson:   "{}",
+	})
+	if err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+
+	refundResponse, err := server.Refund(ctx, &creditv1.RefundRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: spendResponse.GetEntryId()},
+		AmountCents:    50,
+		IdempotencyKey: "refund-1",
+		MetadataJson:   "{}",
+	})
+	if err != nil {
+		test.Fatalf("refund: %v", err)
+	}
+	if refundResponse.GetEntryId() == "" {
+		test.Fatalf("expected refund entry id")
+	}
+	if refundResponse.GetCreatedUnixUtc() != 1700000000 {
+		test.Fatalf("expected created unix utc 1700000000, got %d", refundResponse.GetCreatedUnixUtc())
+	}
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{
+		UserId:   userID,
+		TenantId: tenantID,
+		LedgerId: ledgerID,
+	})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 850 || balanceResponse.GetAvailableCents() != 850 {
+		test.Fatalf("expected 850/850, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+
+	listRefunds, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
+		UserId:   userID,
+		TenantId: tenantID,
+		LedgerId: ledgerID,
+		Types:    []string{"refund"},
+		Limit:    10,
+	})
+	if err != nil {
+		test.Fatalf("list refunds: %v", err)
+	}
+	if len(listRefunds.GetEntries()) != 1 {
+		test.Fatalf("expected one refund entry, got %d", len(listRefunds.GetEntries()))
+	}
+	if listRefunds.GetEntries()[0].GetRefundOfEntryId() != spendResponse.GetEntryId() {
+		test.Fatalf("expected refund_of_entry_id %q, got %q", spendResponse.GetEntryId(), listRefunds.GetEntries()[0].GetRefundOfEntryId())
+	}
+}
+
+func TestCreditServiceServerRefundByOriginalIdempotencyKeyFlow(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    1000,
+		IdempotencyKey: "grant-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	if _, err := server.Spend(ctx, &creditv1.SpendRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    200,
+		IdempotencyKey: "spend-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+
+	refundResponse, err := server.Refund(ctx, &creditv1.RefundRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		Original:       &creditv1.RefundRequest_OriginalIdempotencyKey{OriginalIdempotencyKey: "spend-1"},
+		AmountCents:    50,
+		IdempotencyKey: "refund-1",
+		MetadataJson:   "{}",
+	})
+	if err != nil {
+		test.Fatalf("refund: %v", err)
+	}
+	if refundResponse.GetEntryId() == "" {
+		test.Fatalf("expected refund entry id")
+	}
+	if refundResponse.GetCreatedUnixUtc() != 1700000000 {
+		test.Fatalf("expected created unix utc 1700000000, got %d", refundResponse.GetCreatedUnixUtc())
+	}
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{
+		UserId:   userID,
+		TenantId: tenantID,
+		LedgerId: ledgerID,
+	})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 850 || balanceResponse.GetAvailableCents() != 850 {
+		test.Fatalf("expected 850/850, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+}
+
+func TestCreditServiceServerRefundValidationInvalidOriginalEntryID(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
+		UserId:         "user",
+		TenantId:       "default",
+		LedgerId:       "default",
+		Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: " "},
+		AmountCents:    1,
+		IdempotencyKey: "refund-1",
+		MetadataJson:   "{}",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		test.Fatalf("expected invalid argument, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorInvalidEntryID {
+		test.Fatalf("expected %q, got %q", errorInvalidEntryID, status.Convert(err).Message())
+	}
+}
+
+func TestCreditServiceServerRefundValidationInvalidOriginalIdempotencyKey(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
+		UserId:         "user",
+		TenantId:       "default",
+		LedgerId:       "default",
+		Original:       &creditv1.RefundRequest_OriginalIdempotencyKey{OriginalIdempotencyKey: " "},
+		AmountCents:    1,
+		IdempotencyKey: "refund-1",
+		MetadataJson:   "{}",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		test.Fatalf("expected invalid argument, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorInvalidIdempotencyKey {
+		test.Fatalf("expected %q, got %q", errorInvalidIdempotencyKey, status.Convert(err).Message())
+	}
+}
+
+func TestCreditServiceServerRefundUnknownEntryRejected(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
+		UserId:         "user",
+		TenantId:       "default",
+		LedgerId:       "default",
+		Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "missing-entry"},
+		AmountCents:    1,
+		IdempotencyKey: "refund-1",
+		MetadataJson:   "{}",
+	})
+	if status.Code(err) != codes.NotFound {
+		test.Fatalf("expected not found, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorUnknownEntry {
+		test.Fatalf("expected %q, got %q", errorUnknownEntry, status.Convert(err).Message())
+	}
+}
+
+func TestCreditServiceServerRefundRejectsNonDebitOriginal(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	grantResponse, err := server.Grant(ctx, &creditv1.GrantRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    1000,
+		IdempotencyKey: "grant-1",
+		MetadataJson:   "{}",
+	})
+	if err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+
+	_, err = server.Refund(ctx, &creditv1.RefundRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: grantResponse.GetEntryId()},
+		AmountCents:    1,
+		IdempotencyKey: "refund-1",
+		MetadataJson:   "{}",
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		test.Fatalf("expected failed precondition, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorInvalidRefundOriginal {
+		test.Fatalf("expected %q, got %q", errorInvalidRefundOriginal, status.Convert(err).Message())
+	}
+}
+
+func TestCreditServiceServerRefundCaptureDebitFlow(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    1000,
+		IdempotencyKey: "grant-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	if _, err := server.Reserve(ctx, &creditv1.ReserveRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    300,
+		ReservationId:  "order-1",
+		IdempotencyKey: "reserve-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("reserve: %v", err)
+	}
+	captureResponse, err := server.Capture(ctx, &creditv1.CaptureRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		ReservationId:  "order-1",
+		IdempotencyKey: "capture-1",
+		AmountCents:    300,
+		MetadataJson:   "{}",
+	})
+	if err != nil {
+		test.Fatalf("capture: %v", err)
+	}
+
+	if _, err := server.Refund(ctx, &creditv1.RefundRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: captureResponse.GetEntryId()},
+		AmountCents:    300,
+		IdempotencyKey: "refund-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("refund: %v", err)
+	}
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{
+		UserId:   userID,
+		TenantId: tenantID,
+		LedgerId: ledgerID,
+	})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 1000 || balanceResponse.GetAvailableCents() != 1000 {
+		test.Fatalf("expected 1000/1000, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+}
+
+func TestCreditServiceServerRefundOverRefundRejected(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    1000,
+		IdempotencyKey: "grant-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	spendResponse, err := server.Spend(ctx, &creditv1.SpendRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    100,
+		IdempotencyKey: "spend-1",
+		MetadataJson:   "{}",
+	})
+	if err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+	if _, err := server.Refund(ctx, &creditv1.RefundRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: spendResponse.GetEntryId()},
+		AmountCents:    80,
+		IdempotencyKey: "refund-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("refund: %v", err)
+	}
+
+	_, err = server.Refund(ctx, &creditv1.RefundRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: spendResponse.GetEntryId()},
+		AmountCents:    30,
+		IdempotencyKey: "refund-2",
+		MetadataJson:   "{}",
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		test.Fatalf("expected failed precondition, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorRefundExceedsDebit {
+		test.Fatalf("expected %q, got %q", errorRefundExceedsDebit, status.Convert(err).Message())
+	}
+}
+
+func TestCreditServiceServerRefundDuplicateIdempotencyNoop(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    1000,
+		IdempotencyKey: "grant-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	spendResponse, err := server.Spend(ctx, &creditv1.SpendRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    100,
+		IdempotencyKey: "spend-1",
+		MetadataJson:   "{}",
+	})
+	if err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+
+	firstRefund, err := server.Refund(ctx, &creditv1.RefundRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: spendResponse.GetEntryId()},
+		AmountCents:    50,
+		IdempotencyKey: "refund-1",
+		MetadataJson:   "{}",
+	})
+	if err != nil {
+		test.Fatalf("refund: %v", err)
+	}
+	secondRefund, err := server.Refund(ctx, &creditv1.RefundRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: spendResponse.GetEntryId()},
+		AmountCents:    50,
+		IdempotencyKey: "refund-1",
+		MetadataJson:   "{}",
+	})
+	if err != nil {
+		test.Fatalf("refund duplicate: %v", err)
+	}
+	if firstRefund.GetEntryId() != secondRefund.GetEntryId() {
+		test.Fatalf("expected same refund entry id %q, got %q", firstRefund.GetEntryId(), secondRefund.GetEntryId())
+	}
+
+	listRefunds, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
+		UserId:   userID,
+		TenantId: tenantID,
+		LedgerId: ledgerID,
+		Types:    []string{"refund"},
+		Limit:    10,
+	})
+	if err != nil {
+		test.Fatalf("list refunds: %v", err)
+	}
+	if len(listRefunds.GetEntries()) != 1 {
+		test.Fatalf("expected one refund entry, got %d", len(listRefunds.GetEntries()))
+	}
+}
+
+func TestCreditServiceServerRefundValidationMissingOriginal(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
+		UserId:         "user",
+		TenantId:       "default",
+		LedgerId:       "default",
+		AmountCents:    1,
+		IdempotencyKey: "refund-1",
+		MetadataJson:   "{}",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		test.Fatalf("expected invalid argument, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorMissingRefundOriginal {
+		test.Fatalf("expected %q, got %q", errorMissingRefundOriginal, status.Convert(err).Message())
+	}
+}
+
+func TestCreditServiceServerRefundValidationErrors(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+	ctx := context.Background()
+
+	testCases := []struct {
+		name        string
+		invoke      func() error
+		wantCode    codes.Code
+		wantMessage string
+	}{
+		{
+			name: "invalid user id",
+			invoke: func() error {
+				_, err := server.Refund(ctx, &creditv1.RefundRequest{
+					UserId:         "",
+					TenantId:       "default",
+					LedgerId:       "default",
+					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
+					AmountCents:    1,
+					IdempotencyKey: "refund-1",
+					MetadataJson:   "{}",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidUserID,
+		},
+		{
+			name: "invalid ledger id",
+			invoke: func() error {
+				_, err := server.Refund(ctx, &creditv1.RefundRequest{
+					UserId:         "user",
+					TenantId:       "default",
+					LedgerId:       "",
+					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
+					AmountCents:    1,
+					IdempotencyKey: "refund-1",
+					MetadataJson:   "{}",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidLedgerID,
+		},
+		{
+			name: "invalid tenant id",
+			invoke: func() error {
+				_, err := server.Refund(ctx, &creditv1.RefundRequest{
+					UserId:         "user",
+					TenantId:       "",
+					LedgerId:       "default",
+					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
+					AmountCents:    1,
+					IdempotencyKey: "refund-1",
+					MetadataJson:   "{}",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidTenantID,
+		},
+		{
+			name: "invalid amount",
+			invoke: func() error {
+				_, err := server.Refund(ctx, &creditv1.RefundRequest{
+					UserId:         "user",
+					TenantId:       "default",
+					LedgerId:       "default",
+					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
+					AmountCents:    0,
+					IdempotencyKey: "refund-1",
+					MetadataJson:   "{}",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidAmount,
+		},
+		{
+			name: "invalid idempotency key",
+			invoke: func() error {
+				_, err := server.Refund(ctx, &creditv1.RefundRequest{
+					UserId:         "user",
+					TenantId:       "default",
+					LedgerId:       "default",
+					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
+					AmountCents:    1,
+					IdempotencyKey: " ",
+					MetadataJson:   "{}",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidIdempotencyKey,
+		},
+		{
+			name: "invalid metadata",
+			invoke: func() error {
+				_, err := server.Refund(ctx, &creditv1.RefundRequest{
+					UserId:         "user",
+					TenantId:       "default",
+					LedgerId:       "default",
+					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
+					AmountCents:    1,
+					IdempotencyKey: "refund-1",
+					MetadataJson:   "{",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidMetadata,
+		},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			err := testCase.invoke()
+			if status.Code(err) != testCase.wantCode {
+				test.Fatalf("expected code %v, got %v", testCase.wantCode, status.Code(err))
+			}
+			if status.Convert(err).Message() != testCase.wantMessage {
+				test.Fatalf("expected message %q, got %q", testCase.wantMessage, status.Convert(err).Message())
+			}
+		})
+	}
+}
+
 func TestCreditServiceServerBatchValidationErrors(test *testing.T) {
 	test.Parallel()
 	creditService, err := newSQLiteLedgerService(test)
@@ -585,6 +1231,65 @@ func TestCreditServiceServerBatchOperationValidationErrors(test *testing.T) {
 			operation:   &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Release{Release: &creditv1.BatchReleaseOp{ReservationId: "", IdempotencyKey: "release-1", MetadataJson: "{}"}}},
 			wantMessage: errorInvalidReservationID,
 		},
+		{
+			name: "refund missing original",
+			operation: &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Refund{Refund: &creditv1.BatchRefundOp{
+				AmountCents:    1,
+				IdempotencyKey: "refund-1",
+				MetadataJson:   "{}",
+			}}},
+			wantMessage: errorMissingRefundOriginal,
+		},
+		{
+			name: "refund invalid amount",
+			operation: &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Refund{Refund: &creditv1.BatchRefundOp{
+				Original:       &creditv1.BatchRefundOp_OriginalEntryId{OriginalEntryId: "entry-1"},
+				AmountCents:    0,
+				IdempotencyKey: "refund-1",
+				MetadataJson:   "{}",
+			}}},
+			wantMessage: errorInvalidAmount,
+		},
+		{
+			name: "refund invalid idempotency key",
+			operation: &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Refund{Refund: &creditv1.BatchRefundOp{
+				Original:       &creditv1.BatchRefundOp_OriginalEntryId{OriginalEntryId: "entry-1"},
+				AmountCents:    1,
+				IdempotencyKey: " ",
+				MetadataJson:   "{}",
+			}}},
+			wantMessage: errorInvalidIdempotencyKey,
+		},
+		{
+			name: "refund invalid metadata",
+			operation: &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Refund{Refund: &creditv1.BatchRefundOp{
+				Original:       &creditv1.BatchRefundOp_OriginalEntryId{OriginalEntryId: "entry-1"},
+				AmountCents:    1,
+				IdempotencyKey: "refund-1",
+				MetadataJson:   "{",
+			}}},
+			wantMessage: errorInvalidMetadata,
+		},
+		{
+			name: "refund invalid original entry id",
+			operation: &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Refund{Refund: &creditv1.BatchRefundOp{
+				Original:       &creditv1.BatchRefundOp_OriginalEntryId{OriginalEntryId: " "},
+				AmountCents:    1,
+				IdempotencyKey: "refund-1",
+				MetadataJson:   "{}",
+			}}},
+			wantMessage: errorInvalidEntryID,
+		},
+		{
+			name: "refund invalid original idempotency key",
+			operation: &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Refund{Refund: &creditv1.BatchRefundOp{
+				Original:       &creditv1.BatchRefundOp_OriginalIdempotencyKey{OriginalIdempotencyKey: " "},
+				AmountCents:    1,
+				IdempotencyKey: "refund-1",
+				MetadataJson:   "{}",
+			}}},
+			wantMessage: errorInvalidIdempotencyKey,
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -708,6 +1413,221 @@ func TestCreditServiceServerBatchSupportsReserveCaptureAndRelease(test *testing.
 	}
 	if balanceResponse.GetTotalCents() != 700 || balanceResponse.GetAvailableCents() != 700 {
 		test.Fatalf("expected 700/700, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+}
+
+func TestCreditServiceServerBatchSupportsRefundByOriginalIdempotencyKey(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
+		Account: &creditv1.AccountContext{UserId: userID, TenantId: tenantID, LedgerId: ledgerID},
+		Atomic:  false,
+		Operations: []*creditv1.BatchOperation{
+			{
+				OperationId: "grant-1",
+				Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{
+					AmountCents:    1000,
+					IdempotencyKey: "grant-1",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "spend-1",
+				Operation: &creditv1.BatchOperation_Spend{Spend: &creditv1.BatchSpendOp{
+					AmountCents:    200,
+					IdempotencyKey: "spend-1",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "refund-1",
+				Operation: &creditv1.BatchOperation_Refund{Refund: &creditv1.BatchRefundOp{
+					Original:       &creditv1.BatchRefundOp_OriginalIdempotencyKey{OriginalIdempotencyKey: "spend-1"},
+					AmountCents:    50,
+					IdempotencyKey: "refund-1",
+					MetadataJson:   "{}",
+				}},
+			},
+		},
+	})
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	results := batchResponse.GetResults()
+	if len(results) != 3 {
+		test.Fatalf("expected 3 results, got %d", len(results))
+	}
+	for resultIndex, result := range results {
+		if !result.GetOk() || result.GetDuplicate() || (result.GetOperationId() != "grant-1" && result.GetEntryId() == "") {
+			test.Fatalf("unexpected result[%d]: ok=%v dup=%v entry_id=%q code=%q", resultIndex, result.GetOk(), result.GetDuplicate(), result.GetEntryId(), result.GetErrorCode())
+		}
+	}
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: userID, TenantId: tenantID, LedgerId: ledgerID})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 850 || balanceResponse.GetAvailableCents() != 850 {
+		test.Fatalf("expected 850/850, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+}
+
+func TestCreditServiceServerBatchSupportsRefundByOriginalEntryID(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    1000,
+		IdempotencyKey: "grant-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	spendResponse, err := server.Spend(ctx, &creditv1.SpendRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    200,
+		IdempotencyKey: "spend-1",
+		MetadataJson:   "{}",
+	})
+	if err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+	if spendResponse.GetEntryId() == "" {
+		test.Fatalf("expected spend entry id")
+	}
+
+	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
+		Account: &creditv1.AccountContext{UserId: userID, TenantId: tenantID, LedgerId: ledgerID},
+		Atomic:  false,
+		Operations: []*creditv1.BatchOperation{
+			{
+				OperationId: "refund-1",
+				Operation: &creditv1.BatchOperation_Refund{Refund: &creditv1.BatchRefundOp{
+					Original:       &creditv1.BatchRefundOp_OriginalEntryId{OriginalEntryId: spendResponse.GetEntryId()},
+					AmountCents:    50,
+					IdempotencyKey: "refund-1",
+					MetadataJson:   "{}",
+				}},
+			},
+		},
+	})
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	results := batchResponse.GetResults()
+	if len(results) != 1 {
+		test.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].GetOk() || results[0].GetDuplicate() || results[0].GetEntryId() == "" {
+		test.Fatalf("unexpected result: ok=%v dup=%v entry_id=%q code=%q", results[0].GetOk(), results[0].GetDuplicate(), results[0].GetEntryId(), results[0].GetErrorCode())
+	}
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: userID, TenantId: tenantID, LedgerId: ledgerID})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 850 || balanceResponse.GetAvailableCents() != 850 {
+		test.Fatalf("expected 850/850, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+}
+
+func TestCreditServiceServerBatchRefundOverRefundRejected(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
+		Account: &creditv1.AccountContext{UserId: userID, TenantId: tenantID, LedgerId: ledgerID},
+		Atomic:  false,
+		Operations: []*creditv1.BatchOperation{
+			{
+				OperationId: "grant-1",
+				Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{
+					AmountCents:    1000,
+					IdempotencyKey: "grant-1",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "spend-1",
+				Operation: &creditv1.BatchOperation_Spend{Spend: &creditv1.BatchSpendOp{
+					AmountCents:    100,
+					IdempotencyKey: "spend-1",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "refund-1",
+				Operation: &creditv1.BatchOperation_Refund{Refund: &creditv1.BatchRefundOp{
+					Original:       &creditv1.BatchRefundOp_OriginalIdempotencyKey{OriginalIdempotencyKey: "spend-1"},
+					AmountCents:    80,
+					IdempotencyKey: "refund-1",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "refund-2",
+				Operation: &creditv1.BatchOperation_Refund{Refund: &creditv1.BatchRefundOp{
+					Original:       &creditv1.BatchRefundOp_OriginalIdempotencyKey{OriginalIdempotencyKey: "spend-1"},
+					AmountCents:    30,
+					IdempotencyKey: "refund-2",
+					MetadataJson:   "{}",
+				}},
+			},
+		},
+	})
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	results := batchResponse.GetResults()
+	if len(results) != 4 {
+		test.Fatalf("expected 4 results, got %d", len(results))
+	}
+	if !results[2].GetOk() || results[2].GetEntryId() == "" {
+		test.Fatalf("unexpected refund-1 result: ok=%v entry_id=%q code=%q", results[2].GetOk(), results[2].GetEntryId(), results[2].GetErrorCode())
+	}
+	if results[3].GetOk() || results[3].GetErrorCode() != errorRefundExceedsDebit {
+		test.Fatalf("expected refund-2 to fail with %q, got ok=%v code=%q", errorRefundExceedsDebit, results[3].GetOk(), results[3].GetErrorCode())
+	}
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: userID, TenantId: tenantID, LedgerId: ledgerID})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 980 || balanceResponse.GetAvailableCents() != 980 {
+		test.Fatalf("expected 980/980, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
 	}
 }
 
@@ -1526,6 +2446,26 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			},
 			wantCode: codes.InvalidArgument, wantMessage: errorInvalidEntryType,
 		},
+		{
+			name: "list entries invalid reservation id",
+			invoke: func() error {
+				_, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
+					UserId: "user", TenantId: "default", LedgerId: "default", BeforeUnixUtc: 0, Limit: 1, ReservationId: "   ",
+				})
+				return err
+			},
+			wantCode: codes.InvalidArgument, wantMessage: errorInvalidReservationID,
+		},
+		{
+			name: "list entries invalid idempotency key prefix",
+			invoke: func() error {
+				_, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
+					UserId: "user", TenantId: "default", LedgerId: "default", BeforeUnixUtc: 0, Limit: 1, IdempotencyKeyPrefix: "   ",
+				})
+				return err
+			},
+			wantCode: codes.InvalidArgument, wantMessage: errorInvalidIdempotencyKey,
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -1580,6 +2520,18 @@ func (store *alwaysErrorStore) GetOrCreateAccountID(ctx context.Context, tenantI
 
 func (store *alwaysErrorStore) InsertEntry(ctx context.Context, entry ledger.EntryInput) (ledger.Entry, error) {
 	return ledger.Entry{}, store.err
+}
+
+func (store *alwaysErrorStore) GetEntry(ctx context.Context, accountID ledger.AccountID, entryID ledger.EntryID) (ledger.Entry, error) {
+	return ledger.Entry{}, store.err
+}
+
+func (store *alwaysErrorStore) GetEntryByIdempotencyKey(ctx context.Context, accountID ledger.AccountID, idempotencyKey ledger.IdempotencyKey) (ledger.Entry, error) {
+	return ledger.Entry{}, store.err
+}
+
+func (store *alwaysErrorStore) SumRefunds(ctx context.Context, accountID ledger.AccountID, originalEntryID ledger.EntryID) (ledger.AmountCents, error) {
+	return 0, store.err
 }
 
 func (store *alwaysErrorStore) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {

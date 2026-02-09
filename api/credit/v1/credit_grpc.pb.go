@@ -25,6 +25,7 @@ const (
 	CreditService_Capture_FullMethodName     = "/credit.v1.CreditService/Capture"
 	CreditService_Release_FullMethodName     = "/credit.v1.CreditService/Release"
 	CreditService_Spend_FullMethodName       = "/credit.v1.CreditService/Spend"
+	CreditService_Refund_FullMethodName      = "/credit.v1.CreditService/Refund"
 	CreditService_Batch_FullMethodName       = "/credit.v1.CreditService/Batch"
 	CreditService_ListEntries_FullMethodName = "/credit.v1.CreditService/ListEntries"
 )
@@ -39,6 +40,7 @@ type CreditServiceClient interface {
 	Capture(ctx context.Context, in *CaptureRequest, opts ...grpc.CallOption) (*Empty, error)
 	Release(ctx context.Context, in *ReleaseRequest, opts ...grpc.CallOption) (*Empty, error)
 	Spend(ctx context.Context, in *SpendRequest, opts ...grpc.CallOption) (*Empty, error)
+	Refund(ctx context.Context, in *RefundRequest, opts ...grpc.CallOption) (*RefundResponse, error)
 	Batch(ctx context.Context, in *BatchRequest, opts ...grpc.CallOption) (*BatchResponse, error)
 	ListEntries(ctx context.Context, in *ListEntriesRequest, opts ...grpc.CallOption) (*ListEntriesResponse, error)
 }
@@ -111,6 +113,16 @@ func (c *creditServiceClient) Spend(ctx context.Context, in *SpendRequest, opts 
 	return out, nil
 }
 
+func (c *creditServiceClient) Refund(ctx context.Context, in *RefundRequest, opts ...grpc.CallOption) (*RefundResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RefundResponse)
+	err := c.cc.Invoke(ctx, CreditService_Refund_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *creditServiceClient) Batch(ctx context.Context, in *BatchRequest, opts ...grpc.CallOption) (*BatchResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(BatchResponse)
@@ -141,6 +153,7 @@ type CreditServiceServer interface {
 	Capture(context.Context, *CaptureRequest) (*Empty, error)
 	Release(context.Context, *ReleaseRequest) (*Empty, error)
 	Spend(context.Context, *SpendRequest) (*Empty, error)
+	Refund(context.Context, *RefundRequest) (*RefundResponse, error)
 	Batch(context.Context, *BatchRequest) (*BatchResponse, error)
 	ListEntries(context.Context, *ListEntriesRequest) (*ListEntriesResponse, error)
 	mustEmbedUnimplementedCreditServiceServer()
@@ -170,6 +183,9 @@ func (UnimplementedCreditServiceServer) Release(context.Context, *ReleaseRequest
 }
 func (UnimplementedCreditServiceServer) Spend(context.Context, *SpendRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Spend not implemented")
+}
+func (UnimplementedCreditServiceServer) Refund(context.Context, *RefundRequest) (*RefundResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Refund not implemented")
 }
 func (UnimplementedCreditServiceServer) Batch(context.Context, *BatchRequest) (*BatchResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Batch not implemented")
@@ -306,6 +322,24 @@ func _CreditService_Spend_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CreditService_Refund_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RefundRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CreditServiceServer).Refund(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CreditService_Refund_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CreditServiceServer).Refund(ctx, req.(*RefundRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CreditService_Batch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(BatchRequest)
 	if err := dec(in); err != nil {
@@ -372,6 +406,10 @@ var CreditService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Spend",
 			Handler:    _CreditService_Spend_Handler,
+		},
+		{
+			MethodName: "Refund",
+			Handler:    _CreditService_Refund_Handler,
 		},
 		{
 			MethodName: "Batch",
