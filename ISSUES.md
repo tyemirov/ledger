@@ -36,7 +36,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Apply the bootstrap grant exactly once when an account is created (or first accessed), without requiring the caller to orchestrate a grant.
   - Use deterministic idempotency keys so repeated calls are safe; treat duplicate idempotency as no-op.
   - Update config/env/README and add coverage for concurrent account creation.
-- [ ] [LG-211] (P1) Add a backfill/bootstrap command for existing accounts. Unresolved.
+- [x] [LG-211] (P1) Add a backfill/bootstrap command for existing accounts. Resolved: added `ledgerd bootstrap-backfill` CLI to apply configured bootstrap grants to existing accounts missing them (scoped per tenant+ledger), introduced store-level account listing/pagination to support backfill without raw SQL, implemented idempotency-safe no-op handling (duplicates allowed only when existing entry type is `grant`), and added coverage for large datasets + error paths; `make ci` passing.
   - Provide a CLI/admin command to apply the configured bootstrap grant to all existing accounts missing it.
   - Add store-level account listing/pagination to support backfill without direct SQL in callers.
   - Treat duplicate idempotency keys as no-op; emit a summary of accounts updated vs skipped.

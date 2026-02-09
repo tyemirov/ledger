@@ -1,6 +1,9 @@
 package ledger
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 const bootstrapIdempotencySuffix = "bootstrap_grant"
 
@@ -57,6 +60,10 @@ func (rule BootstrapGrantRule) Metadata() MetadataJSON {
 	return rule.metadata
 }
 
+func (rule BootstrapGrantRule) BootstrapIdempotencyKey() (IdempotencyKey, error) {
+	return deriveIdempotencyKey(rule.IdempotencyKeyBase(), bootstrapIdempotencySuffix)
+}
+
 type bootstrapGrantScope struct {
 	tenantID TenantID
 	ledgerID LedgerID
@@ -92,4 +99,21 @@ func (policy BootstrapGrantPolicy) ruleFor(tenantID TenantID, ledgerID LedgerID)
 	}
 	rule, ok := policy.rules[bootstrapGrantScope{tenantID: tenantID, ledgerID: ledgerID}]
 	return rule, ok
+}
+
+func (policy BootstrapGrantPolicy) Rules() []BootstrapGrantRule {
+	if policy.rules == nil {
+		return nil
+	}
+	rules := make([]BootstrapGrantRule, 0, len(policy.rules))
+	for _, rule := range policy.rules {
+		rules = append(rules, rule)
+	}
+	sort.Slice(rules, func(i, j int) bool {
+		if rules[i].TenantID().String() == rules[j].TenantID().String() {
+			return rules[i].LedgerID().String() < rules[j].LedgerID().String()
+		}
+		return rules[i].TenantID().String() < rules[j].TenantID().String()
+	})
+	return rules
 }

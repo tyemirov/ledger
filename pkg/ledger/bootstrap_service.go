@@ -23,7 +23,7 @@ func (service *Service) applyBootstrapGrantIfEligible(ctx context.Context, tenan
 		if len(entries) > 0 {
 			return nil
 		}
-		bootstrapIdempotencyKey, err := deriveIdempotencyKey(rule.IdempotencyKeyBase(), bootstrapIdempotencySuffix)
+		bootstrapIdempotencyKey, err := rule.BootstrapIdempotencyKey()
 		if err != nil {
 			return err
 		}

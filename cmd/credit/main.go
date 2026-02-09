@@ -20,12 +20,14 @@ import (
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"github.com/glebarez/sqlite"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 const (
@@ -65,7 +67,7 @@ func newRootCommand() *cobra.Command {
 		Short:         "Ledger gRPC server",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PreRunE: func(cmd *cobra.Command, args []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			return loadConfig(cmd, cfg)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -75,9 +77,11 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String(flagDatabaseURL, defaultDatabaseURL, "PostgreSQL connection string")
-	cmd.Flags().String(flagListenAddr, defaultGRPCListenAddr, "gRPC listen address")
-	cmd.Flags().String(flagBootstrapGrantsJSON, "", "Bootstrap grant rules as a JSON array")
+	cmd.PersistentFlags().String(flagDatabaseURL, defaultDatabaseURL, "PostgreSQL connection string")
+	cmd.PersistentFlags().String(flagListenAddr, defaultGRPCListenAddr, "gRPC listen address")
+	cmd.PersistentFlags().String(flagBootstrapGrantsJSON, "", "Bootstrap grant rules as a JSON array")
+
+	cmd.AddCommand(newBootstrapBackfillCommand(cfg))
 
 	return cmd
 }
@@ -86,25 +90,29 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
 
-	if err := viper.BindEnv(configKeyDatabaseURL, "DATABASE_URL"); err != nil {
-		return err
-	}
-	if err := viper.BindEnv(configKeyListenAddr, "GRPC_LISTEN_ADDR"); err != nil {
-		return err
-	}
-	if err := viper.BindEnv(configKeyBootstrapGrants, "BOOTSTRAP_GRANTS_JSON"); err != nil {
-		return err
-	}
+	// viper.BindEnv errors only when the key is missing (len(input)==0).
+	// These keys are compile-time constants, so BindEnv cannot fail here.
+	_ = viper.BindEnv(configKeyDatabaseURL, "DATABASE_URL")
+	_ = viper.BindEnv(configKeyListenAddr, "GRPC_LISTEN_ADDR")
+	_ = viper.BindEnv(configKeyBootstrapGrants, "BOOTSTRAP_GRANTS_JSON")
 
-	if err := viper.BindPFlag(configKeyDatabaseURL, cmd.Flags().Lookup(flagDatabaseURL)); err != nil {
-		return err
+	databaseFlag := lookupFlag(cmd, flagDatabaseURL)
+	if databaseFlag == nil {
+		return fmt.Errorf("flag for %q is nil", configKeyDatabaseURL)
 	}
-	if err := viper.BindPFlag(configKeyListenAddr, cmd.Flags().Lookup(flagListenAddr)); err != nil {
-		return err
+	_ = viper.BindPFlag(configKeyDatabaseURL, databaseFlag)
+
+	listenFlag := lookupFlag(cmd, flagListenAddr)
+	if listenFlag == nil {
+		return fmt.Errorf("flag for %q is nil", configKeyListenAddr)
 	}
-	if err := viper.BindPFlag(configKeyBootstrapGrants, cmd.Flags().Lookup(flagBootstrapGrantsJSON)); err != nil {
-		return err
+	_ = viper.BindPFlag(configKeyListenAddr, listenFlag)
+
+	bootstrapFlag := lookupFlag(cmd, flagBootstrapGrantsJSON)
+	if bootstrapFlag == nil {
+		return fmt.Errorf("flag for %q is nil", configKeyBootstrapGrants)
 	}
+	_ = viper.BindPFlag(configKeyBootstrapGrants, bootstrapFlag)
 
 	cfg.DatabaseURL = viper.GetString(configKeyDatabaseURL)
 	if cfg.DatabaseURL == "" {
@@ -115,6 +123,19 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 		cfg.ListenAddr = defaultGRPCListenAddr
 	}
 	cfg.BootstrapGrantsJSON = viper.GetString(configKeyBootstrapGrants)
+	return nil
+}
+
+func lookupFlag(cmd *cobra.Command, name string) *pflag.Flag {
+	if flag := cmd.Flags().Lookup(name); flag != nil {
+		return flag
+	}
+	if flag := cmd.PersistentFlags().Lookup(name); flag != nil {
+		return flag
+	}
+	if flag := cmd.InheritedFlags().Lookup(name); flag != nil {
+		return flag
+	}
 	return nil
 }
 
@@ -365,11 +386,10 @@ func openDatabase(ctx context.Context, dsn string) (*gorm.DB, func() error, stri
 		return nil, nil, "", err
 	}
 
-	var (
-		db  *gorm.DB
-		cfg *gorm.Config
-	)
-	cfg = &gorm.Config{}
+	var db *gorm.DB
+	cfg := &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
+	}
 	switch driver {
 	case "postgres":
 		db, err = gorm.Open(postgres.Open(dsn), cfg)
