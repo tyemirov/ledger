@@ -74,7 +74,10 @@ The service applies its schema automatically via GORM on startup (same as SQLite
 Generate gRPC code (if you modify `.proto` files):
 
 ```bash
-protoc --go_out=. --go-grpc_out=. api/credit/v1/credit.proto
+protoc \\
+  --go_out=. --go-grpc_out=. \\
+  --go_opt=paths=source_relative --go-grpc_opt=paths=source_relative \\
+  api/credit/v1/credit.proto
 ```
 
 ---

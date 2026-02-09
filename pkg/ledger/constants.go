@@ -6,6 +6,7 @@ const (
 	operationCapture = "capture"
 	operationRelease = "release"
 	operationSpend   = "spend"
+	operationRefund  = "refund"
 
 	operationStatusOK    = "ok"
 	operationStatusError = "error"

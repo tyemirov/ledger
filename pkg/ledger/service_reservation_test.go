@@ -381,7 +381,44 @@ func newStubStore(test *testing.T, initialTotal SignedAmountCents) *stubStore {
 }
 
 func (store *stubStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore Store) error) error {
-	return fn(ctx, store)
+	if fn == nil {
+		return nil
+	}
+	transactionStore := store.clone()
+	if err := fn(ctx, transactionStore); err != nil {
+		return err
+	}
+	store.applyTransaction(transactionStore)
+	return nil
+}
+
+func (store *stubStore) clone() *stubStore {
+	clone := *store
+
+	clone.reservations = make(map[ReservationID]Reservation, len(store.reservations))
+	for reservationID, reservation := range store.reservations {
+		clone.reservations[reservationID] = reservation
+	}
+
+	clone.entries = append([]EntryInput(nil), store.entries...)
+	clone.listEntries = append([]Entry(nil), store.listEntries...)
+
+	clone.idempotency = make(map[IdempotencyKey]struct{}, len(store.idempotency))
+	for idempotencyKey := range store.idempotency {
+		clone.idempotency[idempotencyKey] = struct{}{}
+	}
+
+	return &clone
+}
+
+func (store *stubStore) applyTransaction(transactionStore *stubStore) {
+	store.total = transactionStore.total
+	store.reservations = transactionStore.reservations
+	store.entries = transactionStore.entries
+	store.listEntries = transactionStore.listEntries
+	store.listErr = transactionStore.listErr
+	store.idempotency = transactionStore.idempotency
+	store.insertEntryCallCount = transactionStore.insertEntryCallCount
 }
 
 func (store *stubStore) GetOrCreateAccountID(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID) (AccountID, error) {
@@ -404,7 +441,7 @@ func (store *stubStore) InsertEntry(ctx context.Context, entryInput EntryInput) 
 	store.idempotency[entryInput.IdempotencyKey()] = struct{}{}
 	store.entries = append(store.entries, entryInput)
 	switch entryInput.Type() {
-	case EntryGrant, EntrySpend:
+	case EntryGrant, EntrySpend, EntryRefund:
 		store.total = applyEntryDelta(store.total, entryInput.AmountCents())
 	}
 	entryID, err := NewEntryID(entryInput.IdempotencyKey().String())
@@ -415,12 +452,89 @@ func (store *stubStore) InsertEntry(ctx context.Context, entryInput EntryInput) 
 	if value, ok := entryInput.ReservationID(); ok {
 		reservationID = &value
 	}
+	var refundOfEntryID *EntryID
+	if value, ok := entryInput.RefundOfEntryID(); ok {
+		refundOfEntryID = &value
+	}
 	entry, err := NewEntry(
 		entryID,
 		entryInput.AccountID(),
 		entryInput.Type(),
 		entryInput.AmountCents(),
 		reservationID,
+		refundOfEntryID,
+		entryInput.IdempotencyKey(),
+		entryInput.ExpiresAtUnixUTC(),
+		entryInput.MetadataJSON(),
+		entryInput.CreatedUnixUTC(),
+	)
+	if err != nil {
+		return Entry{}, err
+	}
+	return entry, nil
+}
+
+func (store *stubStore) GetEntry(ctx context.Context, accountID AccountID, entryID EntryID) (Entry, error) {
+	for _, entryInput := range store.entries {
+		entry, err := store.materializeEntry(entryInput)
+		if err != nil {
+			return Entry{}, err
+		}
+		if entry.EntryID() == entryID {
+			return entry, nil
+		}
+	}
+	return Entry{}, ErrUnknownEntry
+}
+
+func (store *stubStore) GetEntryByIdempotencyKey(ctx context.Context, accountID AccountID, idempotencyKey IdempotencyKey) (Entry, error) {
+	for _, entryInput := range store.entries {
+		if entryInput.IdempotencyKey() != idempotencyKey {
+			continue
+		}
+		return store.materializeEntry(entryInput)
+	}
+	return Entry{}, ErrUnknownEntry
+}
+
+func (store *stubStore) SumRefunds(ctx context.Context, accountID AccountID, originalEntryID EntryID) (AmountCents, error) {
+	var sum int64
+	for _, entryInput := range store.entries {
+		if entryInput.Type() != EntryRefund {
+			continue
+		}
+		refundOfEntryID, ok := entryInput.RefundOfEntryID()
+		if !ok {
+			continue
+		}
+		if refundOfEntryID != originalEntryID {
+			continue
+		}
+		sum += entryInput.AmountCents().Int64()
+	}
+	return NewAmountCents(sum)
+}
+
+func (store *stubStore) materializeEntry(entryInput EntryInput) (Entry, error) {
+	entryID, err := NewEntryID(entryInput.IdempotencyKey().String())
+	if err != nil {
+		return Entry{}, err
+	}
+	var reservationID *ReservationID
+	if value, ok := entryInput.ReservationID(); ok {
+		reservationID = &value
+	}
+	var refundOfEntryID *EntryID
+	if value, ok := entryInput.RefundOfEntryID(); ok {
+		refundOfEntryID = &value
+	}
+	entry, err := NewEntry(
+		entryID,
+		entryInput.AccountID(),
+		entryInput.Type(),
+		entryInput.AmountCents(),
+		reservationID,
+		refundOfEntryID,
 		entryInput.IdempotencyKey(),
 		entryInput.ExpiresAtUnixUTC(),
 		entryInput.MetadataJSON(),
@@ -644,7 +758,7 @@ func mustReservationRecord(test *testing.T, accountID AccountID, reservationID R
 
 func mustEntry(test *testing.T, entryID EntryID, accountID AccountID, entryType EntryType, amount EntryAmountCents, idempotencyKey IdempotencyKey, metadata MetadataJSON) Entry {
 	test.Helper()
-	entry, err := NewEntry(entryID, accountID, entryType, amount, nil, idempotencyKey, 0, metadata, 100)
+	entry, err := NewEntry(entryID, accountID, entryType, amount, nil, nil, idempotencyKey, 0, metadata, 100)
 	if err != nil {
 		test.Fatalf("entry: %v", err)
 	}
@@ -690,6 +804,18 @@ func (store *failingStore) GetOrCreateAccountID(ctx context.Context, tenantID Te
 
 func (store *failingStore) InsertEntry(ctx context.Context, entry EntryInput) (Entry, error) {
 	return Entry{}, store.err
+}
+
+func (store *failingStore) GetEntry(ctx context.Context, accountID AccountID, entryID EntryID) (Entry, error) {
+	return Entry{}, store.err
+}
+
+func (store *failingStore) GetEntryByIdempotencyKey(ctx context.Context, accountID AccountID, idempotencyKey IdempotencyKey) (Entry, error) {
+	return Entry{}, store.err
+}
+
+func (store *failingStore) SumRefunds(ctx context.Context, accountID AccountID, originalEntryID EntryID) (AmountCents, error) {
+	return 0, store.err
 }
 
 func (store *failingStore) SumTotal(ctx context.Context, accountID AccountID, atUnixUTC int64) (SignedAmountCents, error) {
