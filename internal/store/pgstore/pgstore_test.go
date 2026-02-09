@@ -3,6 +3,7 @@ package pgstore
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
@@ -41,15 +42,189 @@ func TestNewReturnsStore(test *testing.T) {
 	}
 }
 
+func TestBuildListEntriesSQLIncludesFilters(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	reservationID, err := ledger.NewReservationID("order-1")
+	if err != nil {
+		test.Fatalf("reservation id: %v", err)
+	}
+	idempotencyPrefix, err := ledger.NewIdempotencyKey("reserve")
+	if err != nil {
+		test.Fatalf("prefix: %v", err)
+	}
+
+	statement, args := buildListEntriesSQL(accountID, 1700000000, 50, ledger.ListEntriesFilter{
+		Types:                []ledger.EntryType{ledger.EntryHold, ledger.EntryGrant},
+		ReservationID:        &reservationID,
+		IdempotencyKeyPrefix: &idempotencyPrefix,
+	})
+	if !strings.Contains(statement, "type in ($3,$4)") {
+		test.Fatalf("expected type filter in sql, got %q", statement)
+	}
+	if !strings.Contains(statement, "reservation_id = $5") {
+		test.Fatalf("expected reservation filter in sql, got %q", statement)
+	}
+	if !strings.Contains(statement, "idempotency_key like $6") {
+		test.Fatalf("expected idempotency prefix filter in sql, got %q", statement)
+	}
+	if !strings.Contains(statement, "limit $7") {
+		test.Fatalf("expected limit placeholder $7, got %q", statement)
+	}
+
+	if len(args) != 7 {
+		test.Fatalf("expected 7 args, got %d", len(args))
+	}
+	if args[0] != accountID.String() {
+		test.Fatalf("expected account arg %q, got %+v", accountID.String(), args[0])
+	}
+	if args[1] != int64(1700000000) {
+		test.Fatalf("expected before arg 1700000000, got %+v", args[1])
+	}
+	if args[2] != ledger.EntryHold.String() || args[3] != ledger.EntryGrant.String() {
+		test.Fatalf("unexpected type args: %+v", args[2:4])
+	}
+	if args[4] != reservationID.String() {
+		test.Fatalf("expected reservation arg %q, got %+v", reservationID.String(), args[4])
+	}
+	if args[5] != idempotencyPrefix.String()+"%" {
+		test.Fatalf("expected prefix arg %q, got %+v", idempotencyPrefix.String()+"%", args[5])
+	}
+	if args[6] != 50 {
+		test.Fatalf("expected limit arg 50, got %+v", args[6])
+	}
+}
+
 func TestTxStoreWithTxDelegates(test *testing.T) {
 	test.Parallel()
-	txStore := &TxStore{tx: &stubTx{}}
+	executedStatements := []string{}
+	stubTransaction := &stubTx{
+		execFn: func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+			executedStatements = append(executedStatements, sql)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	txStore := &TxStore{tx: stubTransaction}
 	sentinelError := errors.New("callback error")
 	err := txStore.WithTx(context.Background(), func(ctx context.Context, txStore ledger.Store) error {
 		return sentinelError
 	})
 	if !errors.Is(err, sentinelError) {
 		test.Fatalf("expected sentinel error, got %v", err)
+	}
+	if len(executedStatements) != 3 {
+		test.Fatalf("expected 3 exec calls, got %d", len(executedStatements))
+	}
+	if !strings.HasPrefix(executedStatements[0], "savepoint sp_") {
+		test.Fatalf("expected savepoint, got %q", executedStatements[0])
+	}
+	savepointName := strings.TrimPrefix(executedStatements[0], "savepoint ")
+	if executedStatements[1] != "rollback to savepoint "+savepointName {
+		test.Fatalf("expected rollback to savepoint, got %q", executedStatements[1])
+	}
+	if executedStatements[2] != "release savepoint "+savepointName {
+		test.Fatalf("expected release savepoint, got %q", executedStatements[2])
+	}
+}
+
+func TestTxStoreWithTxCreatesSavepointAndReleasesOnSuccess(test *testing.T) {
+	test.Parallel()
+	executedStatements := []string{}
+	stubTransaction := &stubTx{
+		execFn: func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+			executedStatements = append(executedStatements, sql)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	txStore := &TxStore{tx: stubTransaction}
+	if err := txStore.WithTx(context.Background(), func(ctx context.Context, txStore ledger.Store) error {
+		return nil
+	}); err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+	if len(executedStatements) != 2 {
+		test.Fatalf("expected 2 exec calls, got %d", len(executedStatements))
+	}
+	if !strings.HasPrefix(executedStatements[0], "savepoint sp_") {
+		test.Fatalf("expected savepoint, got %q", executedStatements[0])
+	}
+	savepointName := strings.TrimPrefix(executedStatements[0], "savepoint ")
+	if executedStatements[1] != "release savepoint "+savepointName {
+		test.Fatalf("expected release savepoint, got %q", executedStatements[1])
+	}
+}
+
+func TestTxStoreWithTxReturnsNilWhenCallbackIsNil(test *testing.T) {
+	test.Parallel()
+	txStore := &TxStore{tx: &stubTx{}}
+	if err := txStore.WithTx(context.Background(), nil); err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTxStoreWithTxJoinsRollbackToSavepointErrors(test *testing.T) {
+	test.Parallel()
+	sentinelError := errors.New("callback error")
+	rollbackError := errors.New("rollback error")
+	savepointName := ""
+	stubTransaction := &stubTx{
+		execFn: func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+			if strings.HasPrefix(sql, "savepoint ") {
+				savepointName = strings.TrimPrefix(sql, "savepoint ")
+				return pgconn.CommandTag{}, nil
+			}
+			if sql == "rollback to savepoint "+savepointName {
+				return pgconn.CommandTag{}, rollbackError
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	txStore := &TxStore{tx: stubTransaction}
+	err := txStore.WithTx(context.Background(), func(ctx context.Context, txStore ledger.Store) error {
+		return sentinelError
+	})
+	if !errors.Is(err, sentinelError) {
+		test.Fatalf("expected sentinel error, got %v", err)
+	}
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Operation() != errorOperationStore || operationError.Subject() != errorSubjectTransaction || operationError.Code() != errorCodeRollbackToSavepoint {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+}
+
+func TestTxStoreWithTxJoinsReleaseSavepointErrors(test *testing.T) {
+	test.Parallel()
+	sentinelError := errors.New("callback error")
+	releaseError := errors.New("release error")
+	savepointName := ""
+	stubTransaction := &stubTx{
+		execFn: func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+			if strings.HasPrefix(sql, "savepoint ") {
+				savepointName = strings.TrimPrefix(sql, "savepoint ")
+				return pgconn.CommandTag{}, nil
+			}
+			if sql == "release savepoint "+savepointName {
+				return pgconn.CommandTag{}, releaseError
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	txStore := &TxStore{tx: stubTransaction}
+	err := txStore.WithTx(context.Background(), func(ctx context.Context, txStore ledger.Store) error {
+		return sentinelError
+	})
+	if !errors.Is(err, sentinelError) {
+		test.Fatalf("expected sentinel error, got %v", err)
+	}
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Operation() != errorOperationStore || operationError.Subject() != errorSubjectTransaction || operationError.Code() != errorCodeReleaseSavepoint {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
 	}
 }
 
@@ -186,8 +361,8 @@ func TestStoreInsertEntryHandlesConflicts(test *testing.T) {
 		if sql != sqlInsertEntry {
 			test.Fatalf("unexpected sql: %q", sql)
 		}
-		if len(arguments) != 9 {
-			test.Fatalf("expected 9 args, got %d", len(arguments))
+		if len(arguments) != 10 {
+			test.Fatalf("expected 10 args, got %d", len(arguments))
 		}
 		candidateEntryID, ok := arguments[0].(string)
 		if !ok {
@@ -201,7 +376,7 @@ func TestStoreInsertEntryHandlesConflicts(test *testing.T) {
 	store := &Store{pool: stubPool}
 	accountID := mustAccountID(test)
 	entryInput := mustGrantEntryInput(test, accountID, "grant-1")
-	err := store.InsertEntry(context.Background(), entryInput)
+	_, err := store.InsertEntry(context.Background(), entryInput)
 	if !errors.Is(err, ledger.ErrDuplicateIdempotencyKey) {
 		test.Fatalf("expected duplicate idempotency key, got %v", err)
 	}
@@ -217,7 +392,7 @@ func TestStoreInsertEntryWrapsInsertErrorsAndSuccess(test *testing.T) {
 	store := &Store{pool: stubPool}
 	accountID := mustAccountID(test)
 	entryInput := mustGrantEntryInput(test, accountID, "grant-1")
-	err := store.InsertEntry(context.Background(), entryInput)
+	_, err := store.InsertEntry(context.Background(), entryInput)
 	var operationError ledger.OperationError
 	if !errors.As(err, &operationError) {
 		test.Fatalf("expected operation error, got %v", err)
@@ -229,7 +404,7 @@ func TestStoreInsertEntryWrapsInsertErrorsAndSuccess(test *testing.T) {
 	stubPool.execFn = func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
 		return pgconn.NewCommandTag("INSERT 1"), nil
 	}
-	if err := store.InsertEntry(context.Background(), entryInput); err != nil {
+	if _, err := store.InsertEntry(context.Background(), entryInput); err != nil {
 		test.Fatalf("expected success, got %v", err)
 	}
 }
@@ -267,6 +442,7 @@ func TestStoreInsertEntryPassesReservationID(test *testing.T) {
 		ledger.EntryHold,
 		amount.ToEntryAmountCents().Negated(),
 		&reservationID,
+		nil,
 		idempotencyKey,
 		0,
 		metadata,
@@ -275,11 +451,117 @@ func TestStoreInsertEntryPassesReservationID(test *testing.T) {
 	if err != nil {
 		test.Fatalf("entry input: %v", err)
 	}
-	if err := store.InsertEntry(context.Background(), entryInput); err != nil {
+	if _, err := store.InsertEntry(context.Background(), entryInput); err != nil {
 		test.Fatalf("insert entry: %v", err)
 	}
 	if capturedReservationID != "order-1" {
 		test.Fatalf("expected reservation id order-1, got %q", capturedReservationID)
+	}
+}
+
+func TestStoreInsertEntryUsesNowWhenCreatedUnixUTCIsZero(test *testing.T) {
+	test.Parallel()
+	capturedCreatedUnixUTC := int64(0)
+	stubPool := &stubPool{}
+	stubPool.execFn = func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+		createdArg, ok := arguments[9].(int64)
+		if !ok {
+			test.Fatalf("expected created unix utc int64 arg")
+		}
+		capturedCreatedUnixUTC = createdArg
+		return pgconn.NewCommandTag("INSERT 1"), nil
+	}
+	store := &Store{pool: stubPool}
+
+	accountID := mustAccountID(test)
+	amount, err := ledger.NewPositiveAmountCents(100)
+	if err != nil {
+		test.Fatalf("amount: %v", err)
+	}
+	idempotencyKey, err := ledger.NewIdempotencyKey("grant-now")
+	if err != nil {
+		test.Fatalf("idempotency: %v", err)
+	}
+	metadata, err := ledger.NewMetadataJSON("{}")
+	if err != nil {
+		test.Fatalf("metadata: %v", err)
+	}
+	entryInput, err := ledger.NewEntryInput(
+		accountID,
+		ledger.EntryGrant,
+		amount.ToEntryAmountCents(),
+		nil,
+		nil,
+		idempotencyKey,
+		0,
+		metadata,
+		0,
+	)
+	if err != nil {
+		test.Fatalf("entry input: %v", err)
+	}
+	entry, err := store.InsertEntry(context.Background(), entryInput)
+	if err != nil {
+		test.Fatalf("insert entry: %v", err)
+	}
+	if capturedCreatedUnixUTC == 0 {
+		test.Fatalf("expected created unix utc to be set")
+	}
+	if entry.CreatedUnixUTC() != capturedCreatedUnixUTC {
+		test.Fatalf("expected created unix utc %d, got %d", capturedCreatedUnixUTC, entry.CreatedUnixUTC())
+	}
+}
+
+func TestTxStoreInsertEntryUsesNowWhenCreatedUnixUTCIsZero(test *testing.T) {
+	test.Parallel()
+	capturedCreatedUnixUTC := int64(0)
+	tx := &stubTx{}
+	tx.execFn = func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+		createdArg, ok := arguments[9].(int64)
+		if !ok {
+			test.Fatalf("expected created unix utc int64 arg")
+		}
+		capturedCreatedUnixUTC = createdArg
+		return pgconn.NewCommandTag("INSERT 1"), nil
+	}
+	txStore := &TxStore{tx: tx}
+
+	accountID := mustAccountID(test)
+	amount, err := ledger.NewPositiveAmountCents(100)
+	if err != nil {
+		test.Fatalf("amount: %v", err)
+	}
+	idempotencyKey, err := ledger.NewIdempotencyKey("grant-now-tx")
+	if err != nil {
+		test.Fatalf("idempotency: %v", err)
+	}
+	metadata, err := ledger.NewMetadataJSON("{}")
+	if err != nil {
+		test.Fatalf("metadata: %v", err)
+	}
+	entryInput, err := ledger.NewEntryInput(
+		accountID,
+		ledger.EntryGrant,
+		amount.ToEntryAmountCents(),
+		nil,
+		nil,
+		idempotencyKey,
+		0,
+		metadata,
+		0,
+	)
+	if err != nil {
+		test.Fatalf("entry input: %v", err)
+	}
+	entry, err := txStore.InsertEntry(context.Background(), entryInput)
+	if err != nil {
+		test.Fatalf("insert entry: %v", err)
+	}
+	if capturedCreatedUnixUTC == 0 {
+		test.Fatalf("expected created unix utc to be set")
+	}
+	if entry.CreatedUnixUTC() != capturedCreatedUnixUTC {
+		test.Fatalf("expected created unix utc %d, got %d", capturedCreatedUnixUTC, entry.CreatedUnixUTC())
 	}
 }
 
@@ -343,8 +625,8 @@ func TestScanEntriesHandlesRows(test *testing.T) {
 	test.Parallel()
 	rows := &stubRows{
 		records: [][]any{
-			{"entry-1", "account-1", "grant", int64(100), "", "grant-1", int64(0), "{}", int64(1700000000)},
-			{"entry-2", "account-1", "spend", int64(-50), "order-1", "spend-1", int64(0), "{}", int64(1700000001)},
+			{"entry-1", "account-1", "grant", int64(100), "", "", "grant-1", int64(0), "{}", int64(1700000000)},
+			{"entry-2", "account-1", "spend", int64(-50), "order-1", "", "spend-1", int64(0), "{}", int64(1700000001)},
 		},
 	}
 	entries, err := scanEntries(rows)
@@ -376,31 +658,31 @@ func TestScanEntriesRejectsInvalidRows(test *testing.T) {
 		},
 		{
 			name: "invalid entry id",
-			rows: &stubRows{records: [][]any{{"", "account-1", "grant", int64(100), "", "grant-1", int64(0), "{}", int64(1700000000)}}},
+			rows: &stubRows{records: [][]any{{"", "account-1", "grant", int64(100), "", "", "grant-1", int64(0), "{}", int64(1700000000)}}},
 		},
 		{
 			name: "invalid account id",
-			rows: &stubRows{records: [][]any{{"entry-1", "", "grant", int64(100), "", "grant-1", int64(0), "{}", int64(1700000000)}}},
+			rows: &stubRows{records: [][]any{{"entry-1", "", "grant", int64(100), "", "", "grant-1", int64(0), "{}", int64(1700000000)}}},
 		},
 		{
 			name: "invalid entry type",
-			rows: &stubRows{records: [][]any{{"entry-1", "account-1", "invalid", int64(100), "", "grant-1", int64(0), "{}", int64(1700000000)}}},
+			rows: &stubRows{records: [][]any{{"entry-1", "account-1", "invalid", int64(100), "", "", "grant-1", int64(0), "{}", int64(1700000000)}}},
 		},
 		{
 			name: "invalid amount",
-			rows: &stubRows{records: [][]any{{"entry-1", "account-1", "grant", int64(0), "", "grant-1", int64(0), "{}", int64(1700000000)}}},
+			rows: &stubRows{records: [][]any{{"entry-1", "account-1", "grant", int64(0), "", "", "grant-1", int64(0), "{}", int64(1700000000)}}},
 		},
 		{
 			name: "invalid reservation id",
-			rows: &stubRows{records: [][]any{{"entry-1", "account-1", "spend", int64(-50), "", "spend-1", int64(0), "{}", int64(1700000000)}, {"entry-2", "account-1", "spend", int64(-50), " ", "spend-2", int64(0), "{}", int64(1700000001)}}},
+			rows: &stubRows{records: [][]any{{"entry-1", "account-1", "spend", int64(-50), "", "", "spend-1", int64(0), "{}", int64(1700000000)}, {"entry-2", "account-1", "spend", int64(-50), " ", "", "spend-2", int64(0), "{}", int64(1700000001)}}},
 		},
 		{
 			name: "invalid idempotency key",
-			rows: &stubRows{records: [][]any{{"entry-1", "account-1", "grant", int64(100), "", " ", int64(0), "{}", int64(1700000000)}}},
+			rows: &stubRows{records: [][]any{{"entry-1", "account-1", "grant", int64(100), "", "", " ", int64(0), "{}", int64(1700000000)}}},
 		},
 		{
 			name: "invalid metadata",
-			rows: &stubRows{records: [][]any{{"entry-1", "account-1", "grant", int64(100), "", "grant-1", int64(0), "{", int64(1700000000)}}},
+			rows: &stubRows{records: [][]any{{"entry-1", "account-1", "grant", int64(100), "", "", "grant-1", int64(0), "{", int64(1700000000)}}},
 		},
 		{
 			name: "rows err",
@@ -416,6 +698,520 @@ func TestScanEntriesRejectsInvalidRows(test *testing.T) {
 				test.Fatalf("expected error")
 			}
 		})
+	}
+}
+
+func TestStoreGetEntryParsesRefundReference(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	entryID, err := ledger.NewEntryID("entry-1")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+
+	stubPool := &stubPool{}
+	stubPool.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		if sql != sqlSelectEntry {
+			test.Fatalf("unexpected sql: %q", sql)
+		}
+		if len(arguments) != 2 {
+			test.Fatalf("expected 2 args, got %d", len(arguments))
+		}
+		if arguments[0] != accountID.String() || arguments[1] != entryID.String() {
+			test.Fatalf("unexpected args: %+v", arguments)
+		}
+		return stubRow{scanFn: func(dest ...any) error {
+			if len(dest) != 10 {
+				return errors.New("dest size mismatch")
+			}
+			*(dest[0].(*string)) = "entry-1"
+			*(dest[1].(*string)) = accountID.String()
+			*(dest[2].(*string)) = ledger.EntryRefund.String()
+			*(dest[3].(*int64)) = 30
+			*(dest[4].(*string)) = "order-1"
+			*(dest[5].(*string)) = "entry-0"
+			*(dest[6].(*string)) = "refund-1"
+			*(dest[7].(*int64)) = 0
+			*(dest[8].(*string)) = "{}"
+			*(dest[9].(*int64)) = 1700000000
+			return nil
+		}}
+	}
+	store := &Store{pool: stubPool}
+
+	entry, err := store.GetEntry(context.Background(), accountID, entryID)
+	if err != nil {
+		test.Fatalf("get entry: %v", err)
+	}
+	if entry.Type() != ledger.EntryRefund {
+		test.Fatalf("expected refund entry, got %s", entry.Type().String())
+	}
+	refundOfEntryID, ok := entry.RefundOfEntryID()
+	if !ok || refundOfEntryID.String() != "entry-0" {
+		test.Fatalf("expected refund_of_entry_id entry-0, got %v", refundOfEntryID.String())
+	}
+	reservationID, ok := entry.ReservationID()
+	if !ok || reservationID.String() != "order-1" {
+		test.Fatalf("expected reservation order-1, got %v", reservationID.String())
+	}
+}
+
+func TestStoreGetEntryReturnsUnknownEntryWhenNoRows(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	entryID, err := ledger.NewEntryID("entry-1")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+
+	stubPool := &stubPool{}
+	stubPool.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		return stubRow{scanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+	}
+	store := &Store{pool: stubPool}
+	_, err = store.GetEntry(context.Background(), accountID, entryID)
+	if !errors.Is(err, ledger.ErrUnknownEntry) {
+		test.Fatalf("expected ErrUnknownEntry, got %v", err)
+	}
+}
+
+func TestStoreGetEntryWrapsScanErrors(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	entryID, err := ledger.NewEntryID("entry-1")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+
+	scanError := errors.New("scan failed")
+	stubPool := &stubPool{}
+	stubPool.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		return stubRow{scanFn: func(dest ...any) error { return scanError }}
+	}
+	store := &Store{pool: stubPool}
+
+	_, err = store.GetEntry(context.Background(), accountID, entryID)
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectEntry || operationError.Code() != errorCodeGet {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+}
+
+func TestStoreGetEntryByIdempotencyKeyParsesRefundReference(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	idempotencyKey, err := ledger.NewIdempotencyKey("refund-1")
+	if err != nil {
+		test.Fatalf("idempotency key: %v", err)
+	}
+
+	stubPool := &stubPool{}
+	stubPool.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		if sql != sqlSelectEntryByIdempotencyKey {
+			test.Fatalf("unexpected sql: %q", sql)
+		}
+		return stubRow{scanFn: func(dest ...any) error {
+			*(dest[0].(*string)) = "entry-1"
+			*(dest[1].(*string)) = accountID.String()
+			*(dest[2].(*string)) = ledger.EntryRefund.String()
+			*(dest[3].(*int64)) = 30
+			*(dest[4].(*string)) = ""
+			*(dest[5].(*string)) = "entry-0"
+			*(dest[6].(*string)) = idempotencyKey.String()
+			*(dest[7].(*int64)) = 0
+			*(dest[8].(*string)) = "{}"
+			*(dest[9].(*int64)) = 1700000000
+			return nil
+		}}
+	}
+	store := &Store{pool: stubPool}
+
+	entry, err := store.GetEntryByIdempotencyKey(context.Background(), accountID, idempotencyKey)
+	if err != nil {
+		test.Fatalf("get by idempotency: %v", err)
+	}
+	if entry.Type() != ledger.EntryRefund {
+		test.Fatalf("expected refund entry, got %s", entry.Type().String())
+	}
+}
+
+func TestStoreGetEntryByIdempotencyKeyReturnsUnknownEntryWhenNoRows(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	idempotencyKey, err := ledger.NewIdempotencyKey("refund-1")
+	if err != nil {
+		test.Fatalf("idempotency key: %v", err)
+	}
+
+	stubPool := &stubPool{}
+	stubPool.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		return stubRow{scanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+	}
+	store := &Store{pool: stubPool}
+
+	_, err = store.GetEntryByIdempotencyKey(context.Background(), accountID, idempotencyKey)
+	if !errors.Is(err, ledger.ErrUnknownEntry) {
+		test.Fatalf("expected ErrUnknownEntry, got %v", err)
+	}
+}
+
+func TestStoreGetEntryByIdempotencyKeyWrapsScanErrors(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	idempotencyKey, err := ledger.NewIdempotencyKey("refund-1")
+	if err != nil {
+		test.Fatalf("idempotency key: %v", err)
+	}
+
+	scanError := errors.New("scan failed")
+	stubPool := &stubPool{}
+	stubPool.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		return stubRow{scanFn: func(dest ...any) error { return scanError }}
+	}
+	store := &Store{pool: stubPool}
+
+	_, err = store.GetEntryByIdempotencyKey(context.Background(), accountID, idempotencyKey)
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectEntry || operationError.Code() != errorCodeGet {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+}
+
+func TestStoreSumRefundsReturnsAmount(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	originalEntryID, err := ledger.NewEntryID("entry-0")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+
+	stubPool := &stubPool{}
+	stubPool.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		if sql != sqlSumRefunds {
+			test.Fatalf("unexpected sql: %q", sql)
+		}
+		return stubRow{scanFn: func(dest ...any) error {
+			destSum := dest[0].(*int64)
+			*destSum = 30
+			return nil
+		}}
+	}
+	store := &Store{pool: stubPool}
+
+	amount, err := store.SumRefunds(context.Background(), accountID, originalEntryID)
+	if err != nil {
+		test.Fatalf("sum refunds: %v", err)
+	}
+	if amount.Int64() != 30 {
+		test.Fatalf("expected sum 30, got %d", amount.Int64())
+	}
+}
+
+func TestStoreSumRefundsRejectsNegativeSum(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	originalEntryID, err := ledger.NewEntryID("entry-0")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+
+	stubPool := &stubPool{}
+	stubPool.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		return stubRow{scanFn: func(dest ...any) error {
+			destSum := dest[0].(*int64)
+			*destSum = -1
+			return nil
+		}}
+	}
+	store := &Store{pool: stubPool}
+
+	_, err = store.SumRefunds(context.Background(), accountID, originalEntryID)
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectBalance || operationError.Code() != errorCodeInvalid {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+}
+
+func TestStoreSumRefundsWrapsScanError(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	originalEntryID, err := ledger.NewEntryID("entry-0")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+
+	scanError := errors.New("sum scan failed")
+	stubPool := &stubPool{}
+	stubPool.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		return stubRow{scanFn: func(dest ...any) error { return scanError }}
+	}
+	store := &Store{pool: stubPool}
+
+	_, err = store.SumRefunds(context.Background(), accountID, originalEntryID)
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectBalance || operationError.Code() != errorCodeSumRefunds {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+}
+
+func TestTxStoreGetEntryParsesRefundReference(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	entryID, err := ledger.NewEntryID("entry-1")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+
+	tx := &stubTx{}
+	tx.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		if sql != sqlSelectEntry {
+			test.Fatalf("unexpected sql: %q", sql)
+		}
+		return stubRow{scanFn: func(dest ...any) error {
+			*(dest[0].(*string)) = "entry-1"
+			*(dest[1].(*string)) = accountID.String()
+			*(dest[2].(*string)) = ledger.EntryRefund.String()
+			*(dest[3].(*int64)) = 30
+			*(dest[4].(*string)) = ""
+			*(dest[5].(*string)) = "entry-0"
+			*(dest[6].(*string)) = "refund-1"
+			*(dest[7].(*int64)) = 0
+			*(dest[8].(*string)) = "{}"
+			*(dest[9].(*int64)) = 1700000000
+			return nil
+		}}
+	}
+	txStore := &TxStore{tx: tx}
+
+	entry, err := txStore.GetEntry(context.Background(), accountID, entryID)
+	if err != nil {
+		test.Fatalf("get entry: %v", err)
+	}
+	if entry.Type() != ledger.EntryRefund {
+		test.Fatalf("expected refund entry, got %s", entry.Type().String())
+	}
+}
+
+func TestTxStoreGetEntryReturnsUnknownEntryWhenNoRows(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	entryID, err := ledger.NewEntryID("entry-1")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+
+	tx := &stubTx{}
+	tx.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		return stubRow{scanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+	}
+	txStore := &TxStore{tx: tx}
+
+	_, err = txStore.GetEntry(context.Background(), accountID, entryID)
+	if !errors.Is(err, ledger.ErrUnknownEntry) {
+		test.Fatalf("expected ErrUnknownEntry, got %v", err)
+	}
+}
+
+func TestTxStoreGetEntryWrapsScanErrors(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	entryID, err := ledger.NewEntryID("entry-1")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+
+	scanError := errors.New("scan failed")
+	tx := &stubTx{}
+	tx.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		return stubRow{scanFn: func(dest ...any) error { return scanError }}
+	}
+	txStore := &TxStore{tx: tx}
+
+	_, err = txStore.GetEntry(context.Background(), accountID, entryID)
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectEntry || operationError.Code() != errorCodeGet {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+}
+
+func TestTxStoreGetEntryByIdempotencyKeyParsesRefundReference(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	idempotencyKey, err := ledger.NewIdempotencyKey("refund-1")
+	if err != nil {
+		test.Fatalf("idempotency key: %v", err)
+	}
+
+	tx := &stubTx{}
+	tx.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		if sql != sqlSelectEntryByIdempotencyKey {
+			test.Fatalf("unexpected sql: %q", sql)
+		}
+		return stubRow{scanFn: func(dest ...any) error {
+			*(dest[0].(*string)) = "entry-1"
+			*(dest[1].(*string)) = accountID.String()
+			*(dest[2].(*string)) = ledger.EntryRefund.String()
+			*(dest[3].(*int64)) = 30
+			*(dest[4].(*string)) = ""
+			*(dest[5].(*string)) = "entry-0"
+			*(dest[6].(*string)) = idempotencyKey.String()
+			*(dest[7].(*int64)) = 0
+			*(dest[8].(*string)) = "{}"
+			*(dest[9].(*int64)) = 1700000000
+			return nil
+		}}
+	}
+	txStore := &TxStore{tx: tx}
+
+	entry, err := txStore.GetEntryByIdempotencyKey(context.Background(), accountID, idempotencyKey)
+	if err != nil {
+		test.Fatalf("get by idempotency: %v", err)
+	}
+	if entry.Type() != ledger.EntryRefund {
+		test.Fatalf("expected refund entry, got %s", entry.Type().String())
+	}
+}
+
+func TestTxStoreGetEntryByIdempotencyKeyReturnsUnknownEntryWhenNoRows(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	idempotencyKey, err := ledger.NewIdempotencyKey("refund-1")
+	if err != nil {
+		test.Fatalf("idempotency key: %v", err)
+	}
+
+	tx := &stubTx{}
+	tx.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		return stubRow{scanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+	}
+	txStore := &TxStore{tx: tx}
+
+	_, err = txStore.GetEntryByIdempotencyKey(context.Background(), accountID, idempotencyKey)
+	if !errors.Is(err, ledger.ErrUnknownEntry) {
+		test.Fatalf("expected ErrUnknownEntry, got %v", err)
+	}
+}
+
+func TestTxStoreGetEntryByIdempotencyKeyWrapsScanErrors(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	idempotencyKey, err := ledger.NewIdempotencyKey("refund-1")
+	if err != nil {
+		test.Fatalf("idempotency key: %v", err)
+	}
+
+	scanError := errors.New("scan failed")
+	tx := &stubTx{}
+	tx.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		return stubRow{scanFn: func(dest ...any) error { return scanError }}
+	}
+	txStore := &TxStore{tx: tx}
+
+	_, err = txStore.GetEntryByIdempotencyKey(context.Background(), accountID, idempotencyKey)
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectEntry || operationError.Code() != errorCodeGet {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+}
+
+func TestTxStoreSumRefundsReturnsAmount(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	originalEntryID, err := ledger.NewEntryID("entry-0")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+
+	tx := &stubTx{}
+	tx.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		if sql != sqlSumRefunds {
+			test.Fatalf("unexpected sql: %q", sql)
+		}
+		return stubRow{scanFn: func(dest ...any) error {
+			destSum := dest[0].(*int64)
+			*destSum = 30
+			return nil
+		}}
+	}
+	txStore := &TxStore{tx: tx}
+
+	amount, err := txStore.SumRefunds(context.Background(), accountID, originalEntryID)
+	if err != nil {
+		test.Fatalf("sum refunds: %v", err)
+	}
+	if amount.Int64() != 30 {
+		test.Fatalf("expected sum 30, got %d", amount.Int64())
+	}
+}
+
+func TestTxStoreSumRefundsRejectsNegativeSum(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	originalEntryID, err := ledger.NewEntryID("entry-0")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+
+	tx := &stubTx{}
+	tx.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		return stubRow{scanFn: func(dest ...any) error {
+			destSum := dest[0].(*int64)
+			*destSum = -1
+			return nil
+		}}
+	}
+	txStore := &TxStore{tx: tx}
+
+	_, err = txStore.SumRefunds(context.Background(), accountID, originalEntryID)
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectBalance || operationError.Code() != errorCodeInvalid {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+}
+
+func TestTxStoreSumRefundsWrapsScanError(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	originalEntryID, err := ledger.NewEntryID("entry-0")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+
+	scanError := errors.New("sum scan failed")
+	tx := &stubTx{}
+	tx.queryRowFn = func(ctx context.Context, sql string, arguments ...any) queryRow {
+		return stubRow{scanFn: func(dest ...any) error { return scanError }}
+	}
+	txStore := &TxStore{tx: tx}
+
+	_, err = txStore.SumRefunds(context.Background(), accountID, originalEntryID)
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectBalance || operationError.Code() != errorCodeSumRefunds {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
 	}
 }
 
@@ -480,11 +1276,8 @@ func TestStoreTxStoreMethods(test *testing.T) {
 	}
 	tx.queryFn = func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
 		callCounts[sql]++
-		if sql != sqlListEntriesBefore {
-			return nil, errors.New("unexpected query sql")
-		}
 		return &stubRows{records: [][]any{
-			{"entry-1", "account-1", "grant", int64(100), "", "grant-1", int64(0), "{}", int64(1700000000)},
+			{"entry-1", "account-1", "grant", int64(100), "", "", "grant-1", int64(0), "{}", int64(1700000000)},
 		}}, nil
 	}
 
@@ -518,7 +1311,7 @@ func TestStoreTxStoreMethods(test *testing.T) {
 		if gotAccountID.String() != "account-1" {
 			return errors.New("unexpected account id")
 		}
-		if err := txStore.InsertEntry(ctx, mustGrantEntryInput(test, gotAccountID, "grant-1")); err != nil {
+		if _, err := txStore.InsertEntry(ctx, mustGrantEntryInput(test, gotAccountID, "grant-1")); err != nil {
 			return err
 		}
 		if _, err := txStore.SumTotal(ctx, gotAccountID, 0); err != nil {
@@ -539,7 +1332,7 @@ func TestStoreTxStoreMethods(test *testing.T) {
 		if err := txStore.UpdateReservationStatus(ctx, gotAccountID, reservationID, ledger.ReservationStatusActive, ledger.ReservationStatusCaptured); !errors.Is(err, ledger.ErrReservationClosed) {
 			return errors.New("expected reservation closed")
 		}
-		entries, err := txStore.ListEntries(ctx, gotAccountID, 0, 10)
+		entries, err := txStore.ListEntries(ctx, gotAccountID, 0, 10, ledger.ListEntriesFilter{})
 		if err != nil {
 			return err
 		}
@@ -565,6 +1358,7 @@ func TestStoreTxStoreMethods(test *testing.T) {
 func TestStoreAutocommitMethods(test *testing.T) {
 	test.Parallel()
 	callCounts := map[string]int{}
+	listEntriesCalled := false
 	pool := &stubPool{}
 	pool.execFn = func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
 		callCounts[sql]++
@@ -618,11 +1412,9 @@ func TestStoreAutocommitMethods(test *testing.T) {
 	}
 	pool.queryRowsFn = func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
 		callCounts[sql]++
-		if sql != sqlListEntriesBefore {
-			return nil, errors.New("unexpected query sql")
-		}
+		listEntriesCalled = true
 		return &stubRows{records: [][]any{
-			{"entry-1", "account-1", "grant", int64(100), "", "grant-1", int64(0), "{}", int64(1700000000)},
+			{"entry-1", "account-1", "grant", int64(100), "", "", "grant-1", int64(0), "{}", int64(1700000000)},
 		}}, nil
 	}
 
@@ -635,7 +1427,7 @@ func TestStoreAutocommitMethods(test *testing.T) {
 	if err != nil {
 		test.Fatalf("account: %v", err)
 	}
-	if err := store.InsertEntry(ctx, mustGrantEntryInput(test, accountID, "grant-1")); err != nil {
+	if _, err := store.InsertEntry(ctx, mustGrantEntryInput(test, accountID, "grant-1")); err != nil {
 		test.Fatalf("insert entry: %v", err)
 	}
 	if _, err := store.SumTotal(ctx, accountID, 0); err != nil {
@@ -665,14 +1457,14 @@ func TestStoreAutocommitMethods(test *testing.T) {
 	if err := store.UpdateReservationStatus(ctx, accountID, reservationID, ledger.ReservationStatusActive, ledger.ReservationStatusCaptured); err != nil {
 		test.Fatalf("update reservation: %v", err)
 	}
-	entries, err := store.ListEntries(ctx, accountID, 0, 10)
+	entries, err := store.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{})
 	if err != nil {
 		test.Fatalf("list entries: %v", err)
 	}
 	if len(entries) != 1 {
 		test.Fatalf("expected one entry, got %d", len(entries))
 	}
-	if callCounts[sqlListEntriesBefore] == 0 {
+	if !listEntriesCalled {
 		test.Fatalf("expected list entries query")
 	}
 }
@@ -715,7 +1507,7 @@ func TestTxStoreMethodsWrapErrors(test *testing.T) {
 	}
 	accountID := mustAccountID(test)
 	entryInput := mustGrantEntryInput(test, accountID, "grant-1")
-	err = txStore.InsertEntry(ctx, entryInput)
+	_, err = txStore.InsertEntry(ctx, entryInput)
 	if !errors.Is(err, ledger.ErrDuplicateIdempotencyKey) {
 		test.Fatalf("expected duplicate idempotency, got %v", err)
 	}
@@ -723,7 +1515,7 @@ func TestTxStoreMethodsWrapErrors(test *testing.T) {
 	tx.execFn = func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
 		return pgconn.CommandTag{}, errors.New("insert failed")
 	}
-	err = txStore.InsertEntry(ctx, entryInput)
+	_, err = txStore.InsertEntry(ctx, entryInput)
 	if !errors.As(err, &operationError) {
 		test.Fatalf("expected operation error, got %v", err)
 	}
@@ -824,7 +1616,7 @@ func TestTxStoreMethodsWrapErrors(test *testing.T) {
 	tx.queryFn = func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
 		return nil, errors.New("query failed")
 	}
-	_, err = txStore.ListEntries(ctx, accountID, 0, 10)
+	_, err = txStore.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{})
 	if !errors.As(err, &operationError) {
 		test.Fatalf("expected operation error, got %v", err)
 	}
@@ -835,7 +1627,7 @@ func TestTxStoreMethodsWrapErrors(test *testing.T) {
 	tx.queryFn = func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
 		return &stubRows{records: [][]any{{"", "account-1", "grant", int64(100), "", "grant-1", int64(0), "{}", int64(1700000000)}}}, nil
 	}
-	_, err = txStore.ListEntries(ctx, accountID, 0, 10)
+	_, err = txStore.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{})
 	if !errors.As(err, &operationError) {
 		test.Fatalf("expected operation error, got %v", err)
 	}
@@ -996,7 +1788,7 @@ func TestStoreListEntriesWrapsErrors(test *testing.T) {
 		return nil, errors.New("query failed")
 	}
 	store := &Store{pool: stubPool}
-	_, err := store.ListEntries(context.Background(), mustAccountID(test), 0, 10)
+	_, err := store.ListEntries(context.Background(), mustAccountID(test), 0, 10, ledger.ListEntriesFilter{})
 	var operationError ledger.OperationError
 	if !errors.As(err, &operationError) {
 		test.Fatalf("expected operation error, got %v", err)
@@ -1008,7 +1800,7 @@ func TestStoreListEntriesWrapsErrors(test *testing.T) {
 	stubPool.queryRowsFn = func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
 		return &stubRows{records: [][]any{{"", "account-1", "grant", int64(100), "", "grant-1", int64(0), "{}", int64(1700000000)}}}, nil
 	}
-	_, err = store.ListEntries(context.Background(), mustAccountID(test), 0, 10)
+	_, err = store.ListEntries(context.Background(), mustAccountID(test), 0, 10, ledger.ListEntriesFilter{})
 	if !errors.As(err, &operationError) {
 		test.Fatalf("expected operation error, got %v", err)
 	}
@@ -1088,7 +1880,7 @@ func TestStoreCreateReservationWrapsErrorsAndConflicts(test *testing.T) {
 func TestPGXAdaptersDelegate(test *testing.T) {
 	test.Parallel()
 	queryRows := &stubRows{records: [][]any{
-		{"entry-1", "account-1", "grant", int64(100), "", "grant-1", int64(0), "{}", int64(1700000000)},
+		{"entry-1", "account-1", "grant", int64(100), "", "", "grant-1", int64(0), "{}", int64(1700000000)},
 	}}
 	queryRow := stubRow{scanFn: func(dest ...any) error {
 		destAccountID := dest[0].(*string)
@@ -1205,6 +1997,7 @@ func TestTxStoreInsertEntryPassesReservationID(test *testing.T) {
 		ledger.EntryHold,
 		amount.ToEntryAmountCents().Negated(),
 		&reservationID,
+		nil,
 		idempotencyKey,
 		0,
 		metadata,
@@ -1213,7 +2006,7 @@ func TestTxStoreInsertEntryPassesReservationID(test *testing.T) {
 	if err != nil {
 		test.Fatalf("entry input: %v", err)
 	}
-	if err := txStore.InsertEntry(context.Background(), entryInput); err != nil {
+	if _, err := txStore.InsertEntry(context.Background(), entryInput); err != nil {
 		test.Fatalf("insert entry: %v", err)
 	}
 	if capturedReservationID != "order-1" {
@@ -1613,6 +2406,7 @@ func mustGrantEntryInput(test *testing.T, accountID ledger.AccountID, idempotenc
 		accountID,
 		ledger.EntryGrant,
 		amount.ToEntryAmountCents(),
+		nil,
 		nil,
 		idempotencyKey,
 		0,

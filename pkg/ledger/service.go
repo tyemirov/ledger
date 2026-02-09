@@ -53,6 +53,13 @@ func (service *Service) Balance(ctx context.Context, tenantID TenantID, userID U
 
 // Grant appends a positive grant (optionally expiring).
 func (service *Service) Grant(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON) error {
+	_, err := service.GrantEntry(ctx, tenantID, userID, ledgerID, amount, idempotencyKey, expiresAtUnixUTC, metadata)
+	return err
+}
+
+// GrantEntry appends a positive grant (optionally expiring) and returns the persisted entry.
+func (service *Service) GrantEntry(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON) (Entry, error) {
+	var persistedEntry Entry
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
 		accountID, err := transactionStore.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
 		if err != nil {
@@ -63,6 +70,7 @@ func (service *Service) Grant(ctx context.Context, tenantID TenantID, userID Use
 			EntryGrant,
 			amount.ToEntryAmountCents(),
 			nil,
+			nil,
 			idempotencyKey,
 			expiresAtUnixUTC,
 			metadata,
@@ -71,7 +79,8 @@ func (service *Service) Grant(ctx context.Context, tenantID TenantID, userID Use
 		if err != nil {
 			return err
 		}
-		return transactionStore.InsertEntry(ctx, entryInput)
+		persistedEntry, err = transactionStore.InsertEntry(ctx, entryInput)
+		return err
 	})
 	service.logOperation(ctx, OperationLog{
 		Operation:      operationGrant,
@@ -83,11 +92,21 @@ func (service *Service) Grant(ctx context.Context, tenantID TenantID, userID Use
 		Metadata:       metadata,
 		Error:          operationError,
 	})
-	return operationError
+	if operationError != nil {
+		return Entry{}, operationError
+	}
+	return persistedEntry, nil
 }
 
 // Reserve appends a negative hold if sufficient available balance.
 func (service *Service) Reserve(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
+	_, err := service.ReserveEntry(ctx, tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata)
+	return err
+}
+
+// ReserveEntry appends a negative hold if sufficient available balance and returns the persisted hold entry.
+func (service *Service) ReserveEntry(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) (Entry, error) {
+	var persistedEntry Entry
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
 		accountID, err := transactionStore.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
 		if err != nil {
@@ -119,6 +138,7 @@ func (service *Service) Reserve(ctx context.Context, tenantID TenantID, userID U
 			EntryHold,
 			amount.ToEntryAmountCents().Negated(),
 			&reservationID,
+			nil,
 			idempotencyKey,
 			0,
 			metadata,
@@ -127,7 +147,8 @@ func (service *Service) Reserve(ctx context.Context, tenantID TenantID, userID U
 		if err != nil {
 			return err
 		}
-		return transactionStore.InsertEntry(ctx, entryInput)
+		persistedEntry, err = transactionStore.InsertEntry(ctx, entryInput)
+		return err
 	})
 	reservationRef := reservationID
 	service.logOperation(ctx, OperationLog{
@@ -141,11 +162,21 @@ func (service *Service) Reserve(ctx context.Context, tenantID TenantID, userID U
 		Metadata:       metadata,
 		Error:          operationError,
 	})
-	return operationError
+	if operationError != nil {
+		return Entry{}, operationError
+	}
+	return persistedEntry, nil
 }
 
 // Capture finalizes a reservation by reversing the hold and spending the funds with distinct idempotency keys.
 func (service *Service) Capture(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, reservationID ReservationID, idempotencyKey IdempotencyKey, amount PositiveAmountCents, metadata MetadataJSON) error {
+	_, err := service.CaptureDebitEntry(ctx, tenantID, userID, ledgerID, reservationID, idempotencyKey, amount, metadata)
+	return err
+}
+
+// CaptureDebitEntry finalizes a reservation and returns the persisted debit entry.
+func (service *Service) CaptureDebitEntry(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, reservationID ReservationID, idempotencyKey IdempotencyKey, amount PositiveAmountCents, metadata MetadataJSON) (Entry, error) {
+	var persistedEntry Entry
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
 		accountID, err := transactionStore.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
 		if err != nil {
@@ -174,6 +205,7 @@ func (service *Service) Capture(ctx context.Context, tenantID TenantID, userID U
 			EntryReverseHold,
 			reservation.AmountCents().ToEntryAmountCents(),
 			&reservationID,
+			nil,
 			reverseKey,
 			0,
 			metadata,
@@ -182,7 +214,7 @@ func (service *Service) Capture(ctx context.Context, tenantID TenantID, userID U
 		if err != nil {
 			return err
 		}
-		if err := transactionStore.InsertEntry(ctx, reverseEntry); err != nil {
+		if _, err := transactionStore.InsertEntry(ctx, reverseEntry); err != nil {
 			return err
 		}
 		spendKey, err := deriveIdempotencyKey(idempotencyKey, idempotencySuffixSpend)
@@ -194,6 +226,7 @@ func (service *Service) Capture(ctx context.Context, tenantID TenantID, userID U
 			EntrySpend,
 			amount.ToEntryAmountCents().Negated(),
 			&reservationID,
+			nil,
 			spendKey,
 			0,
 			metadata,
@@ -202,7 +235,8 @@ func (service *Service) Capture(ctx context.Context, tenantID TenantID, userID U
 		if err != nil {
 			return err
 		}
-		return transactionStore.InsertEntry(ctx, spendEntry)
+		persistedEntry, err = transactionStore.InsertEntry(ctx, spendEntry)
+		return err
 	})
 	reservationRef := reservationID
 	service.logOperation(ctx, OperationLog{
@@ -216,12 +250,22 @@ func (service *Service) Capture(ctx context.Context, tenantID TenantID, userID U
 		Metadata:       metadata,
 		Error:          operationError,
 	})
-	return operationError
+	if operationError != nil {
+		return Entry{}, operationError
+	}
+	return persistedEntry, nil
 }
 
 // Release cancels a reservation by writing a reverse-hold entry.
 func (service *Service) Release(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
+	_, err := service.ReleaseEntry(ctx, tenantID, userID, ledgerID, reservationID, idempotencyKey, metadata)
+	return err
+}
+
+// ReleaseEntry cancels a reservation by writing a reverse-hold entry and returns the persisted entry.
+func (service *Service) ReleaseEntry(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) (Entry, error) {
 	var reservationAmount AmountCents
+	var persistedEntry Entry
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
 		accountID, err := transactionStore.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
 		if err != nil {
@@ -243,6 +287,7 @@ func (service *Service) Release(ctx context.Context, tenantID TenantID, userID U
 			EntryReverseHold,
 			reservation.AmountCents().ToEntryAmountCents(),
 			&reservationID,
+			nil,
 			idempotencyKey,
 			0,
 			metadata,
@@ -251,7 +296,8 @@ func (service *Service) Release(ctx context.Context, tenantID TenantID, userID U
 		if err != nil {
 			return err
 		}
-		return transactionStore.InsertEntry(ctx, entryInput)
+		persistedEntry, err = transactionStore.InsertEntry(ctx, entryInput)
+		return err
 	})
 	reservationRef := reservationID
 	service.logOperation(ctx, OperationLog{
@@ -265,7 +311,10 @@ func (service *Service) Release(ctx context.Context, tenantID TenantID, userID U
 		Metadata:       metadata,
 		Error:          operationError,
 	})
-	return operationError
+	if operationError != nil {
+		return Entry{}, operationError
+	}
+	return persistedEntry, nil
 }
 
 func (service *Service) logOperation(ctx context.Context, entry OperationLog) {

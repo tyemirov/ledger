@@ -22,9 +22,11 @@ const (
 )
 
 type Empty struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	EntryId        string                 `protobuf:"bytes,1,opt,name=entry_id,json=entryId,proto3" json:"entry_id,omitempty"`
+	CreatedUnixUtc int64                  `protobuf:"varint,2,opt,name=created_unix_utc,json=createdUnixUtc,proto3" json:"created_unix_utc,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Empty) Reset() {
@@ -55,6 +57,20 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
 	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *Empty) GetEntryId() string {
+	if x != nil {
+		return x.EntryId
+	}
+	return ""
+}
+
+func (x *Empty) GetCreatedUnixUtc() int64 {
+	if x != nil {
+		return x.CreatedUnixUtc
+	}
+	return 0
 }
 
 type Amount struct {
@@ -657,6 +673,188 @@ func (x *SpendRequest) GetTenantId() string {
 	return ""
 }
 
+type RefundRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	UserId   string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	LedgerId string                 `protobuf:"bytes,2,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
+	TenantId string                 `protobuf:"bytes,3,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	// Types that are valid to be assigned to Original:
+	//
+	//	*RefundRequest_OriginalEntryId
+	//	*RefundRequest_OriginalIdempotencyKey
+	Original       isRefundRequest_Original `protobuf_oneof:"original"`
+	AmountCents    int64                    `protobuf:"varint,6,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	IdempotencyKey string                   `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	MetadataJson   string                   `protobuf:"bytes,8,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RefundRequest) Reset() {
+	*x = RefundRequest{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefundRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefundRequest) ProtoMessage() {}
+
+func (x *RefundRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefundRequest.ProtoReflect.Descriptor instead.
+func (*RefundRequest) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RefundRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *RefundRequest) GetLedgerId() string {
+	if x != nil {
+		return x.LedgerId
+	}
+	return ""
+}
+
+func (x *RefundRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *RefundRequest) GetOriginal() isRefundRequest_Original {
+	if x != nil {
+		return x.Original
+	}
+	return nil
+}
+
+func (x *RefundRequest) GetOriginalEntryId() string {
+	if x != nil {
+		if x, ok := x.Original.(*RefundRequest_OriginalEntryId); ok {
+			return x.OriginalEntryId
+		}
+	}
+	return ""
+}
+
+func (x *RefundRequest) GetOriginalIdempotencyKey() string {
+	if x != nil {
+		if x, ok := x.Original.(*RefundRequest_OriginalIdempotencyKey); ok {
+			return x.OriginalIdempotencyKey
+		}
+	}
+	return ""
+}
+
+func (x *RefundRequest) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+func (x *RefundRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *RefundRequest) GetMetadataJson() string {
+	if x != nil {
+		return x.MetadataJson
+	}
+	return ""
+}
+
+type isRefundRequest_Original interface {
+	isRefundRequest_Original()
+}
+
+type RefundRequest_OriginalEntryId struct {
+	OriginalEntryId string `protobuf:"bytes,4,opt,name=original_entry_id,json=originalEntryId,proto3,oneof"`
+}
+
+type RefundRequest_OriginalIdempotencyKey struct {
+	OriginalIdempotencyKey string `protobuf:"bytes,5,opt,name=original_idempotency_key,json=originalIdempotencyKey,proto3,oneof"`
+}
+
+func (*RefundRequest_OriginalEntryId) isRefundRequest_Original() {}
+
+func (*RefundRequest_OriginalIdempotencyKey) isRefundRequest_Original() {}
+
+type RefundResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	EntryId        string                 `protobuf:"bytes,1,opt,name=entry_id,json=entryId,proto3" json:"entry_id,omitempty"`
+	CreatedUnixUtc int64                  `protobuf:"varint,2,opt,name=created_unix_utc,json=createdUnixUtc,proto3" json:"created_unix_utc,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RefundResponse) Reset() {
+	*x = RefundResponse{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefundResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefundResponse) ProtoMessage() {}
+
+func (x *RefundResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefundResponse.ProtoReflect.Descriptor instead.
+func (*RefundResponse) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RefundResponse) GetEntryId() string {
+	if x != nil {
+		return x.EntryId
+	}
+	return ""
+}
+
+func (x *RefundResponse) GetCreatedUnixUtc() int64 {
+	if x != nil {
+		return x.CreatedUnixUtc
+	}
+	return 0
+}
+
 type Entry struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	EntryId          string                 `protobuf:"bytes,1,opt,name=entry_id,json=entryId,proto3" json:"entry_id,omitempty"`
@@ -668,13 +866,14 @@ type Entry struct {
 	ExpiresAtUnixUtc int64                  `protobuf:"varint,7,opt,name=expires_at_unix_utc,json=expiresAtUnixUtc,proto3" json:"expires_at_unix_utc,omitempty"`
 	MetadataJson     string                 `protobuf:"bytes,8,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
 	CreatedUnixUtc   int64                  `protobuf:"varint,9,opt,name=created_unix_utc,json=createdUnixUtc,proto3" json:"created_unix_utc,omitempty"`
+	RefundOfEntryId  string                 `protobuf:"bytes,10,opt,name=refund_of_entry_id,json=refundOfEntryId,proto3" json:"refund_of_entry_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Entry) Reset() {
 	*x = Entry{}
-	mi := &file_api_credit_v1_credit_proto_msgTypes[9]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -686,7 +885,7 @@ func (x *Entry) String() string {
 func (*Entry) ProtoMessage() {}
 
 func (x *Entry) ProtoReflect() protoreflect.Message {
-	mi := &file_api_credit_v1_credit_proto_msgTypes[9]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -699,7 +898,7 @@ func (x *Entry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Entry.ProtoReflect.Descriptor instead.
 func (*Entry) Descriptor() ([]byte, []int) {
-	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{9}
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Entry) GetEntryId() string {
@@ -765,20 +964,30 @@ func (x *Entry) GetCreatedUnixUtc() int64 {
 	return 0
 }
 
+func (x *Entry) GetRefundOfEntryId() string {
+	if x != nil {
+		return x.RefundOfEntryId
+	}
+	return ""
+}
+
 type ListEntriesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	BeforeUnixUtc int64                  `protobuf:"varint,2,opt,name=before_unix_utc,json=beforeUnixUtc,proto3" json:"before_unix_utc,omitempty"`
-	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	LedgerId      string                 `protobuf:"bytes,4,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
-	TenantId      string                 `protobuf:"bytes,5,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	UserId               string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	BeforeUnixUtc        int64                  `protobuf:"varint,2,opt,name=before_unix_utc,json=beforeUnixUtc,proto3" json:"before_unix_utc,omitempty"`
+	Limit                int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	LedgerId             string                 `protobuf:"bytes,4,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
+	TenantId             string                 `protobuf:"bytes,5,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Types                []string               `protobuf:"bytes,6,rep,name=types,proto3" json:"types,omitempty"`
+	ReservationId        string                 `protobuf:"bytes,7,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	IdempotencyKeyPrefix string                 `protobuf:"bytes,8,opt,name=idempotency_key_prefix,json=idempotencyKeyPrefix,proto3" json:"idempotency_key_prefix,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ListEntriesRequest) Reset() {
 	*x = ListEntriesRequest{}
-	mi := &file_api_credit_v1_credit_proto_msgTypes[10]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -790,7 +999,7 @@ func (x *ListEntriesRequest) String() string {
 func (*ListEntriesRequest) ProtoMessage() {}
 
 func (x *ListEntriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_credit_v1_credit_proto_msgTypes[10]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -803,7 +1012,7 @@ func (x *ListEntriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEntriesRequest.ProtoReflect.Descriptor instead.
 func (*ListEntriesRequest) Descriptor() ([]byte, []int) {
-	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{10}
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListEntriesRequest) GetUserId() string {
@@ -841,6 +1050,27 @@ func (x *ListEntriesRequest) GetTenantId() string {
 	return ""
 }
 
+func (x *ListEntriesRequest) GetTypes() []string {
+	if x != nil {
+		return x.Types
+	}
+	return nil
+}
+
+func (x *ListEntriesRequest) GetReservationId() string {
+	if x != nil {
+		return x.ReservationId
+	}
+	return ""
+}
+
+func (x *ListEntriesRequest) GetIdempotencyKeyPrefix() string {
+	if x != nil {
+		return x.IdempotencyKeyPrefix
+	}
+	return ""
+}
+
 type ListEntriesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Entries       []*Entry               `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
@@ -850,7 +1080,7 @@ type ListEntriesResponse struct {
 
 func (x *ListEntriesResponse) Reset() {
 	*x = ListEntriesResponse{}
-	mi := &file_api_credit_v1_credit_proto_msgTypes[11]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -862,7 +1092,7 @@ func (x *ListEntriesResponse) String() string {
 func (*ListEntriesResponse) ProtoMessage() {}
 
 func (x *ListEntriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_credit_v1_credit_proto_msgTypes[11]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -875,7 +1105,7 @@ func (x *ListEntriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEntriesResponse.ProtoReflect.Descriptor instead.
 func (*ListEntriesResponse) Descriptor() ([]byte, []int) {
-	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{11}
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListEntriesResponse) GetEntries() []*Entry {
@@ -885,12 +1115,854 @@ func (x *ListEntriesResponse) GetEntries() []*Entry {
 	return nil
 }
 
+type AccountContext struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	LedgerId      string                 `protobuf:"bytes,2,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
+	TenantId      string                 `protobuf:"bytes,3,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AccountContext) Reset() {
+	*x = AccountContext{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccountContext) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccountContext) ProtoMessage() {}
+
+func (x *AccountContext) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccountContext.ProtoReflect.Descriptor instead.
+func (*AccountContext) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AccountContext) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *AccountContext) GetLedgerId() string {
+	if x != nil {
+		return x.LedgerId
+	}
+	return ""
+}
+
+func (x *AccountContext) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+type BatchGrantOp struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	AmountCents      int64                  `protobuf:"varint,1,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	ExpiresAtUnixUtc int64                  `protobuf:"varint,3,opt,name=expires_at_unix_utc,json=expiresAtUnixUtc,proto3" json:"expires_at_unix_utc,omitempty"`
+	MetadataJson     string                 `protobuf:"bytes,4,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *BatchGrantOp) Reset() {
+	*x = BatchGrantOp{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchGrantOp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchGrantOp) ProtoMessage() {}
+
+func (x *BatchGrantOp) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchGrantOp.ProtoReflect.Descriptor instead.
+func (*BatchGrantOp) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *BatchGrantOp) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+func (x *BatchGrantOp) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *BatchGrantOp) GetExpiresAtUnixUtc() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixUtc
+	}
+	return 0
+}
+
+func (x *BatchGrantOp) GetMetadataJson() string {
+	if x != nil {
+		return x.MetadataJson
+	}
+	return ""
+}
+
+type BatchReserveOp struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	AmountCents    int64                  `protobuf:"varint,1,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	ReservationId  string                 `protobuf:"bytes,2,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	MetadataJson   string                 `protobuf:"bytes,4,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *BatchReserveOp) Reset() {
+	*x = BatchReserveOp{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchReserveOp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchReserveOp) ProtoMessage() {}
+
+func (x *BatchReserveOp) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchReserveOp.ProtoReflect.Descriptor instead.
+func (*BatchReserveOp) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *BatchReserveOp) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+func (x *BatchReserveOp) GetReservationId() string {
+	if x != nil {
+		return x.ReservationId
+	}
+	return ""
+}
+
+func (x *BatchReserveOp) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *BatchReserveOp) GetMetadataJson() string {
+	if x != nil {
+		return x.MetadataJson
+	}
+	return ""
+}
+
+type BatchCaptureOp struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ReservationId  string                 `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	AmountCents    int64                  `protobuf:"varint,3,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	MetadataJson   string                 `protobuf:"bytes,4,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *BatchCaptureOp) Reset() {
+	*x = BatchCaptureOp{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchCaptureOp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchCaptureOp) ProtoMessage() {}
+
+func (x *BatchCaptureOp) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchCaptureOp.ProtoReflect.Descriptor instead.
+func (*BatchCaptureOp) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *BatchCaptureOp) GetReservationId() string {
+	if x != nil {
+		return x.ReservationId
+	}
+	return ""
+}
+
+func (x *BatchCaptureOp) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *BatchCaptureOp) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+func (x *BatchCaptureOp) GetMetadataJson() string {
+	if x != nil {
+		return x.MetadataJson
+	}
+	return ""
+}
+
+type BatchReleaseOp struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ReservationId  string                 `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	MetadataJson   string                 `protobuf:"bytes,3,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *BatchReleaseOp) Reset() {
+	*x = BatchReleaseOp{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchReleaseOp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchReleaseOp) ProtoMessage() {}
+
+func (x *BatchReleaseOp) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchReleaseOp.ProtoReflect.Descriptor instead.
+func (*BatchReleaseOp) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *BatchReleaseOp) GetReservationId() string {
+	if x != nil {
+		return x.ReservationId
+	}
+	return ""
+}
+
+func (x *BatchReleaseOp) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *BatchReleaseOp) GetMetadataJson() string {
+	if x != nil {
+		return x.MetadataJson
+	}
+	return ""
+}
+
+type BatchSpendOp struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	AmountCents    int64                  `protobuf:"varint,1,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	MetadataJson   string                 `protobuf:"bytes,3,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *BatchSpendOp) Reset() {
+	*x = BatchSpendOp{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchSpendOp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchSpendOp) ProtoMessage() {}
+
+func (x *BatchSpendOp) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchSpendOp.ProtoReflect.Descriptor instead.
+func (*BatchSpendOp) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *BatchSpendOp) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+func (x *BatchSpendOp) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *BatchSpendOp) GetMetadataJson() string {
+	if x != nil {
+		return x.MetadataJson
+	}
+	return ""
+}
+
+type BatchRefundOp struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Original:
+	//
+	//	*BatchRefundOp_OriginalEntryId
+	//	*BatchRefundOp_OriginalIdempotencyKey
+	Original       isBatchRefundOp_Original `protobuf_oneof:"original"`
+	AmountCents    int64                    `protobuf:"varint,3,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	IdempotencyKey string                   `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	MetadataJson   string                   `protobuf:"bytes,5,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *BatchRefundOp) Reset() {
+	*x = BatchRefundOp{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchRefundOp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchRefundOp) ProtoMessage() {}
+
+func (x *BatchRefundOp) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchRefundOp.ProtoReflect.Descriptor instead.
+func (*BatchRefundOp) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *BatchRefundOp) GetOriginal() isBatchRefundOp_Original {
+	if x != nil {
+		return x.Original
+	}
+	return nil
+}
+
+func (x *BatchRefundOp) GetOriginalEntryId() string {
+	if x != nil {
+		if x, ok := x.Original.(*BatchRefundOp_OriginalEntryId); ok {
+			return x.OriginalEntryId
+		}
+	}
+	return ""
+}
+
+func (x *BatchRefundOp) GetOriginalIdempotencyKey() string {
+	if x != nil {
+		if x, ok := x.Original.(*BatchRefundOp_OriginalIdempotencyKey); ok {
+			return x.OriginalIdempotencyKey
+		}
+	}
+	return ""
+}
+
+func (x *BatchRefundOp) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+func (x *BatchRefundOp) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *BatchRefundOp) GetMetadataJson() string {
+	if x != nil {
+		return x.MetadataJson
+	}
+	return ""
+}
+
+type isBatchRefundOp_Original interface {
+	isBatchRefundOp_Original()
+}
+
+type BatchRefundOp_OriginalEntryId struct {
+	OriginalEntryId string `protobuf:"bytes,1,opt,name=original_entry_id,json=originalEntryId,proto3,oneof"`
+}
+
+type BatchRefundOp_OriginalIdempotencyKey struct {
+	OriginalIdempotencyKey string `protobuf:"bytes,2,opt,name=original_idempotency_key,json=originalIdempotencyKey,proto3,oneof"`
+}
+
+func (*BatchRefundOp_OriginalEntryId) isBatchRefundOp_Original() {}
+
+func (*BatchRefundOp_OriginalIdempotencyKey) isBatchRefundOp_Original() {}
+
+type BatchOperation struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	OperationId string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	// Types that are valid to be assigned to Operation:
+	//
+	//	*BatchOperation_Grant
+	//	*BatchOperation_Spend
+	//	*BatchOperation_Reserve
+	//	*BatchOperation_Capture
+	//	*BatchOperation_Release
+	//	*BatchOperation_Refund
+	Operation     isBatchOperation_Operation `protobuf_oneof:"operation"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchOperation) Reset() {
+	*x = BatchOperation{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchOperation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchOperation) ProtoMessage() {}
+
+func (x *BatchOperation) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchOperation.ProtoReflect.Descriptor instead.
+func (*BatchOperation) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *BatchOperation) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *BatchOperation) GetOperation() isBatchOperation_Operation {
+	if x != nil {
+		return x.Operation
+	}
+	return nil
+}
+
+func (x *BatchOperation) GetGrant() *BatchGrantOp {
+	if x != nil {
+		if x, ok := x.Operation.(*BatchOperation_Grant); ok {
+			return x.Grant
+		}
+	}
+	return nil
+}
+
+func (x *BatchOperation) GetSpend() *BatchSpendOp {
+	if x != nil {
+		if x, ok := x.Operation.(*BatchOperation_Spend); ok {
+			return x.Spend
+		}
+	}
+	return nil
+}
+
+func (x *BatchOperation) GetReserve() *BatchReserveOp {
+	if x != nil {
+		if x, ok := x.Operation.(*BatchOperation_Reserve); ok {
+			return x.Reserve
+		}
+	}
+	return nil
+}
+
+func (x *BatchOperation) GetCapture() *BatchCaptureOp {
+	if x != nil {
+		if x, ok := x.Operation.(*BatchOperation_Capture); ok {
+			return x.Capture
+		}
+	}
+	return nil
+}
+
+func (x *BatchOperation) GetRelease() *BatchReleaseOp {
+	if x != nil {
+		if x, ok := x.Operation.(*BatchOperation_Release); ok {
+			return x.Release
+		}
+	}
+	return nil
+}
+
+func (x *BatchOperation) GetRefund() *BatchRefundOp {
+	if x != nil {
+		if x, ok := x.Operation.(*BatchOperation_Refund); ok {
+			return x.Refund
+		}
+	}
+	return nil
+}
+
+type isBatchOperation_Operation interface {
+	isBatchOperation_Operation()
+}
+
+type BatchOperation_Grant struct {
+	Grant *BatchGrantOp `protobuf:"bytes,2,opt,name=grant,proto3,oneof"`
+}
+
+type BatchOperation_Spend struct {
+	Spend *BatchSpendOp `protobuf:"bytes,3,opt,name=spend,proto3,oneof"`
+}
+
+type BatchOperation_Reserve struct {
+	Reserve *BatchReserveOp `protobuf:"bytes,4,opt,name=reserve,proto3,oneof"`
+}
+
+type BatchOperation_Capture struct {
+	Capture *BatchCaptureOp `protobuf:"bytes,5,opt,name=capture,proto3,oneof"`
+}
+
+type BatchOperation_Release struct {
+	Release *BatchReleaseOp `protobuf:"bytes,6,opt,name=release,proto3,oneof"`
+}
+
+type BatchOperation_Refund struct {
+	Refund *BatchRefundOp `protobuf:"bytes,7,opt,name=refund,proto3,oneof"`
+}
+
+func (*BatchOperation_Grant) isBatchOperation_Operation() {}
+
+func (*BatchOperation_Spend) isBatchOperation_Operation() {}
+
+func (*BatchOperation_Reserve) isBatchOperation_Operation() {}
+
+func (*BatchOperation_Capture) isBatchOperation_Operation() {}
+
+func (*BatchOperation_Release) isBatchOperation_Operation() {}
+
+func (*BatchOperation_Refund) isBatchOperation_Operation() {}
+
+type BatchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *AccountContext        `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	Operations    []*BatchOperation      `protobuf:"bytes,2,rep,name=operations,proto3" json:"operations,omitempty"`
+	Atomic        bool                   `protobuf:"varint,3,opt,name=atomic,proto3" json:"atomic,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchRequest) Reset() {
+	*x = BatchRequest{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchRequest) ProtoMessage() {}
+
+func (x *BatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchRequest.ProtoReflect.Descriptor instead.
+func (*BatchRequest) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *BatchRequest) GetAccount() *AccountContext {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *BatchRequest) GetOperations() []*BatchOperation {
+	if x != nil {
+		return x.Operations
+	}
+	return nil
+}
+
+func (x *BatchRequest) GetAtomic() bool {
+	if x != nil {
+		return x.Atomic
+	}
+	return false
+}
+
+type BatchOperationResult struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OperationId    string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	Ok             bool                   `protobuf:"varint,2,opt,name=ok,proto3" json:"ok,omitempty"`
+	ErrorCode      string                 `protobuf:"bytes,3,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	ErrorMessage   string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	EntryId        string                 `protobuf:"bytes,5,opt,name=entry_id,json=entryId,proto3" json:"entry_id,omitempty"`
+	CreatedUnixUtc int64                  `protobuf:"varint,6,opt,name=created_unix_utc,json=createdUnixUtc,proto3" json:"created_unix_utc,omitempty"`
+	Duplicate      bool                   `protobuf:"varint,7,opt,name=duplicate,proto3" json:"duplicate,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *BatchOperationResult) Reset() {
+	*x = BatchOperationResult{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchOperationResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchOperationResult) ProtoMessage() {}
+
+func (x *BatchOperationResult) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchOperationResult.ProtoReflect.Descriptor instead.
+func (*BatchOperationResult) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *BatchOperationResult) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *BatchOperationResult) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *BatchOperationResult) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *BatchOperationResult) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *BatchOperationResult) GetEntryId() string {
+	if x != nil {
+		return x.EntryId
+	}
+	return ""
+}
+
+func (x *BatchOperationResult) GetCreatedUnixUtc() int64 {
+	if x != nil {
+		return x.CreatedUnixUtc
+	}
+	return 0
+}
+
+func (x *BatchOperationResult) GetDuplicate() bool {
+	if x != nil {
+		return x.Duplicate
+	}
+	return false
+}
+
+type BatchResponse struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Results       []*BatchOperationResult `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchResponse) Reset() {
+	*x = BatchResponse{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchResponse) ProtoMessage() {}
+
+func (x *BatchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchResponse.ProtoReflect.Descriptor instead.
+func (*BatchResponse) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *BatchResponse) GetResults() []*BatchOperationResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
 var File_api_credit_v1_credit_proto protoreflect.FileDescriptor
 
 const file_api_credit_v1_credit_proto_rawDesc = "" +
 	"\n" +
-	"\x1aapi/credit/v1/credit.proto\x12\tcredit.v1\"\a\n" +
-	"\x05Empty\"+\n" +
+	"\x1aapi/credit/v1/credit.proto\x12\tcredit.v1\"L\n" +
+	"\x05Empty\x12\x19\n" +
+	"\bentry_id\x18\x01 \x01(\tR\aentryId\x12(\n" +
+	"\x10created_unix_utc\x18\x02 \x01(\x03R\x0ecreatedUnixUtc\"+\n" +
 	"\x06Amount\x12!\n" +
 	"\famount_cents\x18\x01 \x01(\x03R\vamountCents\"c\n" +
 	"\x0eBalanceRequest\x12\x17\n" +
@@ -938,7 +2010,21 @@ const file_api_credit_v1_credit_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12#\n" +
 	"\rmetadata_json\x18\x04 \x01(\tR\fmetadataJson\x12\x1b\n" +
 	"\tledger_id\x18\x05 \x01(\tR\bledgerId\x12\x1b\n" +
-	"\ttenant_id\x18\x06 \x01(\tR\btenantId\"\xc6\x02\n" +
+	"\ttenant_id\x18\x06 \x01(\tR\btenantId\"\xc9\x02\n" +
+	"\rRefundRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1b\n" +
+	"\tledger_id\x18\x02 \x01(\tR\bledgerId\x12\x1b\n" +
+	"\ttenant_id\x18\x03 \x01(\tR\btenantId\x12,\n" +
+	"\x11original_entry_id\x18\x04 \x01(\tH\x00R\x0foriginalEntryId\x12:\n" +
+	"\x18original_idempotency_key\x18\x05 \x01(\tH\x00R\x16originalIdempotencyKey\x12!\n" +
+	"\famount_cents\x18\x06 \x01(\x03R\vamountCents\x12'\n" +
+	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\x12#\n" +
+	"\rmetadata_json\x18\b \x01(\tR\fmetadataJsonB\n" +
+	"\n" +
+	"\boriginal\"U\n" +
+	"\x0eRefundResponse\x12\x19\n" +
+	"\bentry_id\x18\x01 \x01(\tR\aentryId\x12(\n" +
+	"\x10created_unix_utc\x18\x02 \x01(\x03R\x0ecreatedUnixUtc\"\xf3\x02\n" +
 	"\x05Entry\x12\x19\n" +
 	"\bentry_id\x18\x01 \x01(\tR\aentryId\x12\x1d\n" +
 	"\n" +
@@ -949,15 +2035,81 @@ const file_api_credit_v1_credit_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12-\n" +
 	"\x13expires_at_unix_utc\x18\a \x01(\x03R\x10expiresAtUnixUtc\x12#\n" +
 	"\rmetadata_json\x18\b \x01(\tR\fmetadataJson\x12(\n" +
-	"\x10created_unix_utc\x18\t \x01(\x03R\x0ecreatedUnixUtc\"\xa5\x01\n" +
+	"\x10created_unix_utc\x18\t \x01(\x03R\x0ecreatedUnixUtc\x12+\n" +
+	"\x12refund_of_entry_id\x18\n" +
+	" \x01(\tR\x0frefundOfEntryId\"\x98\x02\n" +
 	"\x12ListEntriesRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12&\n" +
 	"\x0fbefore_unix_utc\x18\x02 \x01(\x03R\rbeforeUnixUtc\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x1b\n" +
 	"\tledger_id\x18\x04 \x01(\tR\bledgerId\x12\x1b\n" +
-	"\ttenant_id\x18\x05 \x01(\tR\btenantId\"A\n" +
+	"\ttenant_id\x18\x05 \x01(\tR\btenantId\x12\x14\n" +
+	"\x05types\x18\x06 \x03(\tR\x05types\x12%\n" +
+	"\x0ereservation_id\x18\a \x01(\tR\rreservationId\x124\n" +
+	"\x16idempotency_key_prefix\x18\b \x01(\tR\x14idempotencyKeyPrefix\"A\n" +
 	"\x13ListEntriesResponse\x12*\n" +
-	"\aentries\x18\x01 \x03(\v2\x10.credit.v1.EntryR\aentries2\xb2\x03\n" +
+	"\aentries\x18\x01 \x03(\v2\x10.credit.v1.EntryR\aentries\"c\n" +
+	"\x0eAccountContext\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1b\n" +
+	"\tledger_id\x18\x02 \x01(\tR\bledgerId\x12\x1b\n" +
+	"\ttenant_id\x18\x03 \x01(\tR\btenantId\"\xae\x01\n" +
+	"\fBatchGrantOp\x12!\n" +
+	"\famount_cents\x18\x01 \x01(\x03R\vamountCents\x12'\n" +
+	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12-\n" +
+	"\x13expires_at_unix_utc\x18\x03 \x01(\x03R\x10expiresAtUnixUtc\x12#\n" +
+	"\rmetadata_json\x18\x04 \x01(\tR\fmetadataJson\"\xa8\x01\n" +
+	"\x0eBatchReserveOp\x12!\n" +
+	"\famount_cents\x18\x01 \x01(\x03R\vamountCents\x12%\n" +
+	"\x0ereservation_id\x18\x02 \x01(\tR\rreservationId\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12#\n" +
+	"\rmetadata_json\x18\x04 \x01(\tR\fmetadataJson\"\xa8\x01\n" +
+	"\x0eBatchCaptureOp\x12%\n" +
+	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\x12'\n" +
+	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12!\n" +
+	"\famount_cents\x18\x03 \x01(\x03R\vamountCents\x12#\n" +
+	"\rmetadata_json\x18\x04 \x01(\tR\fmetadataJson\"\x85\x01\n" +
+	"\x0eBatchReleaseOp\x12%\n" +
+	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\x12'\n" +
+	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12#\n" +
+	"\rmetadata_json\x18\x03 \x01(\tR\fmetadataJson\"\x7f\n" +
+	"\fBatchSpendOp\x12!\n" +
+	"\famount_cents\x18\x01 \x01(\x03R\vamountCents\x12'\n" +
+	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12#\n" +
+	"\rmetadata_json\x18\x03 \x01(\tR\fmetadataJson\"\xf6\x01\n" +
+	"\rBatchRefundOp\x12,\n" +
+	"\x11original_entry_id\x18\x01 \x01(\tH\x00R\x0foriginalEntryId\x12:\n" +
+	"\x18original_idempotency_key\x18\x02 \x01(\tH\x00R\x16originalIdempotencyKey\x12!\n" +
+	"\famount_cents\x18\x03 \x01(\x03R\vamountCents\x12'\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x12#\n" +
+	"\rmetadata_json\x18\x05 \x01(\tR\fmetadataJsonB\n" +
+	"\n" +
+	"\boriginal\"\xfb\x02\n" +
+	"\x0eBatchOperation\x12!\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12/\n" +
+	"\x05grant\x18\x02 \x01(\v2\x17.credit.v1.BatchGrantOpH\x00R\x05grant\x12/\n" +
+	"\x05spend\x18\x03 \x01(\v2\x17.credit.v1.BatchSpendOpH\x00R\x05spend\x125\n" +
+	"\areserve\x18\x04 \x01(\v2\x19.credit.v1.BatchReserveOpH\x00R\areserve\x125\n" +
+	"\acapture\x18\x05 \x01(\v2\x19.credit.v1.BatchCaptureOpH\x00R\acapture\x125\n" +
+	"\arelease\x18\x06 \x01(\v2\x19.credit.v1.BatchReleaseOpH\x00R\arelease\x122\n" +
+	"\x06refund\x18\a \x01(\v2\x18.credit.v1.BatchRefundOpH\x00R\x06refundB\v\n" +
+	"\toperation\"\x96\x01\n" +
+	"\fBatchRequest\x123\n" +
+	"\aaccount\x18\x01 \x01(\v2\x19.credit.v1.AccountContextR\aaccount\x129\n" +
+	"\n" +
+	"operations\x18\x02 \x03(\v2\x19.credit.v1.BatchOperationR\n" +
+	"operations\x12\x16\n" +
+	"\x06atomic\x18\x03 \x01(\bR\x06atomic\"\xf0\x01\n" +
+	"\x14BatchOperationResult\x12!\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12\x0e\n" +
+	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x03 \x01(\tR\terrorCode\x12#\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12\x19\n" +
+	"\bentry_id\x18\x05 \x01(\tR\aentryId\x12(\n" +
+	"\x10created_unix_utc\x18\x06 \x01(\x03R\x0ecreatedUnixUtc\x12\x1c\n" +
+	"\tduplicate\x18\a \x01(\bR\tduplicate\"J\n" +
+	"\rBatchResponse\x129\n" +
+	"\aresults\x18\x01 \x03(\v2\x1f.credit.v1.BatchOperationResultR\aresults2\xad\x04\n" +
 	"\rCreditService\x12C\n" +
 	"\n" +
 	"GetBalance\x12\x19.credit.v1.BalanceRequest\x1a\x1a.credit.v1.BalanceResponse\x122\n" +
@@ -965,7 +2117,9 @@ const file_api_credit_v1_credit_proto_rawDesc = "" +
 	"\aReserve\x12\x19.credit.v1.ReserveRequest\x1a\x10.credit.v1.Empty\x126\n" +
 	"\aCapture\x12\x19.credit.v1.CaptureRequest\x1a\x10.credit.v1.Empty\x126\n" +
 	"\aRelease\x12\x19.credit.v1.ReleaseRequest\x1a\x10.credit.v1.Empty\x122\n" +
-	"\x05Spend\x12\x17.credit.v1.SpendRequest\x1a\x10.credit.v1.Empty\x12L\n" +
+	"\x05Spend\x12\x17.credit.v1.SpendRequest\x1a\x10.credit.v1.Empty\x12=\n" +
+	"\x06Refund\x12\x18.credit.v1.RefundRequest\x1a\x19.credit.v1.RefundResponse\x12:\n" +
+	"\x05Batch\x12\x17.credit.v1.BatchRequest\x1a\x18.credit.v1.BatchResponse\x12L\n" +
 	"\vListEntries\x12\x1d.credit.v1.ListEntriesRequest\x1a\x1e.credit.v1.ListEntriesResponseB?Z=github.com/MarkoPoloResearchLab/ledger/api/credit/v1;creditv1b\x06proto3"
 
 var (
@@ -980,42 +2134,68 @@ func file_api_credit_v1_credit_proto_rawDescGZIP() []byte {
 	return file_api_credit_v1_credit_proto_rawDescData
 }
 
-var file_api_credit_v1_credit_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_api_credit_v1_credit_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_api_credit_v1_credit_proto_goTypes = []any{
-	(*Empty)(nil),               // 0: credit.v1.Empty
-	(*Amount)(nil),              // 1: credit.v1.Amount
-	(*BalanceRequest)(nil),      // 2: credit.v1.BalanceRequest
-	(*BalanceResponse)(nil),     // 3: credit.v1.BalanceResponse
-	(*GrantRequest)(nil),        // 4: credit.v1.GrantRequest
-	(*ReserveRequest)(nil),      // 5: credit.v1.ReserveRequest
-	(*CaptureRequest)(nil),      // 6: credit.v1.CaptureRequest
-	(*ReleaseRequest)(nil),      // 7: credit.v1.ReleaseRequest
-	(*SpendRequest)(nil),        // 8: credit.v1.SpendRequest
-	(*Entry)(nil),               // 9: credit.v1.Entry
-	(*ListEntriesRequest)(nil),  // 10: credit.v1.ListEntriesRequest
-	(*ListEntriesResponse)(nil), // 11: credit.v1.ListEntriesResponse
+	(*Empty)(nil),                // 0: credit.v1.Empty
+	(*Amount)(nil),               // 1: credit.v1.Amount
+	(*BalanceRequest)(nil),       // 2: credit.v1.BalanceRequest
+	(*BalanceResponse)(nil),      // 3: credit.v1.BalanceResponse
+	(*GrantRequest)(nil),         // 4: credit.v1.GrantRequest
+	(*ReserveRequest)(nil),       // 5: credit.v1.ReserveRequest
+	(*CaptureRequest)(nil),       // 6: credit.v1.CaptureRequest
+	(*ReleaseRequest)(nil),       // 7: credit.v1.ReleaseRequest
+	(*SpendRequest)(nil),         // 8: credit.v1.SpendRequest
+	(*RefundRequest)(nil),        // 9: credit.v1.RefundRequest
+	(*RefundResponse)(nil),       // 10: credit.v1.RefundResponse
+	(*Entry)(nil),                // 11: credit.v1.Entry
+	(*ListEntriesRequest)(nil),   // 12: credit.v1.ListEntriesRequest
+	(*ListEntriesResponse)(nil),  // 13: credit.v1.ListEntriesResponse
+	(*AccountContext)(nil),       // 14: credit.v1.AccountContext
+	(*BatchGrantOp)(nil),         // 15: credit.v1.BatchGrantOp
+	(*BatchReserveOp)(nil),       // 16: credit.v1.BatchReserveOp
+	(*BatchCaptureOp)(nil),       // 17: credit.v1.BatchCaptureOp
+	(*BatchReleaseOp)(nil),       // 18: credit.v1.BatchReleaseOp
+	(*BatchSpendOp)(nil),         // 19: credit.v1.BatchSpendOp
+	(*BatchRefundOp)(nil),        // 20: credit.v1.BatchRefundOp
+	(*BatchOperation)(nil),       // 21: credit.v1.BatchOperation
+	(*BatchRequest)(nil),         // 22: credit.v1.BatchRequest
+	(*BatchOperationResult)(nil), // 23: credit.v1.BatchOperationResult
+	(*BatchResponse)(nil),        // 24: credit.v1.BatchResponse
 }
 var file_api_credit_v1_credit_proto_depIdxs = []int32{
-	9,  // 0: credit.v1.ListEntriesResponse.entries:type_name -> credit.v1.Entry
-	2,  // 1: credit.v1.CreditService.GetBalance:input_type -> credit.v1.BalanceRequest
-	4,  // 2: credit.v1.CreditService.Grant:input_type -> credit.v1.GrantRequest
-	5,  // 3: credit.v1.CreditService.Reserve:input_type -> credit.v1.ReserveRequest
-	6,  // 4: credit.v1.CreditService.Capture:input_type -> credit.v1.CaptureRequest
-	7,  // 5: credit.v1.CreditService.Release:input_type -> credit.v1.ReleaseRequest
-	8,  // 6: credit.v1.CreditService.Spend:input_type -> credit.v1.SpendRequest
-	10, // 7: credit.v1.CreditService.ListEntries:input_type -> credit.v1.ListEntriesRequest
-	3,  // 8: credit.v1.CreditService.GetBalance:output_type -> credit.v1.BalanceResponse
-	0,  // 9: credit.v1.CreditService.Grant:output_type -> credit.v1.Empty
-	0,  // 10: credit.v1.CreditService.Reserve:output_type -> credit.v1.Empty
-	0,  // 11: credit.v1.CreditService.Capture:output_type -> credit.v1.Empty
-	0,  // 12: credit.v1.CreditService.Release:output_type -> credit.v1.Empty
-	0,  // 13: credit.v1.CreditService.Spend:output_type -> credit.v1.Empty
-	11, // 14: credit.v1.CreditService.ListEntries:output_type -> credit.v1.ListEntriesResponse
-	8,  // [8:15] is the sub-list for method output_type
-	1,  // [1:8] is the sub-list for method input_type
-	1,  // [1:1] is the sub-list for extension type_name
-	1,  // [1:1] is the sub-list for extension extendee
-	0,  // [0:1] is the sub-list for field type_name
+	11, // 0: credit.v1.ListEntriesResponse.entries:type_name -> credit.v1.Entry
+	15, // 1: credit.v1.BatchOperation.grant:type_name -> credit.v1.BatchGrantOp
+	19, // 2: credit.v1.BatchOperation.spend:type_name -> credit.v1.BatchSpendOp
+	16, // 3: credit.v1.BatchOperation.reserve:type_name -> credit.v1.BatchReserveOp
+	17, // 4: credit.v1.BatchOperation.capture:type_name -> credit.v1.BatchCaptureOp
+	18, // 5: credit.v1.BatchOperation.release:type_name -> credit.v1.BatchReleaseOp
+	20, // 6: credit.v1.BatchOperation.refund:type_name -> credit.v1.BatchRefundOp
+	14, // 7: credit.v1.BatchRequest.account:type_name -> credit.v1.AccountContext
+	21, // 8: credit.v1.BatchRequest.operations:type_name -> credit.v1.BatchOperation
+	23, // 9: credit.v1.BatchResponse.results:type_name -> credit.v1.BatchOperationResult
+	2,  // 10: credit.v1.CreditService.GetBalance:input_type -> credit.v1.BalanceRequest
+	4,  // 11: credit.v1.CreditService.Grant:input_type -> credit.v1.GrantRequest
+	5,  // 12: credit.v1.CreditService.Reserve:input_type -> credit.v1.ReserveRequest
+	6,  // 13: credit.v1.CreditService.Capture:input_type -> credit.v1.CaptureRequest
+	7,  // 14: credit.v1.CreditService.Release:input_type -> credit.v1.ReleaseRequest
+	8,  // 15: credit.v1.CreditService.Spend:input_type -> credit.v1.SpendRequest
+	9,  // 16: credit.v1.CreditService.Refund:input_type -> credit.v1.RefundRequest
+	22, // 17: credit.v1.CreditService.Batch:input_type -> credit.v1.BatchRequest
+	12, // 18: credit.v1.CreditService.ListEntries:input_type -> credit.v1.ListEntriesRequest
+	3,  // 19: credit.v1.CreditService.GetBalance:output_type -> credit.v1.BalanceResponse
+	0,  // 20: credit.v1.CreditService.Grant:output_type -> credit.v1.Empty
+	0,  // 21: credit.v1.CreditService.Reserve:output_type -> credit.v1.Empty
+	0,  // 22: credit.v1.CreditService.Capture:output_type -> credit.v1.Empty
+	0,  // 23: credit.v1.CreditService.Release:output_type -> credit.v1.Empty
+	0,  // 24: credit.v1.CreditService.Spend:output_type -> credit.v1.Empty
+	10, // 25: credit.v1.CreditService.Refund:output_type -> credit.v1.RefundResponse
+	24, // 26: credit.v1.CreditService.Batch:output_type -> credit.v1.BatchResponse
+	13, // 27: credit.v1.CreditService.ListEntries:output_type -> credit.v1.ListEntriesResponse
+	19, // [19:28] is the sub-list for method output_type
+	10, // [10:19] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_api_credit_v1_credit_proto_init() }
@@ -1023,13 +2203,29 @@ func file_api_credit_v1_credit_proto_init() {
 	if File_api_credit_v1_credit_proto != nil {
 		return
 	}
+	file_api_credit_v1_credit_proto_msgTypes[9].OneofWrappers = []any{
+		(*RefundRequest_OriginalEntryId)(nil),
+		(*RefundRequest_OriginalIdempotencyKey)(nil),
+	}
+	file_api_credit_v1_credit_proto_msgTypes[20].OneofWrappers = []any{
+		(*BatchRefundOp_OriginalEntryId)(nil),
+		(*BatchRefundOp_OriginalIdempotencyKey)(nil),
+	}
+	file_api_credit_v1_credit_proto_msgTypes[21].OneofWrappers = []any{
+		(*BatchOperation_Grant)(nil),
+		(*BatchOperation_Spend)(nil),
+		(*BatchOperation_Reserve)(nil),
+		(*BatchOperation_Capture)(nil),
+		(*BatchOperation_Release)(nil),
+		(*BatchOperation_Refund)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_credit_v1_credit_proto_rawDesc), len(file_api_credit_v1_credit_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
