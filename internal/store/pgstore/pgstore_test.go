@@ -1378,7 +1378,7 @@ func TestStoreTxStoreMethods(test *testing.T) {
 	if err != nil {
 		test.Fatalf("amount: %v", err)
 	}
-	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive)
+	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}
@@ -1524,7 +1524,7 @@ func TestStoreAutocommitMethods(test *testing.T) {
 	if err != nil {
 		test.Fatalf("amount: %v", err)
 	}
-	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive)
+	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}
@@ -1633,7 +1633,7 @@ func TestTxStoreMethodsWrapErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("amount: %v", err)
 	}
-	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive)
+	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}
@@ -1929,7 +1929,7 @@ func TestStoreCreateReservationWrapsErrorsAndConflicts(test *testing.T) {
 	if err != nil {
 		test.Fatalf("amount: %v", err)
 	}
-	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive)
+	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}

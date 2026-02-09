@@ -42,6 +42,7 @@ message ReserveRequest {
   string metadata_json = 5;
   string ledger_id = 6;
   string tenant_id = 7;
+  int64 expires_at_unix_utc = 8;
 }
 
 message CaptureRequest {
@@ -136,6 +137,7 @@ message BatchReserveOp {
   string reservation_id = 2;
   string idempotency_key = 3;
   string metadata_json = 4;
+  int64 expires_at_unix_utc = 5;
 }
 
 message BatchCaptureOp {

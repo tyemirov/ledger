@@ -236,12 +236,14 @@ func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, at
 	return ledger.SignedAmountCents(sum.Total), nil
 }
 
-func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
+func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
+	at := time.Unix(atUnixUTC, 0).UTC()
 	var sum sqlSum
 	err := store.db.WithContext(ctx).
 		Model(&Reservation{}).
 		Select("coalesce(sum(amount_cents),0) as total").
 		Where("account_id = ? AND status = ?", accountID.String(), ledger.ReservationStatusActive.String()).
+		Where("(expires_at is null or expires_at > ?)", at).
 		Scan(&sum).Error
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumActiveHolds, err)
@@ -254,11 +256,17 @@ func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.Account
 }
 
 func (store *Store) CreateReservation(ctx context.Context, reservation ledger.Reservation) error {
+	var expiresAt *time.Time
+	if reservation.ExpiresAtUnixUTC() != 0 {
+		value := time.Unix(reservation.ExpiresAtUnixUTC(), 0).UTC()
+		expiresAt = &value
+	}
 	model := Reservation{
 		AccountID:     reservation.AccountID().String(),
 		ReservationID: reservation.ReservationID().String(),
 		AmountCents:   reservation.AmountCents().Int64(),
 		Status:        reservation.Status().String(),
+		ExpiresAt:     expiresAt,
 	}
 	err := store.db.WithContext(ctx).Create(&model).Error
 	if isReservationConflict(err) {
@@ -298,7 +306,11 @@ func (store *Store) GetReservation(ctx context.Context, accountID ledger.Account
 	if err != nil {
 		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
 	}
-	reservation, err := ledger.NewReservation(parsedAccountID, parsedReservationID, amountCents, status)
+	expiresAtUnixUTC := int64(0)
+	if model.ExpiresAt != nil {
+		expiresAtUnixUTC = model.ExpiresAt.UTC().Unix()
+	}
+	reservation, err := ledger.NewReservation(parsedAccountID, parsedReservationID, amountCents, status, expiresAtUnixUTC)
 	if err != nil {
 		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
 	}

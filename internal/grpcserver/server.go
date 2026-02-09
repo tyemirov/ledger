@@ -140,7 +140,7 @@ func (service *CreditServiceServer) Reserve(ctx context.Context, request *credit
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	entry, operationError := service.creditService.ReserveEntry(ctx, tenantID, userID, ledgerID, amount, reservationID, idem, metadata)
+	entry, operationError := service.creditService.ReserveEntry(ctx, tenantID, userID, ledgerID, amount, reservationID, idem, request.GetExpiresAtUnixUtc(), metadata)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
@@ -399,10 +399,11 @@ func (service *CreditServiceServer) Batch(ctx context.Context, request *creditv1
 				return nil, mapToGRPCError(err)
 			}
 			parsedOperation.Reserve = &ledger.BatchReserveOperation{
-				Amount:         amount,
-				ReservationID:  reservationID,
-				IdempotencyKey: idem,
-				Metadata:       metadata,
+				Amount:           amount,
+				ReservationID:    reservationID,
+				IdempotencyKey:   idem,
+				ExpiresAtUnixUTC: operationValue.Reserve.GetExpiresAtUnixUtc(),
+				Metadata:         metadata,
 			}
 		case *creditv1.BatchOperation_Capture:
 			if operationValue.Capture == nil {

@@ -127,15 +127,16 @@ const (
 	sqlSumActiveHolds = `
 		select coalesce(sum(amount_cents),0) from reservations
 		where account_id = $1 and status = 'active'
+		and (expires_at is null or expires_at > to_timestamp($2))
 	`
 
 	sqlInsertReservation = `
-		insert into reservations(account_id, reservation_id, amount_cents, status, created_at, updated_at)
-		values ($1, $2, $3, $4, now(), now())
+		insert into reservations(account_id, reservation_id, amount_cents, status, expires_at, created_at, updated_at)
+		values ($1, $2, $3, $4, to_timestamp(nullif($5,0)), now(), now())
 	`
 
 	sqlSelectReservation = `
-		select account_id::text, reservation_id, amount_cents, status::text
+		select account_id::text, reservation_id, amount_cents, status::text, coalesce(extract(epoch from expires_at)::bigint,0)
 		from reservations
 		where account_id = $1 and reservation_id = $2
 		for update
@@ -432,9 +433,9 @@ func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, at
 	return ledger.SignedAmountCents(sum), nil
 }
 
-func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
+func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
 	var sum int64
-	err := store.pool.QueryRow(ctx, sqlSumActiveHolds, accountID.String()).Scan(&sum)
+	err := store.pool.QueryRow(ctx, sqlSumActiveHolds, accountID.String(), atUnixUTC).Scan(&sum)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumActiveHolds, err)
 	}
@@ -451,6 +452,7 @@ func (store *Store) CreateReservation(ctx context.Context, reservation ledger.Re
 		reservation.ReservationID().String(),
 		reservation.AmountCents().Int64(),
 		reservation.Status().String(),
+		reservation.ExpiresAtUnixUTC(),
 	)
 	if isReservationConflict(err) {
 		return wrapStoreError(errorSubjectReservation, errorCodeDuplicate, ledger.ErrReservationExists)
@@ -467,12 +469,14 @@ func (store *Store) GetReservation(ctx context.Context, accountID ledger.Account
 		reservationVal string
 		statusValue    string
 		amountValue    int64
+		expiresAtUnix  int64
 	)
 	err := store.pool.QueryRow(ctx, sqlSelectReservation, accountID.String(), reservationID.String()).Scan(
 		&accountValue,
 		&reservationVal,
 		&amountValue,
 		&statusValue,
+		&expiresAtUnix,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -496,7 +500,7 @@ func (store *Store) GetReservation(ctx context.Context, accountID ledger.Account
 	if err != nil {
 		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
 	}
-	reservation, err := ledger.NewReservation(parsedAccountID, parsedReservationID, amountCents, status)
+	reservation, err := ledger.NewReservation(parsedAccountID, parsedReservationID, amountCents, status, expiresAtUnix)
 	if err != nil {
 		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
 	}
@@ -664,9 +668,9 @@ func (store *TxStore) SumTotal(ctx context.Context, accountID ledger.AccountID, 
 	return ledger.SignedAmountCents(sum), nil
 }
 
-func (store *TxStore) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
+func (store *TxStore) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
 	var sum int64
-	err := store.tx.QueryRow(ctx, sqlSumActiveHolds, accountID.String()).Scan(&sum)
+	err := store.tx.QueryRow(ctx, sqlSumActiveHolds, accountID.String(), atUnixUTC).Scan(&sum)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumActiveHolds, err)
 	}
@@ -683,6 +687,7 @@ func (store *TxStore) CreateReservation(ctx context.Context, reservation ledger.
 		reservation.ReservationID().String(),
 		reservation.AmountCents().Int64(),
 		reservation.Status().String(),
+		reservation.ExpiresAtUnixUTC(),
 	)
 	if isReservationConflict(err) {
 		return wrapStoreError(errorSubjectReservation, errorCodeDuplicate, ledger.ErrReservationExists)
@@ -699,12 +704,14 @@ func (store *TxStore) GetReservation(ctx context.Context, accountID ledger.Accou
 		reservationVal string
 		statusValue    string
 		amountValue    int64
+		expiresAtUnix  int64
 	)
 	err := store.tx.QueryRow(ctx, sqlSelectReservation, accountID.String(), reservationID.String()).Scan(
 		&accountValue,
 		&reservationVal,
 		&amountValue,
 		&statusValue,
+		&expiresAtUnix,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -728,7 +735,7 @@ func (store *TxStore) GetReservation(ctx context.Context, accountID ledger.Accou
 	if err != nil {
 		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
 	}
-	reservation, err := ledger.NewReservation(parsedAccountID, parsedReservationID, amountCents, status)
+	reservation, err := ledger.NewReservation(parsedAccountID, parsedReservationID, amountCents, status, expiresAtUnix)
 	if err != nil {
 		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
 	}

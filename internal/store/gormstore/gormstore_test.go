@@ -97,7 +97,7 @@ func TestStoreFlow(test *testing.T) {
 	if err != nil {
 		test.Fatalf("reservation id: %v", err)
 	}
-	reservation, err := ledger.NewReservation(accountID, reservationID, amount, ledger.ReservationStatusActive)
+	reservation, err := ledger.NewReservation(accountID, reservationID, amount, ledger.ReservationStatusActive, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}
@@ -517,6 +517,58 @@ func TestStoreSumActiveHoldsRejectsNegativeSum(test *testing.T) {
 	}
 }
 
+func TestStoreSumActiveHoldsIgnoresExpiredReservations(test *testing.T) {
+	test.Parallel()
+	db := newSQLiteDB(test)
+	store := New(db)
+
+	ctx := context.Background()
+	accountID, err := store.GetOrCreateAccountID(ctx, mustTenantID(test), mustUserID(test), mustLedgerID(test))
+	if err != nil {
+		test.Fatalf("account: %v", err)
+	}
+	reservationID, err := ledger.NewReservationID("order-expiring")
+	if err != nil {
+		test.Fatalf("reservation id: %v", err)
+	}
+	amount, err := ledger.NewPositiveAmountCents(100)
+	if err != nil {
+		test.Fatalf("amount: %v", err)
+	}
+
+	expiresAtUnixUTC := int64(1700000010)
+	reservation, err := ledger.NewReservation(accountID, reservationID, amount, ledger.ReservationStatusActive, expiresAtUnixUTC)
+	if err != nil {
+		test.Fatalf("reservation: %v", err)
+	}
+	if err := store.CreateReservation(ctx, reservation); err != nil {
+		test.Fatalf("create reservation: %v", err)
+	}
+	gotReservation, err := store.GetReservation(ctx, accountID, reservationID)
+	if err != nil {
+		test.Fatalf("get reservation: %v", err)
+	}
+	if gotReservation.ExpiresAtUnixUTC() != expiresAtUnixUTC {
+		test.Fatalf("expected expires_at_unix_utc %d, got %d", expiresAtUnixUTC, gotReservation.ExpiresAtUnixUTC())
+	}
+
+	holds, err := store.SumActiveHolds(ctx, accountID, expiresAtUnixUTC-1)
+	if err != nil {
+		test.Fatalf("sum holds before expiry: %v", err)
+	}
+	if holds.Int64() != 100 {
+		test.Fatalf("expected holds 100 before expiry, got %d", holds.Int64())
+	}
+
+	holds, err = store.SumActiveHolds(ctx, accountID, expiresAtUnixUTC)
+	if err != nil {
+		test.Fatalf("sum holds at expiry: %v", err)
+	}
+	if holds.Int64() != 0 {
+		test.Fatalf("expected holds 0 at expiry, got %d", holds.Int64())
+	}
+}
+
 func TestStoreWrapsDatabaseErrors(test *testing.T) {
 	test.Parallel()
 	db := newSQLiteDB(test)
@@ -601,7 +653,7 @@ func TestStoreWrapsDatabaseErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("amount: %v", err)
 	}
-	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive)
+	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}

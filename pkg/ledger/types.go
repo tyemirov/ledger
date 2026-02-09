@@ -91,10 +91,11 @@ const (
 
 // Reservation represents a stored reservation record.
 type Reservation struct {
-	accountID     AccountID
-	reservationID ReservationID
-	amountCents   PositiveAmountCents
-	status        ReservationStatus
+	accountID        AccountID
+	reservationID    ReservationID
+	amountCents      PositiveAmountCents
+	status           ReservationStatus
+	expiresAtUnixUTC int64
 }
 
 // EntryInput represents a new ledger entry to persist.
@@ -365,7 +366,7 @@ func (entryType EntryType) IsValid() bool {
 }
 
 // NewReservation constructs a reservation record.
-func NewReservation(accountID AccountID, reservationID ReservationID, amountCents PositiveAmountCents, status ReservationStatus) (Reservation, error) {
+func NewReservation(accountID AccountID, reservationID ReservationID, amountCents PositiveAmountCents, status ReservationStatus, expiresAtUnixUTC int64) (Reservation, error) {
 	if err := validateIdentifierValue(accountID.value, ErrInvalidAccountID); err != nil {
 		return Reservation{}, err
 	}
@@ -379,10 +380,11 @@ func NewReservation(accountID AccountID, reservationID ReservationID, amountCent
 		return Reservation{}, fmt.Errorf("%w: %s", ErrInvalidReservationStatus, errorUnknownValue)
 	}
 	return Reservation{
-		accountID:     accountID,
-		reservationID: reservationID,
-		amountCents:   amountCents,
-		status:        status,
+		accountID:        accountID,
+		reservationID:    reservationID,
+		amountCents:      amountCents,
+		status:           status,
+		expiresAtUnixUTC: expiresAtUnixUTC,
 	}, nil
 }
 
@@ -404,6 +406,11 @@ func (reservation Reservation) AmountCents() PositiveAmountCents {
 // Status returns the reservation status.
 func (reservation Reservation) Status() ReservationStatus {
 	return reservation.status
+}
+
+// ExpiresAtUnixUTC returns the expiration timestamp, if set.
+func (reservation Reservation) ExpiresAtUnixUTC() int64 {
+	return reservation.expiresAtUnixUTC
 }
 
 // NewEntryInput constructs a new ledger entry payload.

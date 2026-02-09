@@ -23,7 +23,7 @@ func TestReserveCreatesReservationAndHoldEntry(test *testing.T) {
 	metadata := mustMetadata(test, `{"foo":"bar"}`)
 	amount := mustPositiveAmount(test, 40)
 
-	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata); err != nil {
+	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, 0, metadata); err != nil {
 		test.Fatalf("reserve: %v", err)
 	}
 
@@ -125,7 +125,7 @@ func TestReserveInsufficientFunds(test *testing.T) {
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 50)
 
-	err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata)
+	err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, 0, metadata)
 	if !errors.Is(err, ErrInsufficientFunds) {
 		test.Fatalf("expected ErrInsufficientFunds, got %v", err)
 	}
@@ -143,7 +143,7 @@ func TestCaptureMovesReservationToCaptured(test *testing.T) {
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 60)
 
-	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata); err != nil {
+	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, 0, metadata); err != nil {
 		test.Fatalf("reserve: %v", err)
 	}
 	if err := service.Capture(context.Background(), tenantID, userID, ledgerID, reservationID, idempotencyKey, amount, metadata); err != nil {
@@ -185,12 +185,37 @@ func TestCaptureAmountMismatch(test *testing.T) {
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 60)
 
-	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata); err != nil {
+	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, 0, metadata); err != nil {
 		test.Fatalf("reserve: %v", err)
 	}
 	err := service.Capture(context.Background(), tenantID, userID, ledgerID, reservationID, idempotencyKey, mustPositiveAmount(test, 10), metadata)
 	if !errors.Is(err, ErrInvalidAmountCents) {
 		test.Fatalf("expected ErrInvalidAmountCents, got %v", err)
+	}
+}
+
+func TestCaptureRejectsExpiredReservations(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 200))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-expired")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+	reservationID := mustReservationID(test, "res-expired")
+	idempotencyKey := mustIdempotencyKey(test, "idem-expired")
+	metadata := mustMetadata(test, "{}")
+	amount := mustPositiveAmount(test, 60)
+
+	// mustNewService uses a fixed clock of 100, so an expiry <= 100 should be treated as closed.
+	reservation, err := NewReservation(store.accountID, reservationID, amount, ReservationStatusActive, 100)
+	if err != nil {
+		test.Fatalf("reservation: %v", err)
+	}
+	store.reservations[reservationID] = reservation
+
+	err = service.Capture(context.Background(), tenantID, userID, ledgerID, reservationID, idempotencyKey, amount, metadata)
+	if !errors.Is(err, ErrReservationClosed) {
+		test.Fatalf("expected ErrReservationClosed, got %v", err)
 	}
 }
 
@@ -206,7 +231,7 @@ func TestCaptureUsesDistinctIdempotencyKeys(test *testing.T) {
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 30)
 
-	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata); err != nil {
+	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, 0, metadata); err != nil {
 		test.Fatalf("reserve: %v", err)
 	}
 	if err := service.Capture(context.Background(), tenantID, userID, ledgerID, reservationID, idempotencyKey, amount, metadata); err != nil {
@@ -245,7 +270,7 @@ func TestReleaseUnlocksReservation(test *testing.T) {
 	metadata := mustMetadata(test, "{}")
 	amount := mustPositiveAmount(test, 50)
 
-	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, holdIdempotencyKey, metadata); err != nil {
+	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, holdIdempotencyKey, 0, metadata); err != nil {
 		test.Fatalf("reserve: %v", err)
 	}
 	if err := service.Release(context.Background(), tenantID, userID, ledgerID, reservationID, releaseIdempotencyKey, metadata); err != nil {
@@ -600,7 +625,7 @@ func (store *stubStore) UpdateReservationStatus(ctx context.Context, accountID A
 	if reservation.Status() != from {
 		return ErrReservationClosed
 	}
-	updatedReservation, err := NewReservation(reservation.AccountID(), reservation.ReservationID(), reservation.AmountCents(), to)
+	updatedReservation, err := NewReservation(reservation.AccountID(), reservation.ReservationID(), reservation.AmountCents(), to, reservation.ExpiresAtUnixUTC())
 	if err != nil {
 		return err
 	}
@@ -763,7 +788,7 @@ func mustEntryID(test *testing.T, raw string) EntryID {
 
 func mustReservationRecord(test *testing.T, accountID AccountID, reservationID ReservationID, amount PositiveAmountCents, status ReservationStatus) Reservation {
 	test.Helper()
-	reservation, err := NewReservation(accountID, reservationID, amount, status)
+	reservation, err := NewReservation(accountID, reservationID, amount, status, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}

@@ -322,16 +322,17 @@ func (x *GrantRequest) GetTenantId() string {
 }
 
 type ReserveRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	UserId         string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	AmountCents    int64                  `protobuf:"varint,2,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
-	ReservationId  string                 `protobuf:"bytes,3,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
-	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	MetadataJson   string                 `protobuf:"bytes,5,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
-	LedgerId       string                 `protobuf:"bytes,6,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
-	TenantId       string                 `protobuf:"bytes,7,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	UserId           string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	AmountCents      int64                  `protobuf:"varint,2,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	ReservationId    string                 `protobuf:"bytes,3,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	MetadataJson     string                 `protobuf:"bytes,5,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	LedgerId         string                 `protobuf:"bytes,6,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
+	TenantId         string                 `protobuf:"bytes,7,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	ExpiresAtUnixUtc int64                  `protobuf:"varint,8,opt,name=expires_at_unix_utc,json=expiresAtUnixUtc,proto3" json:"expires_at_unix_utc,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ReserveRequest) Reset() {
@@ -411,6 +412,13 @@ func (x *ReserveRequest) GetTenantId() string {
 		return x.TenantId
 	}
 	return ""
+}
+
+func (x *ReserveRequest) GetExpiresAtUnixUtc() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixUtc
+	}
+	return 0
 }
 
 type CaptureRequest struct {
@@ -1244,13 +1252,14 @@ func (x *BatchGrantOp) GetMetadataJson() string {
 }
 
 type BatchReserveOp struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	AmountCents    int64                  `protobuf:"varint,1,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
-	ReservationId  string                 `protobuf:"bytes,2,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
-	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	MetadataJson   string                 `protobuf:"bytes,4,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	AmountCents      int64                  `protobuf:"varint,1,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	ReservationId    string                 `protobuf:"bytes,2,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	MetadataJson     string                 `protobuf:"bytes,4,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	ExpiresAtUnixUtc int64                  `protobuf:"varint,5,opt,name=expires_at_unix_utc,json=expiresAtUnixUtc,proto3" json:"expires_at_unix_utc,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *BatchReserveOp) Reset() {
@@ -1309,6 +1318,13 @@ func (x *BatchReserveOp) GetMetadataJson() string {
 		return x.MetadataJson
 	}
 	return ""
+}
+
+func (x *BatchReserveOp) GetExpiresAtUnixUtc() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixUtc
+	}
+	return 0
 }
 
 type BatchCaptureOp struct {
@@ -1980,7 +1996,7 @@ const file_api_credit_v1_credit_proto_rawDesc = "" +
 	"\x13expires_at_unix_utc\x18\x04 \x01(\x03R\x10expiresAtUnixUtc\x12#\n" +
 	"\rmetadata_json\x18\x05 \x01(\tR\fmetadataJson\x12\x1b\n" +
 	"\tledger_id\x18\x06 \x01(\tR\bledgerId\x12\x1b\n" +
-	"\ttenant_id\x18\a \x01(\tR\btenantId\"\xfb\x01\n" +
+	"\ttenant_id\x18\a \x01(\tR\btenantId\"\xaa\x02\n" +
 	"\x0eReserveRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12!\n" +
 	"\famount_cents\x18\x02 \x01(\x03R\vamountCents\x12%\n" +
@@ -1988,7 +2004,8 @@ const file_api_credit_v1_credit_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x12#\n" +
 	"\rmetadata_json\x18\x05 \x01(\tR\fmetadataJson\x12\x1b\n" +
 	"\tledger_id\x18\x06 \x01(\tR\bledgerId\x12\x1b\n" +
-	"\ttenant_id\x18\a \x01(\tR\btenantId\"\xfb\x01\n" +
+	"\ttenant_id\x18\a \x01(\tR\btenantId\x12-\n" +
+	"\x13expires_at_unix_utc\x18\b \x01(\x03R\x10expiresAtUnixUtc\"\xfb\x01\n" +
 	"\x0eCaptureRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12%\n" +
 	"\x0ereservation_id\x18\x02 \x01(\tR\rreservationId\x12'\n" +
@@ -2057,12 +2074,13 @@ const file_api_credit_v1_credit_proto_rawDesc = "" +
 	"\famount_cents\x18\x01 \x01(\x03R\vamountCents\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12-\n" +
 	"\x13expires_at_unix_utc\x18\x03 \x01(\x03R\x10expiresAtUnixUtc\x12#\n" +
-	"\rmetadata_json\x18\x04 \x01(\tR\fmetadataJson\"\xa8\x01\n" +
+	"\rmetadata_json\x18\x04 \x01(\tR\fmetadataJson\"\xd7\x01\n" +
 	"\x0eBatchReserveOp\x12!\n" +
 	"\famount_cents\x18\x01 \x01(\x03R\vamountCents\x12%\n" +
 	"\x0ereservation_id\x18\x02 \x01(\tR\rreservationId\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12#\n" +
-	"\rmetadata_json\x18\x04 \x01(\tR\fmetadataJson\"\xa8\x01\n" +
+	"\rmetadata_json\x18\x04 \x01(\tR\fmetadataJson\x12-\n" +
+	"\x13expires_at_unix_utc\x18\x05 \x01(\x03R\x10expiresAtUnixUtc\"\xa8\x01\n" +
 	"\x0eBatchCaptureOp\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12!\n" +

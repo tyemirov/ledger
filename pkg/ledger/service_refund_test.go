@@ -80,7 +80,7 @@ func TestRefundByEntryIDEntryReferencesReservationWhenOriginalHasReservation(tes
 	}
 	reservationID := mustReservationID(test, "order-1")
 	reservationAmount := mustPositiveAmount(test, 200)
-	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, reservationAmount, reservationID, mustIdempotencyKey(test, "reserve-1"), metadata); err != nil {
+	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, reservationAmount, reservationID, mustIdempotencyKey(test, "reserve-1"), 0, metadata); err != nil {
 		test.Fatalf("reserve: %v", err)
 	}
 	captureDebitEntry, err := service.CaptureDebitEntry(context.Background(), tenantID, userID, ledgerID, reservationID, mustIdempotencyKey(test, "capture-1"), reservationAmount, metadata)
