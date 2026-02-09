@@ -70,7 +70,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   message BatchResponse { repeated BatchOperationResult results = 1; }
   ```
 
-- [ ] [LG-216] (P0) Add first-class refunds referencing debit entries (spend/capture). Unresolved.
+- [x] [LG-216] (P0) Add first-class refunds referencing debit entries (spend/capture). Resolved: added `Refund` RPC + refund ledger entry type referencing original debit entries, enforced refund<=debit invariants with idempotency-safe retries, updated stores + gRPC server, and expanded coverage; `make ci` passing.
   Context: consumers currently use `Grant` to reimburse users, but this loses audit semantics (refund vs grant) and cannot enforce "refund <= original debit".
   Deliverables:
   - Add a `Refund` RPC that creates a `refund` ledger entry referencing an original debit entry (a `spend` or `capture`).

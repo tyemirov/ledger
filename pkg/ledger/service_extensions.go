@@ -35,6 +35,7 @@ func (service *Service) SpendEntry(requestContext context.Context, tenantID Tena
 			EntrySpend,
 			amount.ToEntryAmountCents().Negated(),
 			nil,
+			nil,
 			idempotencyKey,
 			0,
 			metadata,

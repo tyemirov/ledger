@@ -9,9 +9,12 @@ import (
 var (
 	ErrInsufficientFunds        = errors.New("insufficient funds")
 	ErrUnknownReservation       = errors.New("unknown reservation")
+	ErrUnknownEntry             = errors.New("unknown entry")
 	ErrDuplicateIdempotencyKey  = errors.New("duplicate idempotency key")
 	ErrReservationExists        = errors.New("reservation already exists")
 	ErrReservationClosed        = errors.New("reservation closed")
+	ErrInvalidRefundOriginal    = errors.New("invalid refund original")
+	ErrRefundExceedsDebit       = errors.New("refund exceeds debit")
 	ErrInvalidAccountID         = errors.New("invalid account id")
 	ErrInvalidEntryID           = errors.New("invalid entry id")
 	ErrInvalidUserID            = errors.New("invalid user id")

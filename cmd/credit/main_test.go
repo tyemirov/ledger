@@ -104,6 +104,42 @@ func TestLoadConfigRespectsEnvOverrides(test *testing.T) {
 	}
 }
 
+func TestLoadConfigFallsBackToDefaultsWhenEnvIsEmpty(test *testing.T) {
+	viper.Reset()
+	test.Setenv("DATABASE_URL", "")
+	test.Setenv("GRPC_LISTEN_ADDR", "")
+
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	if err := loadConfig(cmd, cfg); err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DatabaseURL != defaultDatabaseURL {
+		test.Fatalf("expected default database url %q, got %q", defaultDatabaseURL, cfg.DatabaseURL)
+	}
+	if cfg.ListenAddr != defaultGRPCListenAddr {
+		test.Fatalf("expected default listen addr %q, got %q", defaultGRPCListenAddr, cfg.ListenAddr)
+	}
+}
+
+func TestLoadConfigFallsBackToDefaultsWhenFlagsAreEmpty(test *testing.T) {
+	viper.Reset()
+	cfg := &runtimeConfig{}
+	cmd := &cobra.Command{}
+	cmd.Flags().String(flagDatabaseURL, "", "db")
+	cmd.Flags().String(flagListenAddr, "", "listen")
+
+	if err := loadConfig(cmd, cfg); err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DatabaseURL != defaultDatabaseURL {
+		test.Fatalf("expected default database url %q, got %q", defaultDatabaseURL, cfg.DatabaseURL)
+	}
+	if cfg.ListenAddr != defaultGRPCListenAddr {
+		test.Fatalf("expected default listen addr %q, got %q", defaultGRPCListenAddr, cfg.ListenAddr)
+	}
+}
+
 func TestLoadConfigErrorsWhenFlagsMissing(test *testing.T) {
 	viper.Reset()
 	cfg := &runtimeConfig{}
