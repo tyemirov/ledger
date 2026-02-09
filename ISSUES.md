@@ -52,6 +52,72 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 - [x] [LG-214] (P1) Run Postgres migrations via GORM (remove manual SQL migrator). Resolved: `ledgerd` now `AutoMigrate`s for SQLite+Postgres; compose `migrate` services removed; `db/migrations.sql` deleted; docs updated; `make ci` passing.
 
+- [ ] [LG-215] (P0) Add batch gRPC operations for high-volume credit mutations. Unresolved.
+  Context: real consumers (for example ProductScanner) may need to issue thousands of refunds/grants for a single job. Doing this via one unary gRPC request per product is slow and easy to break when callers run inside canceled request contexts (leading to partial execution and operational noise).
+  Deliverables:
+  - Add a unary `Batch` RPC that executes many operations against the same account (`tenant_id`, `ledger_id`, `user_id`) in a single DB transaction, returning per-item results.
+  - Support operations: `Grant`, `Spend`, `Reserve`, `Capture`, `Release`.
+  - Provide `atomic` (all-or-nothing) vs `best_effort` semantics, with per-item errors/codes for `best_effort` so callers can retry only failed items.
+  - Preserve idempotency: each operation carries its own `idempotency_key`; duplicates should be treated as success (and ideally surfaced as `duplicate=true` in the per-item result).
+  - Enforce a sane max batch size / request bytes limit and return a stable error when exceeded.
+  - Add end-to-end tests that issue a large batch (>= 5k ops) and assert: (1) performance is acceptable, (2) idempotency works, (3) atomic mode rolls back on a failure, (4) best-effort mode returns per-item failure reasons.
+  Proposed proto sketch:
+  ```proto
+  message AccountContext { string user_id = 1; string ledger_id = 2; string tenant_id = 3; }
+  message BatchRequest { AccountContext account = 1; repeated BatchOperation operations = 2; bool atomic = 3; }
+  message BatchOperation { string operation_id = 1; oneof operation { GrantOp grant = 2; SpendOp spend = 3; ReserveOp reserve = 4; CaptureOp capture = 5; ReleaseOp release = 6; } }
+  message BatchOperationResult { string operation_id = 1; bool ok = 2; string error_code = 3; string error_message = 4; string entry_id = 5; bool duplicate = 6; }
+  message BatchResponse { repeated BatchOperationResult results = 1; }
+  ```
+
+- [ ] [LG-216] (P0) Add first-class refunds referencing debit entries (spend/capture). Unresolved.
+  Context: consumers currently use `Grant` to reimburse users, but this loses audit semantics (refund vs grant) and cannot enforce "refund <= original debit".
+  Deliverables:
+  - Add a `Refund` RPC that creates a `refund` ledger entry referencing an original debit entry (a `spend` or `capture`).
+  - Validate that refunds cannot exceed the original debit amount minus prior refunds for the same debit.
+  - Preserve idempotency using the provided `idempotency_key` (duplicate idempotency = no-op success).
+  - Include enough fields in the response to make it auditable (`entry_id`, `created_unix_utc`, and optionally updated balance).
+  - Add coverage for: refund of spend, refund of capture, over-refund rejection, duplicate idempotency handling, and concurrent refunds against the same debit.
+  Proposed proto sketch:
+  ```proto
+  message RefundRequest {
+    string user_id = 1;
+    string ledger_id = 2;
+    string tenant_id = 3;
+    oneof original { string original_entry_id = 4; string original_idempotency_key = 5; }
+    int64 amount_cents = 6;
+    string idempotency_key = 7;
+    string metadata_json = 8;
+  }
+  message RefundResponse { string entry_id = 1; int64 created_unix_utc = 2; BalanceResponse balance = 3; }
+  ```
+
+- [ ] [LG-217] (P1) Support reservation TTLs and automatic expiry cleanup. Unresolved.
+  Context: leaked holds (reservations that are never released due to caller crashes / canceled contexts) permanently reduce `available_cents`. Consumers need a safety net even when they use Reserve/Capture/Release flows.
+  Deliverables:
+  - Extend `ReserveRequest` with `expires_at_unix_utc` (mirroring `GrantRequest`), and treat expired holds as no longer impacting `available_cents`.
+  - Decide on cleanup semantics:
+    - Option A: ignore expired holds when computing balance/available and when enforcing spend/reserve.
+    - Option B (preferred for auditability): lazily emit an automatic `release` entry for expired holds using a deterministic idempotency key (for example `auto_release:<reservation_id>:<expires_at_unix_utc>`), so the ledger remains append-only and explainable.
+  - Add deterministic behavior under concurrent cleanup (avoid double-releasing).
+  - Add tests with an injected clock to validate expiry and ensure available funds recover after TTL.
+
+- [ ] [LG-218] (P1) Add reservation introspection APIs (GetReservation / ListReservations). Unresolved.
+  Context: today, callers cannot reliably introspect reservation state without paging and aggregating `ListEntries`, which is slow and brittle for high-activity accounts.
+  Deliverables:
+  - Add `GetReservation` to return the computed state for a `reservation_id` (reserved, captured, released, remaining held, created time, expires time, status).
+  - Add `ListReservations` to page reservations for an account with optional filters (status, created time cursor).
+  - Ensure computations are consistent with `GetBalance` enforcement rules (especially once TTL/expiry is supported).
+  - Add integration tests covering partial capture, full capture, release, and expiry states.
+
+- [ ] [LG-219] (P2) Improve gRPC ergonomics: return entry IDs and add ListEntries filtering. Unresolved.
+  Context: mutating RPCs currently return `Empty`, forcing clients to call `ListEntries` (and sometimes page) to correlate actions to ledger entries. This is especially painful for operational tooling and for "last grant" UX.
+  Deliverables:
+  - Return `entry_id` + `created_unix_utc` from mutating RPCs (`Grant`, `Spend`, `Reserve`, `Capture`, `Release`) and optionally include the updated balance in the response to reduce round-trips.
+  - Extend `ListEntriesRequest` with server-side filters (at least `type`, `reservation_id`, and `idempotency_key` prefix) plus deterministic pagination/cursors.
+  - Align with LG-212 ("last grant") so the API can satisfy grant-only and last-grant queries without client-side paging.
+  - Add tests asserting filters are applied correctly and pagination is stable.
+
 
 ## BugFixes (302–399)
 
