@@ -16,10 +16,11 @@ type BatchGrantOperation struct {
 
 // BatchReserveOperation describes a reserve mutation within a batch request.
 type BatchReserveOperation struct {
-	Amount         PositiveAmountCents
-	ReservationID  ReservationID
-	IdempotencyKey IdempotencyKey
-	Metadata       MetadataJSON
+	Amount           PositiveAmountCents
+	ReservationID    ReservationID
+	IdempotencyKey   IdempotencyKey
+	ExpiresAtUnixUTC int64
+	Metadata         MetadataJSON
 }
 
 // BatchCaptureOperation describes a capture mutation within a batch request.
@@ -79,6 +80,10 @@ var errBatchAtomicRollback = errors.New("batch_atomic_rollback")
 func (service *Service) Batch(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, operations []BatchOperation, atomic bool) ([]BatchOperationResult, error) {
 	if len(operations) == 0 {
 		return nil, nil
+	}
+
+	if err := service.applyBootstrapGrantIfEligible(ctx, tenantID, userID, ledgerID); err != nil {
+		return nil, err
 	}
 
 	results := make([]BatchOperationResult, len(operations))
@@ -235,7 +240,7 @@ func (service *Service) applyBatchReserve(ctx context.Context, txStore Store, ac
 	if available.Int64() < amountCents.Int64() {
 		return Entry{}, ErrInsufficientFunds
 	}
-	reservation, err := NewReservation(accountID, operation.ReservationID, operation.Amount, ReservationStatusActive)
+	reservation, err := NewReservation(accountID, operation.ReservationID, operation.Amount, ReservationStatusActive, operation.ExpiresAtUnixUTC)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -249,7 +254,7 @@ func (service *Service) applyBatchReserve(ctx context.Context, txStore Store, ac
 		&operation.ReservationID,
 		nil,
 		operation.IdempotencyKey,
-		0,
+		operation.ExpiresAtUnixUTC,
 		operation.Metadata,
 		nowUnixUTC,
 	)
@@ -260,11 +265,15 @@ func (service *Service) applyBatchReserve(ctx context.Context, txStore Store, ac
 }
 
 func (service *Service) applyBatchCapture(ctx context.Context, txStore Store, accountID AccountID, operation BatchCaptureOperation) (Entry, error) {
+	nowUnixUTC := service.nowFn()
 	reservation, err := txStore.GetReservation(ctx, accountID, operation.ReservationID)
 	if err != nil {
 		return Entry{}, err
 	}
 	if reservation.Status() != ReservationStatusActive {
+		return Entry{}, ErrReservationClosed
+	}
+	if reservation.ExpiresAtUnixUTC() != 0 && reservation.ExpiresAtUnixUTC() <= nowUnixUTC {
 		return Entry{}, ErrReservationClosed
 	}
 	if reservation.AmountCents() != operation.Amount {
@@ -273,7 +282,6 @@ func (service *Service) applyBatchCapture(ctx context.Context, txStore Store, ac
 	if err := txStore.UpdateReservationStatus(ctx, accountID, operation.ReservationID, ReservationStatusActive, ReservationStatusCaptured); err != nil {
 		return Entry{}, err
 	}
-	nowUnixUTC := service.nowFn()
 	reverseKey, err := deriveIdempotencyKey(operation.IdempotencyKey, idempotencySuffixReverse)
 	if err != nil {
 		return Entry{}, err

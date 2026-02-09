@@ -51,12 +51,13 @@ func (entry *LedgerEntry) BeforeCreate(tx *gorm.DB) error {
 
 // Reservation mirrors the reservations table.
 type Reservation struct {
-	AccountID     string    `gorm:"type:uuid;primaryKey"`
-	ReservationID string    `gorm:"primaryKey"`
-	AmountCents   int64     `gorm:"not null"`
-	Status        string    `gorm:"not null"`
-	CreatedAt     time.Time `gorm:"not null"`
-	UpdatedAt     time.Time `gorm:"not null"`
+	AccountID     string     `gorm:"type:uuid;primaryKey"`
+	ReservationID string     `gorm:"primaryKey"`
+	AmountCents   int64      `gorm:"not null"`
+	Status        string     `gorm:"not null"`
+	ExpiresAt     *time.Time `gorm:""`
+	CreatedAt     time.Time  `gorm:"not null"`
+	UpdatedAt     time.Time  `gorm:"not null"`
 }
 
 func (Reservation) TableName() string { return "reservations" }

@@ -573,7 +573,7 @@ func TestBatchRefundCopiesReservationIDWhenOriginalHasReservation(test *testing.
 		test.Fatalf("grant: %v", err)
 	}
 	reservationID := mustReservationID(test, "res-1")
-	if _, err := service.ReserveEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 200), reservationID, mustIdempotencyKey(test, "reserve-1"), mustMetadata(test, "{}")); err != nil {
+	if _, err := service.ReserveEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 200), reservationID, mustIdempotencyKey(test, "reserve-1"), 0, mustMetadata(test, "{}")); err != nil {
 		test.Fatalf("reserve entry: %v", err)
 	}
 	originalSpend, err := service.CaptureDebitEntry(context.Background(), tenantID, userID, ledgerID, reservationID, mustIdempotencyKey(test, "capture-1"), mustPositiveAmount(test, 200), mustMetadata(test, "{}"))
@@ -689,7 +689,7 @@ func TestBatchCaptureReturnsErrorWhenUpdateReservationStatusFails(test *testing.
 		test.Fatalf("grant: %v", err)
 	}
 	reservationID := mustReservationID(test, "res-1")
-	if _, err := service.ReserveEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 10), reservationID, mustIdempotencyKey(test, "reserve-1"), mustMetadata(test, "{}")); err != nil {
+	if _, err := service.ReserveEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 10), reservationID, mustIdempotencyKey(test, "reserve-1"), 0, mustMetadata(test, "{}")); err != nil {
 		test.Fatalf("reserve entry: %v", err)
 	}
 
@@ -715,6 +715,44 @@ func TestBatchCaptureReturnsErrorWhenUpdateReservationStatusFails(test *testing.
 	reservation := store.mustReservation(test, reservationID)
 	if reservation.Status() != ReservationStatusActive {
 		test.Fatalf("expected reservation to remain active, got %s", reservation.Status())
+	}
+}
+
+func TestBatchCaptureRejectsExpiredReservations(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-expired")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+	reservationID := mustReservationID(test, "res-expired")
+	amount := mustPositiveAmount(test, 10)
+
+	// mustNewService uses a fixed clock of 100, so an expiry <= 100 should be treated as closed.
+	reservation, err := NewReservation(store.accountID, reservationID, amount, ReservationStatusActive, 100)
+	if err != nil {
+		test.Fatalf("reservation: %v", err)
+	}
+	store.reservations[reservationID] = reservation
+
+	operations := []BatchOperation{
+		newBatchCaptureOperation(test, "capture-1", amount.Int64(), reservationID.String(), "capture-1"),
+	}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(results) != 1 {
+		test.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Entry != nil || results[0].Duplicate || results[0].RolledBack {
+		test.Fatalf("unexpected result: entry=%v err=%v dup=%v rolled_back=%v", results[0].Entry, results[0].Error, results[0].Duplicate, results[0].RolledBack)
+	}
+	if !errors.Is(results[0].Error, ErrReservationClosed) {
+		test.Fatalf("expected ErrReservationClosed, got %v", results[0].Error)
+	}
+	if gotReservation := store.mustReservation(test, reservationID); gotReservation.Status() != ReservationStatusActive {
+		test.Fatalf("expected reservation to remain active, got %s", gotReservation.Status())
 	}
 }
 
@@ -1152,10 +1190,11 @@ func newBatchReserveOperation(test *testing.T, operationID string, amountCents i
 	return BatchOperation{
 		OperationID: operationID,
 		Reserve: &BatchReserveOperation{
-			Amount:         mustPositiveAmount(test, amountCents),
-			ReservationID:  mustReservationID(test, reservationIDValue),
-			IdempotencyKey: mustIdempotencyKey(test, idempotencyKeyValue),
-			Metadata:       mustMetadata(test, "{}"),
+			Amount:           mustPositiveAmount(test, amountCents),
+			ReservationID:    mustReservationID(test, reservationIDValue),
+			IdempotencyKey:   mustIdempotencyKey(test, idempotencyKeyValue),
+			ExpiresAtUnixUTC: 0,
+			Metadata:         mustMetadata(test, "{}"),
 		},
 	}
 }
@@ -1275,6 +1314,10 @@ func (store *duplicateInsertRefundStore) GetReservation(ctx context.Context, acc
 
 func (store *duplicateInsertRefundStore) UpdateReservationStatus(ctx context.Context, accountID AccountID, reservationID ReservationID, from ReservationStatus, to ReservationStatus) error {
 	panic("UpdateReservationStatus not used")
+}
+
+func (store *duplicateInsertRefundStore) ListReservations(ctx context.Context, accountID AccountID, beforeCreatedUnixUTC int64, limit int, filter ListReservationsFilter) ([]Reservation, error) {
+	panic("ListReservations not used")
 }
 
 func (store *duplicateInsertRefundStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error) {

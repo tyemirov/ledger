@@ -97,7 +97,7 @@ func TestStoreFlow(test *testing.T) {
 	if err != nil {
 		test.Fatalf("reservation id: %v", err)
 	}
-	reservation, err := ledger.NewReservation(accountID, reservationID, amount, ledger.ReservationStatusActive)
+	reservation, err := ledger.NewReservation(accountID, reservationID, amount, ledger.ReservationStatusActive, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}
@@ -271,6 +271,76 @@ func TestStoreListEntriesAppliesFilters(test *testing.T) {
 	}
 }
 
+func TestStoreListAccountSummariesPaginatesByAccountID(test *testing.T) {
+	test.Parallel()
+	db := newSQLiteDB(test)
+	store := New(db)
+
+	ctx := context.Background()
+	tenantID := mustTenantID(test)
+	ledgerID := mustLedgerID(test)
+	otherLedgerID, err := ledger.NewLedgerID("other")
+	if err != nil {
+		test.Fatalf("other ledger: %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		userID, err := ledger.NewUserID("user-list-" + string(rune('a'+i)))
+		if err != nil {
+			test.Fatalf("user id: %v", err)
+		}
+		if _, err := store.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID); err != nil {
+			test.Fatalf("account: %v", err)
+		}
+	}
+
+	otherUserID, err := ledger.NewUserID("user-other-ledger")
+	if err != nil {
+		test.Fatalf("other user: %v", err)
+	}
+	if _, err := store.GetOrCreateAccountID(ctx, tenantID, otherUserID, otherLedgerID); err != nil {
+		test.Fatalf("other ledger account: %v", err)
+	}
+
+	page1, err := store.ListAccountSummaries(ctx, tenantID, ledgerID, nil, 3)
+	if err != nil {
+		test.Fatalf("list accounts page1: %v", err)
+	}
+	if len(page1) != 3 {
+		test.Fatalf("expected 3 accounts, got %d", len(page1))
+	}
+	for index, account := range page1 {
+		if account.TenantID() != tenantID || account.LedgerID() != ledgerID {
+			test.Fatalf("unexpected account scope: %+v", account)
+		}
+		if index > 0 && account.AccountID().String() <= page1[index-1].AccountID().String() {
+			test.Fatalf("expected accounts sorted by account_id")
+		}
+	}
+
+	cursor := page1[len(page1)-1].AccountID()
+	page2, err := store.ListAccountSummaries(ctx, tenantID, ledgerID, &cursor, 10)
+	if err != nil {
+		test.Fatalf("list accounts page2: %v", err)
+	}
+	if len(page2) != 2 {
+		test.Fatalf("expected 2 accounts, got %d", len(page2))
+	}
+	for _, account := range page2 {
+		if account.AccountID().String() <= cursor.String() {
+			test.Fatalf("expected account_id > cursor")
+		}
+	}
+
+	seen := make(map[string]struct{}, 5)
+	for _, account := range append(page1, page2...) {
+		seen[account.AccountID().String()] = struct{}{}
+	}
+	if len(seen) != 5 {
+		test.Fatalf("expected 5 unique accounts, got %d", len(seen))
+	}
+}
+
 func TestStoreWithTxCommitsAndRollsBack(test *testing.T) {
 	test.Parallel()
 	db := newSQLiteDB(test)
@@ -416,6 +486,64 @@ func TestStoreGetReservationRejectsInvalidAmountCents(test *testing.T) {
 	}
 }
 
+func TestStoreListReservationsAppliesFilters(test *testing.T) {
+	test.Parallel()
+	db := newSQLiteDB(test)
+	store := New(db)
+
+	ctx := context.Background()
+	accountID, err := store.GetOrCreateAccountID(ctx, mustTenantID(test), mustUserID(test), mustLedgerID(test))
+	if err != nil {
+		test.Fatalf("get account: %v", err)
+	}
+	amount, err := ledger.NewPositiveAmountCents(100)
+	if err != nil {
+		test.Fatalf("amount: %v", err)
+	}
+
+	activeID, err := ledger.NewReservationID("order-1")
+	if err != nil {
+		test.Fatalf("reservation id: %v", err)
+	}
+	activeReservation, err := ledger.NewReservation(accountID, activeID, amount, ledger.ReservationStatusActive, 0)
+	if err != nil {
+		test.Fatalf("reservation: %v", err)
+	}
+	if err := store.CreateReservation(ctx, activeReservation); err != nil {
+		test.Fatalf("create reservation: %v", err)
+	}
+
+	capturedID, err := ledger.NewReservationID("order-2")
+	if err != nil {
+		test.Fatalf("reservation id: %v", err)
+	}
+	capturedReservation, err := ledger.NewReservation(accountID, capturedID, amount, ledger.ReservationStatusCaptured, 0)
+	if err != nil {
+		test.Fatalf("reservation: %v", err)
+	}
+	if err := store.CreateReservation(ctx, capturedReservation); err != nil {
+		test.Fatalf("create captured reservation: %v", err)
+	}
+
+	activeReservations, err := store.ListReservations(ctx, accountID, 0, 10, ledger.ListReservationsFilter{
+		Statuses: []ledger.ReservationStatus{ledger.ReservationStatusActive},
+	})
+	if err != nil {
+		test.Fatalf("list active reservations: %v", err)
+	}
+	if len(activeReservations) != 1 || activeReservations[0].ReservationID().String() != activeID.String() {
+		test.Fatalf("expected active reservation %s, got %+v", activeID.String(), activeReservations)
+	}
+
+	allReservations, err := store.ListReservations(ctx, accountID, time.Now().UTC().Add(time.Hour).Unix(), 10, ledger.ListReservationsFilter{})
+	if err != nil {
+		test.Fatalf("list reservations: %v", err)
+	}
+	if len(allReservations) != 2 {
+		test.Fatalf("expected 2 reservations, got %d", len(allReservations))
+	}
+}
+
 func TestStoreSumActiveHoldsRejectsNegativeSum(test *testing.T) {
 	test.Parallel()
 	db := newSQLiteDB(test)
@@ -444,6 +572,58 @@ func TestStoreSumActiveHoldsRejectsNegativeSum(test *testing.T) {
 	}
 	if operationError.Subject() != errorSubjectBalance || operationError.Code() != errorCodeInvalid {
 		test.Fatalf("unexpected operation error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+}
+
+func TestStoreSumActiveHoldsIgnoresExpiredReservations(test *testing.T) {
+	test.Parallel()
+	db := newSQLiteDB(test)
+	store := New(db)
+
+	ctx := context.Background()
+	accountID, err := store.GetOrCreateAccountID(ctx, mustTenantID(test), mustUserID(test), mustLedgerID(test))
+	if err != nil {
+		test.Fatalf("account: %v", err)
+	}
+	reservationID, err := ledger.NewReservationID("order-expiring")
+	if err != nil {
+		test.Fatalf("reservation id: %v", err)
+	}
+	amount, err := ledger.NewPositiveAmountCents(100)
+	if err != nil {
+		test.Fatalf("amount: %v", err)
+	}
+
+	expiresAtUnixUTC := int64(1700000010)
+	reservation, err := ledger.NewReservation(accountID, reservationID, amount, ledger.ReservationStatusActive, expiresAtUnixUTC)
+	if err != nil {
+		test.Fatalf("reservation: %v", err)
+	}
+	if err := store.CreateReservation(ctx, reservation); err != nil {
+		test.Fatalf("create reservation: %v", err)
+	}
+	gotReservation, err := store.GetReservation(ctx, accountID, reservationID)
+	if err != nil {
+		test.Fatalf("get reservation: %v", err)
+	}
+	if gotReservation.ExpiresAtUnixUTC() != expiresAtUnixUTC {
+		test.Fatalf("expected expires_at_unix_utc %d, got %d", expiresAtUnixUTC, gotReservation.ExpiresAtUnixUTC())
+	}
+
+	holds, err := store.SumActiveHolds(ctx, accountID, expiresAtUnixUTC-1)
+	if err != nil {
+		test.Fatalf("sum holds before expiry: %v", err)
+	}
+	if holds.Int64() != 100 {
+		test.Fatalf("expected holds 100 before expiry, got %d", holds.Int64())
+	}
+
+	holds, err = store.SumActiveHolds(ctx, accountID, expiresAtUnixUTC)
+	if err != nil {
+		test.Fatalf("sum holds at expiry: %v", err)
+	}
+	if holds.Int64() != 0 {
+		test.Fatalf("expected holds 0 at expiry, got %d", holds.Int64())
 	}
 }
 
@@ -531,7 +711,7 @@ func TestStoreWrapsDatabaseErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("amount: %v", err)
 	}
-	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive)
+	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}

@@ -92,7 +92,68 @@ func TestNewReservationValidation(test *testing.T) {
 		testCase := testCase
 		test.Run(testCase.name, func(test *testing.T) {
 			test.Parallel()
-			_, err := NewReservation(testCase.accountID, testCase.reservationID, testCase.amount, testCase.status)
+			_, err := NewReservation(testCase.accountID, testCase.reservationID, testCase.amount, testCase.status, 0)
+			if !errors.Is(err, testCase.wantErr) {
+				test.Fatalf(errorMismatchMessage, testCase.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestNewReservationWithTimestampsValidation(test *testing.T) {
+	test.Parallel()
+	validAccountID := mustAccountID(test, accountIDValue)
+	validReservationID := mustReservationID(test, reservationIDValue)
+	validAmount := mustPositiveAmount(test, 50)
+	validStatus := ReservationStatusActive
+
+	testCases := []struct {
+		name          string
+		accountID     AccountID
+		reservationID ReservationID
+		amount        PositiveAmountCents
+		status        ReservationStatus
+		wantErr       error
+	}{
+		{
+			name:          "invalid account id",
+			accountID:     AccountID{},
+			reservationID: validReservationID,
+			amount:        validAmount,
+			status:        validStatus,
+			wantErr:       ErrInvalidAccountID,
+		},
+		{
+			name:          "invalid reservation id",
+			accountID:     validAccountID,
+			reservationID: ReservationID{},
+			amount:        validAmount,
+			status:        validStatus,
+			wantErr:       ErrInvalidReservationID,
+		},
+		{
+			name:          "invalid amount",
+			accountID:     validAccountID,
+			reservationID: validReservationID,
+			amount:        PositiveAmountCents(0),
+			status:        validStatus,
+			wantErr:       ErrInvalidAmountCents,
+		},
+		{
+			name:          "invalid status",
+			accountID:     validAccountID,
+			reservationID: validReservationID,
+			amount:        validAmount,
+			status:        ReservationStatus("invalid"),
+			wantErr:       ErrInvalidReservationStatus,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			_, err := NewReservationWithTimestamps(testCase.accountID, testCase.reservationID, testCase.amount, testCase.status, 0, 10, 10)
 			if !errors.Is(err, testCase.wantErr) {
 				test.Fatalf(errorMismatchMessage, testCase.wantErr, err)
 			}
@@ -211,6 +272,36 @@ func TestNewEntryRejectsInvalidEntryID(test *testing.T) {
 	amount := mustEntryAmount(test, 15)
 
 	_, err := NewEntry(EntryID{}, accountID, EntryGrant, amount, nil, nil, idempotencyKey, 0, metadata, 100)
+	if !errors.Is(err, ErrInvalidEntryID) {
+		test.Fatalf(errorMismatchMessage, ErrInvalidEntryID, err)
+	}
+}
+
+func TestNewEntryPropagatesEntryInputValidationErrors(test *testing.T) {
+	test.Parallel()
+	entryID, err := NewEntryID("entry-1")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+	idempotencyKey := mustIdempotencyKey(test, idempotencyValue)
+	metadata := mustMetadata(test, metadataValue)
+	amount := mustEntryAmount(test, 15)
+
+	_, err = NewEntry(entryID, AccountID{}, EntryGrant, amount, nil, nil, idempotencyKey, 0, metadata, 100)
+	if !errors.Is(err, ErrInvalidAccountID) {
+		test.Fatalf(errorMismatchMessage, ErrInvalidAccountID, err)
+	}
+}
+
+func TestNewEntryInputRejectsInvalidRefundOfEntryID(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test, accountIDValue)
+	idempotencyKey := mustIdempotencyKey(test, idempotencyValue)
+	metadata := mustMetadata(test, metadataValue)
+	amount := mustEntryAmount(test, 15)
+	refundOfEntryID := EntryID{}
+
+	_, err := NewEntryInput(accountID, EntryRefund, amount, nil, &refundOfEntryID, idempotencyKey, 0, metadata, 100)
 	if !errors.Is(err, ErrInvalidEntryID) {
 		test.Fatalf(errorMismatchMessage, ErrInvalidEntryID, err)
 	}

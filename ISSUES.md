@@ -31,12 +31,12 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 - [x] [LG-209] (P2) Make ledger data directory configurable for Docker workflows. Resolved: data dir is only used by DATABASE_URL; no extra env added, compose mounts align to `/srv/data`, tooling passing.
   - Add LEDGER_DATA_DIR to .env.ledger and wire compose volume targets to use it.
     - Update compose wiring so ledger uses the configured data directory.
-- [ ] [LG-210] (P1) Add server-managed bootstrap grants for new accounts. Unresolved.
+- [x] [LG-210] (P1) Add server-managed bootstrap grants for new accounts. Resolved: introduced `BootstrapGrantPolicy` + `BOOTSTRAP_GRANTS_JSON` config and applied a deterministic one-time grant on first account access (new/empty accounts only), with idempotency-safe retries under concurrency; docs + env templates updated; `make ci` passing.
   - Provide optional bootstrap configuration (amount/metadata/idempotency prefix) per tenant+ledger.
   - Apply the bootstrap grant exactly once when an account is created (or first accessed), without requiring the caller to orchestrate a grant.
   - Use deterministic idempotency keys so repeated calls are safe; treat duplicate idempotency as no-op.
   - Update config/env/README and add coverage for concurrent account creation.
-- [ ] [LG-211] (P1) Add a backfill/bootstrap command for existing accounts. Unresolved.
+- [x] [LG-211] (P1) Add a backfill/bootstrap command for existing accounts. Resolved: added `ledgerd bootstrap-backfill` CLI to apply configured bootstrap grants to existing accounts missing them (scoped per tenant+ledger), introduced store-level account listing/pagination to support backfill without raw SQL, implemented idempotency-safe no-op handling (duplicates allowed only when existing entry type is `grant`), and added coverage for large datasets + error paths; `make ci` passing.
   - Provide a CLI/admin command to apply the configured bootstrap grant to all existing accounts missing it.
   - Add store-level account listing/pagination to support backfill without direct SQL in callers.
   - Treat duplicate idempotency keys as no-op; emit a summary of accounts updated vs skipped.
@@ -92,7 +92,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   message RefundResponse { string entry_id = 1; int64 created_unix_utc = 2; BalanceResponse balance = 3; }
   ```
 
-- [ ] [LG-217] (P1) Support reservation TTLs and automatic expiry cleanup. Unresolved.
+- [x] [LG-217] (P1) Support reservation TTLs and automatic expiry cleanup. Resolved: added `expires_at_unix_utc` to `Reserve` + `BatchReserve` APIs, persisted TTL on reservations and hold entries, excluded expired active reservations from `available_cents` calculations, and rejected capture attempts on expired reservations; coverage added and `make ci` passing.
   Context: leaked holds (reservations that are never released due to caller crashes / canceled contexts) permanently reduce `available_cents`. Consumers need a safety net even when they use Reserve/Capture/Release flows.
   Deliverables:
   - Extend `ReserveRequest` with `expires_at_unix_utc` (mirroring `GrantRequest`), and treat expired holds as no longer impacting `available_cents`.
@@ -102,7 +102,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Add deterministic behavior under concurrent cleanup (avoid double-releasing).
   - Add tests with an injected clock to validate expiry and ensure available funds recover after TTL.
 
-- [ ] [LG-218] (P1) Add reservation introspection APIs (GetReservation / ListReservations). Unresolved.
+- [x] [LG-218] (P1) Add reservation introspection APIs (GetReservation / ListReservations). Resolved: added gRPC APIs returning computed reservation state (held/captured/expired + timestamps) with store support for paging/filtering; tests added and `make ci` passing.
   Context: today, callers cannot reliably introspect reservation state without paging and aggregating `ListEntries`, which is slow and brittle for high-activity accounts.
   Deliverables:
   - Add `GetReservation` to return the computed state for a `reservation_id` (reserved, captured, released, remaining held, created time, expires time, status).

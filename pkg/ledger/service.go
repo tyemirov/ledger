@@ -7,9 +7,10 @@ import (
 
 // Service contains the domain logic over a Store.
 type Service struct {
-	store  Store
-	nowFn  func() int64
-	logger OperationLogger
+	store           Store
+	nowFn           func() int64
+	logger          OperationLogger
+	bootstrapPolicy BootstrapGrantPolicy
 }
 
 // NewService wires a Service.
@@ -31,6 +32,9 @@ func NewService(store Store, now func() int64, options ...ServiceOption) (*Servi
 
 // Balance returns total and available (total minus active holds).
 func (service *Service) Balance(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID) (Balance, error) {
+	if err := service.applyBootstrapGrantIfEligible(ctx, tenantID, userID, ledgerID); err != nil {
+		return Balance{}, err
+	}
 	accountID, err := service.store.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
 	if err != nil {
 		return Balance{}, err
@@ -59,6 +63,9 @@ func (service *Service) Grant(ctx context.Context, tenantID TenantID, userID Use
 
 // GrantEntry appends a positive grant (optionally expiring) and returns the persisted entry.
 func (service *Service) GrantEntry(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON) (Entry, error) {
+	if err := service.applyBootstrapGrantIfEligible(ctx, tenantID, userID, ledgerID); err != nil {
+		return Entry{}, err
+	}
 	var persistedEntry Entry
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
 		accountID, err := transactionStore.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
@@ -99,13 +106,16 @@ func (service *Service) GrantEntry(ctx context.Context, tenantID TenantID, userI
 }
 
 // Reserve appends a negative hold if sufficient available balance.
-func (service *Service) Reserve(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) error {
-	_, err := service.ReserveEntry(ctx, tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata)
+func (service *Service) Reserve(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, reservationID ReservationID, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON) error {
+	_, err := service.ReserveEntry(ctx, tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, expiresAtUnixUTC, metadata)
 	return err
 }
 
 // ReserveEntry appends a negative hold if sufficient available balance and returns the persisted hold entry.
-func (service *Service) ReserveEntry(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) (Entry, error) {
+func (service *Service) ReserveEntry(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, reservationID ReservationID, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON) (Entry, error) {
+	if err := service.applyBootstrapGrantIfEligible(ctx, tenantID, userID, ledgerID); err != nil {
+		return Entry{}, err
+	}
 	var persistedEntry Entry
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
 		accountID, err := transactionStore.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
@@ -126,7 +136,7 @@ func (service *Service) ReserveEntry(ctx context.Context, tenantID TenantID, use
 		if available.Int64() < amountCents.Int64() {
 			return ErrInsufficientFunds
 		}
-		reservation, err := NewReservation(accountID, reservationID, amount, ReservationStatusActive)
+		reservation, err := NewReservation(accountID, reservationID, amount, ReservationStatusActive, expiresAtUnixUTC)
 		if err != nil {
 			return err
 		}
@@ -140,7 +150,7 @@ func (service *Service) ReserveEntry(ctx context.Context, tenantID TenantID, use
 			&reservationID,
 			nil,
 			idempotencyKey,
-			0,
+			expiresAtUnixUTC,
 			metadata,
 			nowUnixUTC,
 		)
@@ -182,11 +192,15 @@ func (service *Service) CaptureDebitEntry(ctx context.Context, tenantID TenantID
 		if err != nil {
 			return err
 		}
+		nowUnixUTC := service.nowFn()
 		reservation, err := transactionStore.GetReservation(ctx, accountID, reservationID)
 		if err != nil {
 			return err
 		}
 		if reservation.Status() != ReservationStatusActive {
+			return ErrReservationClosed
+		}
+		if reservation.ExpiresAtUnixUTC() != 0 && reservation.ExpiresAtUnixUTC() <= nowUnixUTC {
 			return ErrReservationClosed
 		}
 		if reservation.AmountCents() != amount {
@@ -195,7 +209,6 @@ func (service *Service) CaptureDebitEntry(ctx context.Context, tenantID TenantID
 		if err := transactionStore.UpdateReservationStatus(ctx, accountID, reservationID, ReservationStatusActive, ReservationStatusCaptured); err != nil {
 			return err
 		}
-		nowUnixUTC := service.nowFn()
 		reverseKey, err := deriveIdempotencyKey(idempotencyKey, idempotencySuffixReverse)
 		if err != nil {
 			return err

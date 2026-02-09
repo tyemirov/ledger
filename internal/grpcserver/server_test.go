@@ -62,6 +62,7 @@ func TestMapToGRPCError(test *testing.T) {
 		{name: "invalid ledger id", input: ledger.ErrInvalidLedgerID, wantCode: codes.InvalidArgument, wantMessage: errorInvalidLedgerID},
 		{name: "invalid tenant id", input: ledger.ErrInvalidTenantID, wantCode: codes.InvalidArgument, wantMessage: errorInvalidTenantID},
 		{name: "invalid reservation id", input: ledger.ErrInvalidReservationID, wantCode: codes.InvalidArgument, wantMessage: errorInvalidReservationID},
+		{name: "invalid reservation status", input: ledger.ErrInvalidReservationStatus, wantCode: codes.InvalidArgument, wantMessage: errorInvalidReservationStatus},
 		{name: "invalid entry id", input: ledger.ErrInvalidEntryID, wantCode: codes.InvalidArgument, wantMessage: errorInvalidEntryID},
 		{name: "invalid idempotency key", input: ledger.ErrInvalidIdempotencyKey, wantCode: codes.InvalidArgument, wantMessage: errorInvalidIdempotencyKey},
 		{name: "invalid amount", input: ledger.ErrInvalidAmountCents, wantCode: codes.InvalidArgument, wantMessage: errorInvalidAmount},
@@ -107,6 +108,7 @@ func TestMapToBatchErrorCode(test *testing.T) {
 		{name: "invalid ledger id", input: ledger.ErrInvalidLedgerID, wantCode: errorInvalidLedgerID},
 		{name: "invalid tenant id", input: ledger.ErrInvalidTenantID, wantCode: errorInvalidTenantID},
 		{name: "invalid reservation id", input: ledger.ErrInvalidReservationID, wantCode: errorInvalidReservationID},
+		{name: "invalid reservation status", input: ledger.ErrInvalidReservationStatus, wantCode: errorInvalidReservationStatus},
 		{name: "invalid entry id", input: ledger.ErrInvalidEntryID, wantCode: errorInvalidEntryID},
 		{name: "invalid idempotency key", input: ledger.ErrInvalidIdempotencyKey, wantCode: errorInvalidIdempotencyKey},
 		{name: "invalid amount", input: ledger.ErrInvalidAmountCents, wantCode: errorInvalidAmount},
@@ -447,6 +449,373 @@ func TestCreditServiceServerFlow(test *testing.T) {
 		ReservationId:  "unknown",
 		IdempotencyKey: "release-2",
 		MetadataJson:   "{}",
+	})
+	if status.Code(err) != codes.NotFound {
+		test.Fatalf("expected not found, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorUnknownReservation {
+		test.Fatalf("expected %q, got %q", errorUnknownReservation, status.Convert(err).Message())
+	}
+}
+
+func TestCreditServiceServerReservationIntrospection(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    1000,
+		IdempotencyKey: "grant-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+
+	if _, err := server.Reserve(ctx, &creditv1.ReserveRequest{
+		UserId:           userID,
+		TenantId:         tenantID,
+		LedgerId:         ledgerID,
+		AmountCents:      300,
+		ReservationId:    "order-1",
+		IdempotencyKey:   "reserve-1",
+		ExpiresAtUnixUtc: 1700000060,
+		MetadataJson:     "{}",
+	}); err != nil {
+		test.Fatalf("reserve: %v", err)
+	}
+
+	activeReservation, err := server.GetReservation(ctx, &creditv1.GetReservationRequest{
+		UserId:        userID,
+		TenantId:      tenantID,
+		LedgerId:      ledgerID,
+		ReservationId: "order-1",
+	})
+	if err != nil {
+		test.Fatalf("get reservation: %v", err)
+	}
+	if activeReservation.GetReservation().GetReservationId() != "order-1" {
+		test.Fatalf("expected reservation_id order-1, got %q", activeReservation.GetReservation().GetReservationId())
+	}
+	if activeReservation.GetReservation().GetAmountCents() != 300 {
+		test.Fatalf("expected amount 300, got %d", activeReservation.GetReservation().GetAmountCents())
+	}
+	if activeReservation.GetReservation().GetStatus() != ledger.ReservationStatusActive.String() {
+		test.Fatalf("expected status active, got %q", activeReservation.GetReservation().GetStatus())
+	}
+	if activeReservation.GetReservation().GetExpiresAtUnixUtc() != 1700000060 {
+		test.Fatalf("expected expires_at_unix_utc 1700000060, got %d", activeReservation.GetReservation().GetExpiresAtUnixUtc())
+	}
+	if activeReservation.GetReservation().GetExpired() {
+		test.Fatalf("expected reservation to be not expired")
+	}
+	if activeReservation.GetReservation().GetHeldCents() != 300 {
+		test.Fatalf("expected held_cents 300, got %d", activeReservation.GetReservation().GetHeldCents())
+	}
+	if activeReservation.GetReservation().GetCapturedCents() != 0 {
+		test.Fatalf("expected captured_cents 0, got %d", activeReservation.GetReservation().GetCapturedCents())
+	}
+	if activeReservation.GetReservation().GetCreatedUnixUtc() == 0 || activeReservation.GetReservation().GetUpdatedUnixUtc() == 0 {
+		test.Fatalf("expected created/updated unix utc timestamps to be set")
+	}
+	if activeReservation.GetReservation().GetUpdatedUnixUtc() < activeReservation.GetReservation().GetCreatedUnixUtc() {
+		test.Fatalf("expected updated timestamp >= created timestamp")
+	}
+
+	if _, err := server.Capture(ctx, &creditv1.CaptureRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		ReservationId:  "order-1",
+		IdempotencyKey: "capture-1",
+		AmountCents:    300,
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("capture: %v", err)
+	}
+
+	capturedReservation, err := server.GetReservation(ctx, &creditv1.GetReservationRequest{
+		UserId:        userID,
+		TenantId:      tenantID,
+		LedgerId:      ledgerID,
+		ReservationId: "order-1",
+	})
+	if err != nil {
+		test.Fatalf("get reservation captured: %v", err)
+	}
+	if capturedReservation.GetReservation().GetStatus() != ledger.ReservationStatusCaptured.String() {
+		test.Fatalf("expected status captured, got %q", capturedReservation.GetReservation().GetStatus())
+	}
+	if capturedReservation.GetReservation().GetHeldCents() != 0 {
+		test.Fatalf("expected held_cents 0, got %d", capturedReservation.GetReservation().GetHeldCents())
+	}
+	if capturedReservation.GetReservation().GetCapturedCents() != 300 {
+		test.Fatalf("expected captured_cents 300, got %d", capturedReservation.GetReservation().GetCapturedCents())
+	}
+
+	if _, err := server.Reserve(ctx, &creditv1.ReserveRequest{
+		UserId:           userID,
+		TenantId:         tenantID,
+		LedgerId:         ledgerID,
+		AmountCents:      100,
+		ReservationId:    "order-expired",
+		IdempotencyKey:   "reserve-expired",
+		ExpiresAtUnixUtc: 1699999999,
+		MetadataJson:     "{}",
+	}); err != nil {
+		test.Fatalf("reserve expired: %v", err)
+	}
+
+	expiredReservation, err := server.GetReservation(ctx, &creditv1.GetReservationRequest{
+		UserId:        userID,
+		TenantId:      tenantID,
+		LedgerId:      ledgerID,
+		ReservationId: "order-expired",
+	})
+	if err != nil {
+		test.Fatalf("get expired reservation: %v", err)
+	}
+	if expiredReservation.GetReservation().GetStatus() != ledger.ReservationStatusActive.String() {
+		test.Fatalf("expected status active, got %q", expiredReservation.GetReservation().GetStatus())
+	}
+	if !expiredReservation.GetReservation().GetExpired() {
+		test.Fatalf("expected reservation to be expired")
+	}
+	if expiredReservation.GetReservation().GetHeldCents() != 0 {
+		test.Fatalf("expected expired reservation to have held_cents=0, got %d", expiredReservation.GetReservation().GetHeldCents())
+	}
+
+	activeReservations, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
+		UserId:               userID,
+		TenantId:             tenantID,
+		LedgerId:             ledgerID,
+		BeforeCreatedUnixUtc: 0,
+		Limit:                10,
+		Statuses:             []string{ledger.ReservationStatusActive.String()},
+	})
+	if err != nil {
+		test.Fatalf("list active reservations: %v", err)
+	}
+	if len(activeReservations.GetReservations()) != 1 {
+		test.Fatalf("expected 1 active reservation, got %d", len(activeReservations.GetReservations()))
+	}
+	if activeReservations.GetReservations()[0].GetReservationId() != "order-expired" {
+		test.Fatalf("expected active reservation order-expired, got %q", activeReservations.GetReservations()[0].GetReservationId())
+	}
+
+	capturedReservations, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
+		UserId:               userID,
+		TenantId:             tenantID,
+		LedgerId:             ledgerID,
+		BeforeCreatedUnixUtc: 0,
+		Limit:                10,
+		Statuses:             []string{ledger.ReservationStatusCaptured.String()},
+	})
+	if err != nil {
+		test.Fatalf("list captured reservations: %v", err)
+	}
+	if len(capturedReservations.GetReservations()) != 1 {
+		test.Fatalf("expected 1 captured reservation, got %d", len(capturedReservations.GetReservations()))
+	}
+	if capturedReservations.GetReservations()[0].GetReservationId() != "order-1" {
+		test.Fatalf("expected captured reservation order-1, got %q", capturedReservations.GetReservations()[0].GetReservationId())
+	}
+	if capturedReservations.GetReservations()[0].GetCapturedCents() != 300 {
+		test.Fatalf("expected captured reservation to report captured_cents=300, got %d", capturedReservations.GetReservations()[0].GetCapturedCents())
+	}
+
+	_, err = server.ListReservations(ctx, &creditv1.ListReservationsRequest{
+		UserId:   userID,
+		TenantId: tenantID,
+		LedgerId: ledgerID,
+		Statuses: []string{"not-a-status"},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		test.Fatalf("expected invalid argument, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorInvalidReservationStatus {
+		test.Fatalf("expected %q, got %q", errorInvalidReservationStatus, status.Convert(err).Message())
+	}
+}
+
+func TestCreditServiceServerReservationIntrospectionValidationErrors(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+	ctx := context.Background()
+
+	testCases := []struct {
+		name        string
+		invoke      func() error
+		wantCode    codes.Code
+		wantMessage string
+	}{
+		{
+			name: "get reservation invalid user id",
+			invoke: func() error {
+				_, err := server.GetReservation(ctx, &creditv1.GetReservationRequest{
+					UserId:        " ",
+					TenantId:      "default",
+					LedgerId:      "default",
+					ReservationId: "order-1",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidUserID,
+		},
+		{
+			name: "get reservation invalid ledger id",
+			invoke: func() error {
+				_, err := server.GetReservation(ctx, &creditv1.GetReservationRequest{
+					UserId:        "user-123",
+					TenantId:      "default",
+					LedgerId:      " ",
+					ReservationId: "order-1",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidLedgerID,
+		},
+		{
+			name: "get reservation invalid tenant id",
+			invoke: func() error {
+				_, err := server.GetReservation(ctx, &creditv1.GetReservationRequest{
+					UserId:        "user-123",
+					TenantId:      " ",
+					LedgerId:      "default",
+					ReservationId: "order-1",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidTenantID,
+		},
+		{
+			name: "get reservation invalid reservation id",
+			invoke: func() error {
+				_, err := server.GetReservation(ctx, &creditv1.GetReservationRequest{
+					UserId:        "user-123",
+					TenantId:      "default",
+					LedgerId:      "default",
+					ReservationId: " ",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidReservationID,
+		},
+		{
+			name: "list reservations invalid user id",
+			invoke: func() error {
+				_, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
+					UserId:   " ",
+					TenantId: "default",
+					LedgerId: "default",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidUserID,
+		},
+		{
+			name: "list reservations invalid ledger id",
+			invoke: func() error {
+				_, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
+					UserId:   "user-123",
+					TenantId: "default",
+					LedgerId: " ",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidLedgerID,
+		},
+		{
+			name: "list reservations invalid tenant id",
+			invoke: func() error {
+				_, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
+					UserId:   "user-123",
+					TenantId: " ",
+					LedgerId: "default",
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidTenantID,
+		},
+		{
+			name: "list reservations invalid limit",
+			invoke: func() error {
+				_, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
+					UserId:   "user-123",
+					TenantId: "default",
+					LedgerId: "default",
+					Limit:    maxListEntriesLimit + 1,
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidListLimit,
+		},
+		{
+			name: "list reservations invalid status filter",
+			invoke: func() error {
+				_, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
+					UserId:   "user-123",
+					TenantId: "default",
+					LedgerId: "default",
+					Statuses: []string{"not-a-status"},
+				})
+				return err
+			},
+			wantCode:    codes.InvalidArgument,
+			wantMessage: errorInvalidReservationStatus,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			err := testCase.invoke()
+			if status.Code(err) != testCase.wantCode {
+				test.Fatalf("expected %v, got %v", testCase.wantCode, status.Code(err))
+			}
+			if status.Convert(err).Message() != testCase.wantMessage {
+				test.Fatalf("expected %q, got %q", testCase.wantMessage, status.Convert(err).Message())
+			}
+		})
+	}
+}
+
+func TestCreditServiceServerGetReservationUnknownReservation(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	_, err = server.GetReservation(context.Background(), &creditv1.GetReservationRequest{
+		UserId:        "user-123",
+		TenantId:      "default",
+		LedgerId:      "default",
+		ReservationId: "order-unknown",
 	})
 	if status.Code(err) != codes.NotFound {
 		test.Fatalf("expected not found, got %v", status.Code(err))
@@ -2113,7 +2482,8 @@ func newSQLiteLedgerService(test *testing.T) (*ledger.Service, error) {
 	test.Helper()
 	tempDir := test.TempDir()
 	sqlitePath := filepath.Join(tempDir, "ledger.db")
-	db, err := gorm.Open(sqlite.Open(sqlitePath), &gorm.Config{})
+	sqliteDSN := fmt.Sprintf("file:%s?cache=shared&_pragma=busy_timeout=5000&_pragma=journal_mode=WAL", sqlitePath)
+	db, err := gorm.Open(sqlite.Open(sqliteDSN), &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}
@@ -2128,6 +2498,175 @@ func newSQLiteLedgerService(test *testing.T) (*ledger.Service, error) {
 	store := gormstore.New(db)
 	clock := func() int64 { return 1700000000 }
 	return ledger.NewService(store, clock)
+}
+
+func mustBootstrapPolicy(test *testing.T, amountCents int64) ledger.BootstrapGrantPolicy {
+	test.Helper()
+	tenantID, err := ledger.NewTenantID("default")
+	if err != nil {
+		test.Fatalf("tenant id: %v", err)
+	}
+	ledgerID, err := ledger.NewLedgerID("default")
+	if err != nil {
+		test.Fatalf("ledger id: %v", err)
+	}
+	amount, err := ledger.NewPositiveAmountCents(amountCents)
+	if err != nil {
+		test.Fatalf("amount: %v", err)
+	}
+	idempotencyKeyBase, err := ledger.NewIdempotencyKey("bootstrap")
+	if err != nil {
+		test.Fatalf("idempotency: %v", err)
+	}
+	metadata, err := ledger.NewMetadataJSON(`{"reason":"account_bootstrap"}`)
+	if err != nil {
+		test.Fatalf("metadata: %v", err)
+	}
+	rule, err := ledger.NewBootstrapGrantRule(tenantID, ledgerID, amount, idempotencyKeyBase, metadata)
+	if err != nil {
+		test.Fatalf("bootstrap rule: %v", err)
+	}
+	policy, err := ledger.NewBootstrapGrantPolicy([]ledger.BootstrapGrantRule{rule})
+	if err != nil {
+		test.Fatalf("bootstrap policy: %v", err)
+	}
+	return policy
+}
+
+func TestBootstrapGrantAppliedOnFirstBalance(test *testing.T) {
+	test.Parallel()
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "ledger.db")
+	sqliteDSN := fmt.Sprintf("file:%s?cache=shared&_pragma=busy_timeout=5000&_pragma=journal_mode=WAL", sqlitePath)
+	db, err := gorm.Open(sqlite.Open(sqliteDSN), &gorm.Config{})
+	if err != nil {
+		test.Fatalf("open db: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		test.Fatalf("db handle: %v", err)
+	}
+	test.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}, &gormstore.Reservation{}); err != nil {
+		test.Fatalf("migrate: %v", err)
+	}
+	store := gormstore.New(db)
+	clock := func() int64 { return 1700000000 }
+
+	bootstrapPolicy := mustBootstrapPolicy(test, 1000)
+	creditService, err := ledger.NewService(store, clock, ledger.WithBootstrapGrantPolicy(bootstrapPolicy))
+	if err != nil {
+		test.Fatalf("new service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "bootstrap-user"
+	tenantID := "default"
+	ledgerID := "default"
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{
+		UserId:   userID,
+		TenantId: tenantID,
+		LedgerId: ledgerID,
+	})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 1000 || balanceResponse.GetAvailableCents() != 1000 {
+		test.Fatalf("expected 1000/1000, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+
+	balanceResponse, err = server.GetBalance(ctx, &creditv1.BalanceRequest{
+		UserId:   userID,
+		TenantId: tenantID,
+		LedgerId: ledgerID,
+	})
+	if err != nil {
+		test.Fatalf("get balance second time: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 1000 || balanceResponse.GetAvailableCents() != 1000 {
+		test.Fatalf("expected 1000/1000 after second call, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+
+	entries, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
+		UserId:        userID,
+		TenantId:      tenantID,
+		LedgerId:      ledgerID,
+		BeforeUnixUtc: 1893456000,
+		Limit:         10,
+	})
+	if err != nil {
+		test.Fatalf("list entries: %v", err)
+	}
+	if got := len(entries.GetEntries()); got != 1 {
+		test.Fatalf("expected 1 entry, got %d", got)
+	}
+	if entries.GetEntries()[0].GetType() != "grant" {
+		test.Fatalf("expected grant entry, got %q", entries.GetEntries()[0].GetType())
+	}
+}
+
+func TestBootstrapGrantDoesNotApplyToExistingAccounts(test *testing.T) {
+	test.Parallel()
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "ledger.db")
+	sqliteDSN := fmt.Sprintf("file:%s?cache=shared&_pragma=busy_timeout=5000&_pragma=journal_mode=WAL", sqlitePath)
+	db, err := gorm.Open(sqlite.Open(sqliteDSN), &gorm.Config{})
+	if err != nil {
+		test.Fatalf("open db: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		test.Fatalf("db handle: %v", err)
+	}
+	test.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}, &gormstore.Reservation{}); err != nil {
+		test.Fatalf("migrate: %v", err)
+	}
+	store := gormstore.New(db)
+	clock := func() int64 { return 1700000000 }
+
+	creditService, err := ledger.NewService(store, clock)
+	if err != nil {
+		test.Fatalf("new service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "bootstrap-existing"
+	tenantID := "default"
+	ledgerID := "default"
+
+	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    500,
+		IdempotencyKey: "grant-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+
+	bootstrapPolicy := mustBootstrapPolicy(test, 1000)
+	creditServiceWithBootstrap, err := ledger.NewService(store, clock, ledger.WithBootstrapGrantPolicy(bootstrapPolicy))
+	if err != nil {
+		test.Fatalf("new service with bootstrap: %v", err)
+	}
+	serverWithBootstrap := NewCreditServiceServer(creditServiceWithBootstrap)
+
+	balanceResponse, err := serverWithBootstrap.GetBalance(ctx, &creditv1.BalanceRequest{
+		UserId:   userID,
+		TenantId: tenantID,
+		LedgerId: ledgerID,
+	})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 500 || balanceResponse.GetAvailableCents() != 500 {
+		test.Fatalf("expected 500/500, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
 }
 
 func TestCreditServiceServerValidationErrors(test *testing.T) {
@@ -2625,6 +3164,10 @@ func (store *alwaysErrorStore) GetReservation(ctx context.Context, accountID led
 
 func (store *alwaysErrorStore) UpdateReservationStatus(ctx context.Context, accountID ledger.AccountID, reservationID ledger.ReservationID, from, to ledger.ReservationStatus) error {
 	return store.err
+}
+
+func (store *alwaysErrorStore) ListReservations(ctx context.Context, accountID ledger.AccountID, beforeCreatedUnixUTC int64, limit int, filter ledger.ListReservationsFilter) ([]ledger.Reservation, error) {
+	return nil, store.err
 }
 
 func (store *alwaysErrorStore) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {

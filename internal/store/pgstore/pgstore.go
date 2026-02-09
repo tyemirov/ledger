@@ -48,6 +48,22 @@ const (
 		returning account_id
 	`
 
+	sqlListAccountSummaries = `
+		select account_id::text, user_id::text
+		from accounts
+		where tenant_id = $1 and ledger_id = $2
+		order by account_id asc
+		limit $3
+	`
+
+	sqlListAccountSummariesAfter = `
+		select account_id::text, user_id::text
+		from accounts
+		where tenant_id = $1 and ledger_id = $2 and account_id > $3::uuid
+		order by account_id asc
+		limit $4
+	`
+
 	sqlInsertEntry = `
 		insert into ledger_entries(
 			entry_id, account_id, type, amount_cents, reservation_id, refund_of_entry_id, idempotency_key, expires_at, metadata, created_at
@@ -111,15 +127,19 @@ const (
 	sqlSumActiveHolds = `
 		select coalesce(sum(amount_cents),0) from reservations
 		where account_id = $1 and status = 'active'
+		and (expires_at is null or expires_at > to_timestamp($2))
 	`
 
 	sqlInsertReservation = `
-		insert into reservations(account_id, reservation_id, amount_cents, status, created_at, updated_at)
-		values ($1, $2, $3, $4, now(), now())
+		insert into reservations(account_id, reservation_id, amount_cents, status, expires_at, created_at, updated_at)
+		values ($1, $2, $3, $4, to_timestamp(nullif($5,0)), now(), now())
 	`
 
 	sqlSelectReservation = `
-		select account_id::text, reservation_id, amount_cents, status::text
+		select account_id::text, reservation_id, amount_cents, status::text,
+			coalesce(extract(epoch from expires_at)::bigint,0),
+			extract(epoch from created_at)::bigint,
+			extract(epoch from updated_at)::bigint
 		from reservations
 		where account_id = $1 and reservation_id = $2
 		for update
@@ -129,6 +149,18 @@ const (
 		update reservations
 		set status = $4, updated_at = now()
 		where account_id = $1 and reservation_id = $2 and status = $3
+	`
+
+	sqlListReservationsBase = `
+		select
+			reservation_id,
+			amount_cents,
+			status::text,
+			coalesce(extract(epoch from expires_at)::bigint,0),
+			extract(epoch from created_at)::bigint,
+			extract(epoch from updated_at)::bigint
+		from reservations
+		where account_id = $1 and created_at < to_timestamp($2)
 	`
 )
 
@@ -268,6 +300,46 @@ func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.Te
 	return accountID, nil
 }
 
+func (store *Store) ListAccountSummaries(ctx context.Context, tenantID ledger.TenantID, ledgerID ledger.LedgerID, afterAccountID *ledger.AccountID, limit int) ([]ledger.AccountSummary, error) {
+	sql := sqlListAccountSummaries
+	arguments := []any{tenantID.String(), ledgerID.String(), limit}
+	if afterAccountID != nil {
+		sql = sqlListAccountSummariesAfter
+		arguments = []any{tenantID.String(), ledgerID.String(), afterAccountID.String(), limit}
+	}
+	rows, err := store.pool.Query(ctx, sql, arguments...)
+	if err != nil {
+		return nil, wrapStoreError(errorSubjectAccount, errorCodeList, err)
+	}
+	defer rows.Close()
+
+	accounts := make([]ledger.AccountSummary, 0)
+	for rows.Next() {
+		var accountIDValue string
+		var userIDValue string
+		if err := rows.Scan(&accountIDValue, &userIDValue); err != nil {
+			return nil, wrapStoreError(errorSubjectAccount, errorCodeList, err)
+		}
+		accountID, err := ledger.NewAccountID(accountIDValue)
+		if err != nil {
+			return nil, wrapStoreError(errorSubjectAccount, errorCodeInvalid, err)
+		}
+		userID, err := ledger.NewUserID(userIDValue)
+		if err != nil {
+			return nil, wrapStoreError(errorSubjectAccount, errorCodeInvalid, err)
+		}
+		account, err := ledger.NewAccountSummary(accountID, tenantID, userID, ledgerID)
+		if err != nil {
+			return nil, wrapStoreError(errorSubjectAccount, errorCodeInvalid, err)
+		}
+		accounts = append(accounts, account)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapStoreError(errorSubjectAccount, errorCodeList, err)
+	}
+	return accounts, nil
+}
+
 func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) (ledger.Entry, error) {
 	reservationValue, hasReservation := entryInput.ReservationID()
 	reservationID := ""
@@ -376,9 +448,9 @@ func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, at
 	return ledger.SignedAmountCents(sum), nil
 }
 
-func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
+func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
 	var sum int64
-	err := store.pool.QueryRow(ctx, sqlSumActiveHolds, accountID.String()).Scan(&sum)
+	err := store.pool.QueryRow(ctx, sqlSumActiveHolds, accountID.String(), atUnixUTC).Scan(&sum)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumActiveHolds, err)
 	}
@@ -395,6 +467,7 @@ func (store *Store) CreateReservation(ctx context.Context, reservation ledger.Re
 		reservation.ReservationID().String(),
 		reservation.AmountCents().Int64(),
 		reservation.Status().String(),
+		reservation.ExpiresAtUnixUTC(),
 	)
 	if isReservationConflict(err) {
 		return wrapStoreError(errorSubjectReservation, errorCodeDuplicate, ledger.ErrReservationExists)
@@ -411,12 +484,18 @@ func (store *Store) GetReservation(ctx context.Context, accountID ledger.Account
 		reservationVal string
 		statusValue    string
 		amountValue    int64
+		expiresAtUnix  int64
+		createdUnix    int64
+		updatedUnix    int64
 	)
 	err := store.pool.QueryRow(ctx, sqlSelectReservation, accountID.String(), reservationID.String()).Scan(
 		&accountValue,
 		&reservationVal,
 		&amountValue,
 		&statusValue,
+		&expiresAtUnix,
+		&createdUnix,
+		&updatedUnix,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -440,7 +519,7 @@ func (store *Store) GetReservation(ctx context.Context, accountID ledger.Account
 	if err != nil {
 		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
 	}
-	reservation, err := ledger.NewReservation(parsedAccountID, parsedReservationID, amountCents, status)
+	reservation, err := ledger.NewReservationWithTimestamps(parsedAccountID, parsedReservationID, amountCents, status, expiresAtUnix, createdUnix, updatedUnix)
 	if err != nil {
 		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
 	}
@@ -456,6 +535,10 @@ func (store *Store) UpdateReservationStatus(ctx context.Context, accountID ledge
 		return wrapStoreError(errorSubjectReservation, errorCodeUpdateStatus, ledger.ErrReservationClosed)
 	}
 	return nil
+}
+
+func (store *Store) ListReservations(ctx context.Context, accountID ledger.AccountID, beforeCreatedUnixUTC int64, limit int, filter ledger.ListReservationsFilter) ([]ledger.Reservation, error) {
+	return listReservations(ctx, store.pool, accountID, beforeCreatedUnixUTC, limit, filter)
 }
 
 func (store *Store) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {
@@ -608,9 +691,9 @@ func (store *TxStore) SumTotal(ctx context.Context, accountID ledger.AccountID, 
 	return ledger.SignedAmountCents(sum), nil
 }
 
-func (store *TxStore) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
+func (store *TxStore) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
 	var sum int64
-	err := store.tx.QueryRow(ctx, sqlSumActiveHolds, accountID.String()).Scan(&sum)
+	err := store.tx.QueryRow(ctx, sqlSumActiveHolds, accountID.String(), atUnixUTC).Scan(&sum)
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumActiveHolds, err)
 	}
@@ -627,6 +710,7 @@ func (store *TxStore) CreateReservation(ctx context.Context, reservation ledger.
 		reservation.ReservationID().String(),
 		reservation.AmountCents().Int64(),
 		reservation.Status().String(),
+		reservation.ExpiresAtUnixUTC(),
 	)
 	if isReservationConflict(err) {
 		return wrapStoreError(errorSubjectReservation, errorCodeDuplicate, ledger.ErrReservationExists)
@@ -643,12 +727,18 @@ func (store *TxStore) GetReservation(ctx context.Context, accountID ledger.Accou
 		reservationVal string
 		statusValue    string
 		amountValue    int64
+		expiresAtUnix  int64
+		createdUnix    int64
+		updatedUnix    int64
 	)
 	err := store.tx.QueryRow(ctx, sqlSelectReservation, accountID.String(), reservationID.String()).Scan(
 		&accountValue,
 		&reservationVal,
 		&amountValue,
 		&statusValue,
+		&expiresAtUnix,
+		&createdUnix,
+		&updatedUnix,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -672,7 +762,7 @@ func (store *TxStore) GetReservation(ctx context.Context, accountID ledger.Accou
 	if err != nil {
 		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
 	}
-	reservation, err := ledger.NewReservation(parsedAccountID, parsedReservationID, amountCents, status)
+	reservation, err := ledger.NewReservationWithTimestamps(parsedAccountID, parsedReservationID, amountCents, status, expiresAtUnix, createdUnix, updatedUnix)
 	if err != nil {
 		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
 	}
@@ -688,6 +778,10 @@ func (store *TxStore) UpdateReservationStatus(ctx context.Context, accountID led
 		return wrapStoreError(errorSubjectReservation, errorCodeUpdateStatus, ledger.ErrReservationClosed)
 	}
 	return nil
+}
+
+func (store *TxStore) ListReservations(ctx context.Context, accountID ledger.AccountID, beforeCreatedUnixUTC int64, limit int, filter ledger.ListReservationsFilter) ([]ledger.Reservation, error) {
+	return listReservations(ctx, store.tx, accountID, beforeCreatedUnixUTC, limit, filter)
 }
 
 func (store *TxStore) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {
@@ -710,6 +804,51 @@ func listEntries(ctx context.Context, executor queryExecutor, accountID ledger.A
 		return nil, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
 	}
 	return entries, nil
+}
+
+func listReservations(ctx context.Context, executor queryExecutor, accountID ledger.AccountID, beforeCreatedUnixUTC int64, limit int, filter ledger.ListReservationsFilter) ([]ledger.Reservation, error) {
+	effectiveBeforeUnixUTC := beforeCreatedUnixUTC
+	if effectiveBeforeUnixUTC == 0 {
+		effectiveBeforeUnixUTC = time.Now().UTC().Add(time.Second).Unix()
+	}
+	statement, args := buildListReservationsSQL(accountID, effectiveBeforeUnixUTC, limit, filter)
+	rows, err := executor.Query(ctx, statement, args...)
+	if err != nil {
+		return nil, wrapStoreError(errorSubjectReservation, errorCodeList, err)
+	}
+	defer rows.Close()
+
+	reservations, err := scanReservations(rows, accountID)
+	if err != nil {
+		return nil, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+	}
+	return reservations, nil
+}
+
+func buildListReservationsSQL(accountID ledger.AccountID, beforeCreatedUnixUTC int64, limit int, filter ledger.ListReservationsFilter) (string, []any) {
+	var builder strings.Builder
+	builder.WriteString(sqlListReservationsBase)
+
+	args := []any{accountID.String(), beforeCreatedUnixUTC}
+	nextParam := 3
+
+	if len(filter.Statuses) > 0 {
+		builder.WriteString(" and status in (")
+		for index, status := range filter.Statuses {
+			if index > 0 {
+				builder.WriteString(",")
+			}
+			builder.WriteString(fmt.Sprintf("$%d", nextParam))
+			args = append(args, status.String())
+			nextParam++
+		}
+		builder.WriteString(")")
+	}
+
+	builder.WriteString(" order by created_at desc")
+	builder.WriteString(fmt.Sprintf(" limit $%d", nextParam))
+	args = append(args, limit)
+	return builder.String(), args
 }
 
 func buildListEntriesSQL(accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) (string, []any) {
@@ -756,6 +895,44 @@ func buildListEntriesSQL(accountID ledger.AccountID, beforeUnixUTC int64, limit 
 	builder.WriteString(fmt.Sprintf(" order by created_at desc limit $%d", nextParam))
 	args = append(args, limit)
 	return builder.String(), args
+}
+
+func scanReservations(rows queryRows, accountID ledger.AccountID) ([]ledger.Reservation, error) {
+	reservations := make([]ledger.Reservation, 0, 32)
+	for rows.Next() {
+		var (
+			reservationValue string
+			amountValue      int64
+			statusValue      string
+			expiresAtUnixUTC int64
+			createdUnixUTC   int64
+			updatedUnixUTC   int64
+		)
+		if err := rows.Scan(&reservationValue, &amountValue, &statusValue, &expiresAtUnixUTC, &createdUnixUTC, &updatedUnixUTC); err != nil {
+			return nil, err
+		}
+		reservationID, err := ledger.NewReservationID(reservationValue)
+		if err != nil {
+			return nil, err
+		}
+		amountCents, err := ledger.NewPositiveAmountCents(amountValue)
+		if err != nil {
+			return nil, err
+		}
+		status, err := ledger.ParseReservationStatus(statusValue)
+		if err != nil {
+			return nil, err
+		}
+		reservation, err := ledger.NewReservationWithTimestamps(accountID, reservationID, amountCents, status, expiresAtUnixUTC, createdUnixUTC, updatedUnixUTC)
+		if err != nil {
+			return nil, err
+		}
+		reservations = append(reservations, reservation)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return reservations, nil
 }
 
 func scanEntries(rows queryRows) ([]ledger.Entry, error) {
