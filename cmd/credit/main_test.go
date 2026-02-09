@@ -90,6 +90,7 @@ func TestLoadConfigRespectsEnvOverrides(test *testing.T) {
 	viper.Reset()
 	test.Setenv("DATABASE_URL", "sqlite://:memory:")
 	test.Setenv("GRPC_LISTEN_ADDR", "127.0.0.1:9999")
+	test.Setenv("BOOTSTRAP_GRANTS_JSON", `[{"tenant_id":"default","ledger_id":"default","amount_cents":1000,"idempotency_key_prefix":"bootstrap","metadata_json":"{}"}]`)
 
 	cfg := &runtimeConfig{}
 	cmd := newRootCommand()
@@ -101,6 +102,9 @@ func TestLoadConfigRespectsEnvOverrides(test *testing.T) {
 	}
 	if cfg.ListenAddr != "127.0.0.1:9999" {
 		test.Fatalf("expected env listen addr, got %q", cfg.ListenAddr)
+	}
+	if cfg.BootstrapGrantsJSON == "" {
+		test.Fatalf("expected bootstrap grants json, got empty")
 	}
 }
 
@@ -128,6 +132,7 @@ func TestLoadConfigFallsBackToDefaultsWhenFlagsAreEmpty(test *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.Flags().String(flagDatabaseURL, "", "db")
 	cmd.Flags().String(flagListenAddr, "", "listen")
+	cmd.Flags().String(flagBootstrapGrantsJSON, "", "bootstrap")
 
 	if err := loadConfig(cmd, cfg); err != nil {
 		test.Fatalf("unexpected error: %v", err)
@@ -137,6 +142,170 @@ func TestLoadConfigFallsBackToDefaultsWhenFlagsAreEmpty(test *testing.T) {
 	}
 	if cfg.ListenAddr != defaultGRPCListenAddr {
 		test.Fatalf("expected default listen addr %q, got %q", defaultGRPCListenAddr, cfg.ListenAddr)
+	}
+}
+
+func TestParseBootstrapGrantPolicy(test *testing.T) {
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "ledger.db")
+	db, err := gorm.Open(sqlite.Open(sqlitePath), &gorm.Config{})
+	if err != nil {
+		test.Fatalf("open db: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		test.Fatalf("db handle: %v", err)
+	}
+	test.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}, &gormstore.Reservation{}); err != nil {
+		test.Fatalf("migrate: %v", err)
+	}
+	store := gormstore.New(db)
+	clock := func() int64 { return 1700000000 }
+
+	policy, err := parseBootstrapGrantPolicy(`[{"tenant_id":"default","ledger_id":"default","amount_cents":1000,"idempotency_key_prefix":"bootstrap","metadata_json":"{}"}]`)
+	if err != nil {
+		test.Fatalf("parse policy: %v", err)
+	}
+	creditService, err := ledger.NewService(store, clock, ledger.WithBootstrapGrantPolicy(policy))
+	if err != nil {
+		test.Fatalf("new service: %v", err)
+	}
+
+	userID, err := ledger.NewUserID("user-123")
+	if err != nil {
+		test.Fatalf("user id: %v", err)
+	}
+	tenantID, err := ledger.NewTenantID("default")
+	if err != nil {
+		test.Fatalf("tenant id: %v", err)
+	}
+	ledgerID, err := ledger.NewLedgerID("default")
+	if err != nil {
+		test.Fatalf("ledger id: %v", err)
+	}
+	balance, err := creditService.Balance(context.Background(), tenantID, userID, ledgerID)
+	if err != nil {
+		test.Fatalf("balance: %v", err)
+	}
+	if balance.TotalCents != 1000 || balance.AvailableCents != 1000 {
+		test.Fatalf("expected 1000/1000, got total=%d available=%d", balance.TotalCents, balance.AvailableCents)
+	}
+}
+
+func TestParseBootstrapGrantPolicyRejectsDuplicateScopes(test *testing.T) {
+	_, err := parseBootstrapGrantPolicy(`[{"tenant_id":"default","ledger_id":"default","amount_cents":1000,"idempotency_key_prefix":"bootstrap","metadata_json":"{}"},{"tenant_id":"default","ledger_id":"default","amount_cents":2000,"idempotency_key_prefix":"bootstrap2","metadata_json":"{}"}]`)
+	if err == nil {
+		test.Fatalf("expected error")
+	}
+}
+
+func TestParseBootstrapGrantPolicyEmptyIsNoop(test *testing.T) {
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "ledger.db")
+	db, err := gorm.Open(sqlite.Open(sqlitePath), &gorm.Config{})
+	if err != nil {
+		test.Fatalf("open db: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		test.Fatalf("db handle: %v", err)
+	}
+	test.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}, &gormstore.Reservation{}); err != nil {
+		test.Fatalf("migrate: %v", err)
+	}
+	store := gormstore.New(db)
+	clock := func() int64 { return 1700000000 }
+
+	policy, err := parseBootstrapGrantPolicy(" \n\t ")
+	if err != nil {
+		test.Fatalf("parse policy: %v", err)
+	}
+
+	creditService, err := ledger.NewService(store, clock, ledger.WithBootstrapGrantPolicy(policy))
+	if err != nil {
+		test.Fatalf("new service: %v", err)
+	}
+
+	userID, err := ledger.NewUserID("user-123")
+	if err != nil {
+		test.Fatalf("user id: %v", err)
+	}
+	tenantID, err := ledger.NewTenantID("default")
+	if err != nil {
+		test.Fatalf("tenant id: %v", err)
+	}
+	ledgerID, err := ledger.NewLedgerID("default")
+	if err != nil {
+		test.Fatalf("ledger id: %v", err)
+	}
+
+	balance, err := creditService.Balance(context.Background(), tenantID, userID, ledgerID)
+	if err != nil {
+		test.Fatalf("balance: %v", err)
+	}
+	if balance.TotalCents != 0 || balance.AvailableCents != 0 {
+		test.Fatalf("expected 0/0, got total=%d available=%d", balance.TotalCents, balance.AvailableCents)
+	}
+
+	entries, err := creditService.ListEntries(context.Background(), tenantID, userID, ledgerID, 1893456000, 10, ledger.ListEntriesFilter{})
+	if err != nil {
+		test.Fatalf("list entries: %v", err)
+	}
+	if got := len(entries); got != 0 {
+		test.Fatalf("expected no entries, got %d", got)
+	}
+}
+
+func TestParseBootstrapGrantPolicyRejectsInvalidJSON(test *testing.T) {
+	_, err := parseBootstrapGrantPolicy("{")
+	if err == nil {
+		test.Fatalf("expected error")
+	}
+}
+
+func TestParseBootstrapGrantPolicyRejectsInvalidRuleFields(test *testing.T) {
+	testCases := []struct {
+		name    string
+		input   string
+		wantErr error
+	}{
+		{
+			name:    "invalid tenant id",
+			input:   `[{"tenant_id":"","ledger_id":"default","amount_cents":1000,"idempotency_key_prefix":"bootstrap","metadata_json":"{}"}]`,
+			wantErr: ledger.ErrInvalidTenantID,
+		},
+		{
+			name:    "invalid ledger id",
+			input:   `[{"tenant_id":"default","ledger_id":"","amount_cents":1000,"idempotency_key_prefix":"bootstrap","metadata_json":"{}"}]`,
+			wantErr: ledger.ErrInvalidLedgerID,
+		},
+		{
+			name:    "invalid amount",
+			input:   `[{"tenant_id":"default","ledger_id":"default","amount_cents":0,"idempotency_key_prefix":"bootstrap","metadata_json":"{}"}]`,
+			wantErr: ledger.ErrInvalidAmountCents,
+		},
+		{
+			name:    "invalid idempotency key",
+			input:   `[{"tenant_id":"default","ledger_id":"default","amount_cents":1000,"idempotency_key_prefix":"","metadata_json":"{}"}]`,
+			wantErr: ledger.ErrInvalidIdempotencyKey,
+		},
+		{
+			name:    "invalid metadata json",
+			input:   `[{"tenant_id":"default","ledger_id":"default","amount_cents":1000,"idempotency_key_prefix":"bootstrap","metadata_json":"not-json"}]`,
+			wantErr: ledger.ErrInvalidMetadataJSON,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		test.Run(testCase.name, func(test *testing.T) {
+			_, err := parseBootstrapGrantPolicy(testCase.input)
+			if !errors.Is(err, testCase.wantErr) {
+				test.Fatalf("expected %v, got %v", testCase.wantErr, err)
+			}
+		})
 	}
 }
 

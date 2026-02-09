@@ -7,9 +7,10 @@ import (
 
 // Service contains the domain logic over a Store.
 type Service struct {
-	store  Store
-	nowFn  func() int64
-	logger OperationLogger
+	store           Store
+	nowFn           func() int64
+	logger          OperationLogger
+	bootstrapPolicy BootstrapGrantPolicy
 }
 
 // NewService wires a Service.
@@ -31,6 +32,9 @@ func NewService(store Store, now func() int64, options ...ServiceOption) (*Servi
 
 // Balance returns total and available (total minus active holds).
 func (service *Service) Balance(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID) (Balance, error) {
+	if err := service.applyBootstrapGrantIfEligible(ctx, tenantID, userID, ledgerID); err != nil {
+		return Balance{}, err
+	}
 	accountID, err := service.store.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
 	if err != nil {
 		return Balance{}, err
@@ -59,6 +63,9 @@ func (service *Service) Grant(ctx context.Context, tenantID TenantID, userID Use
 
 // GrantEntry appends a positive grant (optionally expiring) and returns the persisted entry.
 func (service *Service) GrantEntry(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON) (Entry, error) {
+	if err := service.applyBootstrapGrantIfEligible(ctx, tenantID, userID, ledgerID); err != nil {
+		return Entry{}, err
+	}
 	var persistedEntry Entry
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
 		accountID, err := transactionStore.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)
@@ -106,6 +113,9 @@ func (service *Service) Reserve(ctx context.Context, tenantID TenantID, userID U
 
 // ReserveEntry appends a negative hold if sufficient available balance and returns the persisted hold entry.
 func (service *Service) ReserveEntry(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID, amount PositiveAmountCents, reservationID ReservationID, idempotencyKey IdempotencyKey, metadata MetadataJSON) (Entry, error) {
+	if err := service.applyBootstrapGrantIfEligible(ctx, tenantID, userID, ledgerID); err != nil {
+		return Entry{}, err
+	}
 	var persistedEntry Entry
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {
 		accountID, err := transactionStore.GetOrCreateAccountID(ctx, tenantID, userID, ledgerID)

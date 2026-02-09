@@ -612,7 +612,21 @@ func (store *stubStore) ListEntries(ctx context.Context, accountID AccountID, be
 	if store.listErr != nil {
 		return nil, store.listErr
 	}
-	return append([]Entry(nil), store.listEntries...), nil
+	if store.listEntries != nil {
+		return append([]Entry(nil), store.listEntries...), nil
+	}
+	entries := make([]Entry, 0, len(store.entries))
+	for _, entryInput := range store.entries {
+		entry, err := store.materializeEntry(entryInput)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	if limit <= 0 || limit >= len(entries) {
+		return entries, nil
+	}
+	return entries[:limit], nil
 }
 
 func (store *stubStore) mustReservation(test *testing.T, reservationID ReservationID) Reservation {

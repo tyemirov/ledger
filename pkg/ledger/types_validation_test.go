@@ -215,3 +215,33 @@ func TestNewEntryRejectsInvalidEntryID(test *testing.T) {
 		test.Fatalf(errorMismatchMessage, ErrInvalidEntryID, err)
 	}
 }
+
+func TestNewEntryPropagatesEntryInputValidationErrors(test *testing.T) {
+	test.Parallel()
+	entryID, err := NewEntryID("entry-1")
+	if err != nil {
+		test.Fatalf("entry id: %v", err)
+	}
+	idempotencyKey := mustIdempotencyKey(test, idempotencyValue)
+	metadata := mustMetadata(test, metadataValue)
+	amount := mustEntryAmount(test, 15)
+
+	_, err = NewEntry(entryID, AccountID{}, EntryGrant, amount, nil, nil, idempotencyKey, 0, metadata, 100)
+	if !errors.Is(err, ErrInvalidAccountID) {
+		test.Fatalf(errorMismatchMessage, ErrInvalidAccountID, err)
+	}
+}
+
+func TestNewEntryInputRejectsInvalidRefundOfEntryID(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test, accountIDValue)
+	idempotencyKey := mustIdempotencyKey(test, idempotencyValue)
+	metadata := mustMetadata(test, metadataValue)
+	amount := mustEntryAmount(test, 15)
+	refundOfEntryID := EntryID{}
+
+	_, err := NewEntryInput(accountID, EntryRefund, amount, nil, &refundOfEntryID, idempotencyKey, 0, metadata, 100)
+	if !errors.Is(err, ErrInvalidEntryID) {
+		test.Fatalf(errorMismatchMessage, ErrInvalidEntryID, err)
+	}
+}

@@ -81,6 +81,10 @@ func (service *Service) Batch(ctx context.Context, tenantID TenantID, userID Use
 		return nil, nil
 	}
 
+	if err := service.applyBootstrapGrantIfEligible(ctx, tenantID, userID, ledgerID); err != nil {
+		return nil, err
+	}
+
 	results := make([]BatchOperationResult, len(operations))
 	batchRolledBack := false
 	operationError := service.store.WithTx(ctx, func(ctx context.Context, transactionStore Store) error {

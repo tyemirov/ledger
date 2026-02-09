@@ -31,7 +31,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 - [x] [LG-209] (P2) Make ledger data directory configurable for Docker workflows. Resolved: data dir is only used by DATABASE_URL; no extra env added, compose mounts align to `/srv/data`, tooling passing.
   - Add LEDGER_DATA_DIR to .env.ledger and wire compose volume targets to use it.
     - Update compose wiring so ledger uses the configured data directory.
-- [ ] [LG-210] (P1) Add server-managed bootstrap grants for new accounts. Unresolved.
+- [x] [LG-210] (P1) Add server-managed bootstrap grants for new accounts. Resolved: introduced `BootstrapGrantPolicy` + `BOOTSTRAP_GRANTS_JSON` config and applied a deterministic one-time grant on first account access (new/empty accounts only), with idempotency-safe retries under concurrency; docs + env templates updated; `make ci` passing.
   - Provide optional bootstrap configuration (amount/metadata/idempotency prefix) per tenant+ledger.
   - Apply the bootstrap grant exactly once when an account is created (or first accessed), without requiring the caller to orchestrate a grant.
   - Use deterministic idempotency keys so repeated calls are safe; treat duplicate idempotency as no-op.
