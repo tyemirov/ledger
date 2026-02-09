@@ -683,6 +683,9 @@ func mapToBatchErrorCode(source error) string {
 	if errors.Is(source, ledger.ErrDuplicateIdempotencyKey) {
 		return errorDuplicateIdempotencyKey
 	}
+	if errors.Is(source, ledger.ErrIdempotencyKeyConflict) {
+		return errorDuplicateIdempotencyKey
+	}
 	if errors.Is(source, ledger.ErrReservationExists) {
 		return errorReservationExists
 	}
@@ -741,6 +744,9 @@ func mapToGRPCError(source error) error {
 		return status.Error(codes.NotFound, errorUnknownEntry)
 	}
 	if errors.Is(source, ledger.ErrDuplicateIdempotencyKey) {
+		return status.Error(codes.AlreadyExists, errorDuplicateIdempotencyKey)
+	}
+	if errors.Is(source, ledger.ErrIdempotencyKeyConflict) {
 		return status.Error(codes.AlreadyExists, errorDuplicateIdempotencyKey)
 	}
 	if errors.Is(source, ledger.ErrReservationExists) {

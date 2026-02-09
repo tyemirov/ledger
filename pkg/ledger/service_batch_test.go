@@ -331,6 +331,168 @@ func TestBatchRefundDuplicateIdempotencyIsMarkedDuplicate(test *testing.T) {
 	}
 }
 
+func TestBatchRefundReturnsErrorWhenIdempotencyKeyConflictsWithNonRefundEntry(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	if err := service.Grant(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 1000), mustIdempotencyKey(test, "collision-1"), 0, mustMetadata(test, "{}")); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	spendEntry, err := service.SpendEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 200), mustIdempotencyKey(test, "spend-1"), mustMetadata(test, "{}"))
+	if err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+
+	operations := []BatchOperation{
+		newBatchRefundByEntryIDOperation(test, "refund-1", 50, spendEntry.EntryID(), "collision-1"),
+	}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(results) != 1 {
+		test.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Entry != nil || results[0].Duplicate || results[0].RolledBack {
+		test.Fatalf("unexpected result: entry=%v err=%v dup=%v rolled_back=%v", results[0].Entry, results[0].Error, results[0].Duplicate, results[0].RolledBack)
+	}
+	if !errors.Is(results[0].Error, ErrIdempotencyKeyConflict) {
+		test.Fatalf("expected idempotency key conflict, got %v", results[0].Error)
+	}
+	if store.total != 800 {
+		test.Fatalf("expected total 800, got %d", store.total)
+	}
+}
+
+func TestApplyBatchRefundReturnsDuplicateWhenInsertEntryDetectsExistingRefund(test *testing.T) {
+	test.Parallel()
+	service := &Service{nowFn: func() int64 { return 100 }}
+	accountID := mustAccountID(test, "acct-1")
+
+	originalEntryID := mustEntryID(test, "spend-1")
+	originalEntry := mustEntry(
+		test,
+		originalEntryID,
+		accountID,
+		EntrySpend,
+		mustEntryAmount(test, -200),
+		mustIdempotencyKey(test, "spend-1"),
+		mustMetadata(test, "{}"),
+	)
+
+	refundKey := mustIdempotencyKey(test, "refund-1")
+	existingRefund := mustEntry(
+		test,
+		mustEntryID(test, "refund-existing"),
+		accountID,
+		EntryRefund,
+		mustEntryAmount(test, 50),
+		refundKey,
+		mustMetadata(test, "{}"),
+	)
+
+	store := &duplicateInsertRefundStore{
+		originalEntry: originalEntry,
+		existingEntry: existingRefund,
+	}
+
+	operationOriginalEntryID := originalEntryID
+	entry, err := service.applyBatchRefund(context.Background(), store, accountID, BatchRefundOperation{
+		OriginalEntryID: &operationOriginalEntryID,
+		Amount:          mustPositiveAmount(test, 50),
+		IdempotencyKey:  refundKey,
+		Metadata:        mustMetadata(test, "{}"),
+	})
+	if !errors.Is(err, ErrDuplicateIdempotencyKey) {
+		test.Fatalf("expected duplicate idempotency key, got %v", err)
+	}
+	if entry.Type() != EntryRefund {
+		test.Fatalf("expected refund entry, got %s", entry.Type())
+	}
+}
+
+func TestApplyBatchRefundReturnsConflictWhenInsertEntryDetectsExistingNonRefundEntry(test *testing.T) {
+	test.Parallel()
+	service := &Service{nowFn: func() int64 { return 100 }}
+	accountID := mustAccountID(test, "acct-1")
+
+	originalEntryID := mustEntryID(test, "spend-1")
+	originalEntry := mustEntry(
+		test,
+		originalEntryID,
+		accountID,
+		EntrySpend,
+		mustEntryAmount(test, -200),
+		mustIdempotencyKey(test, "spend-1"),
+		mustMetadata(test, "{}"),
+	)
+
+	refundKey := mustIdempotencyKey(test, "refund-1")
+	existingGrant := mustEntry(
+		test,
+		mustEntryID(test, "grant-existing"),
+		accountID,
+		EntryGrant,
+		mustEntryAmount(test, 50),
+		refundKey,
+		mustMetadata(test, "{}"),
+	)
+
+	store := &duplicateInsertRefundStore{
+		originalEntry: originalEntry,
+		existingEntry: existingGrant,
+	}
+
+	operationOriginalEntryID := originalEntryID
+	_, err := service.applyBatchRefund(context.Background(), store, accountID, BatchRefundOperation{
+		OriginalEntryID: &operationOriginalEntryID,
+		Amount:          mustPositiveAmount(test, 50),
+		IdempotencyKey:  refundKey,
+		Metadata:        mustMetadata(test, "{}"),
+	})
+	if !errors.Is(err, ErrIdempotencyKeyConflict) {
+		test.Fatalf("expected idempotency key conflict, got %v", err)
+	}
+}
+
+func TestApplyBatchRefundReturnsErrorWhenInsertEntryDuplicateCannotBeResolved(test *testing.T) {
+	test.Parallel()
+	service := &Service{nowFn: func() int64 { return 100 }}
+	accountID := mustAccountID(test, "acct-1")
+
+	originalEntryID := mustEntryID(test, "spend-1")
+	originalEntry := mustEntry(
+		test,
+		originalEntryID,
+		accountID,
+		EntrySpend,
+		mustEntryAmount(test, -200),
+		mustIdempotencyKey(test, "spend-1"),
+		mustMetadata(test, "{}"),
+	)
+
+	lookupErr := errors.New("lookup failed")
+	store := &duplicateInsertRefundStore{
+		originalEntry: originalEntry,
+		existingErr:   lookupErr,
+	}
+
+	operationOriginalEntryID := originalEntryID
+	_, err := service.applyBatchRefund(context.Background(), store, accountID, BatchRefundOperation{
+		OriginalEntryID: &operationOriginalEntryID,
+		Amount:          mustPositiveAmount(test, 50),
+		IdempotencyKey:  mustIdempotencyKey(test, "refund-1"),
+		Metadata:        mustMetadata(test, "{}"),
+	})
+	if !errors.Is(err, lookupErr) {
+		test.Fatalf("expected lookup error, got %v", err)
+	}
+}
+
 func TestBatchRefundReturnsErrorWhenOriginalReferenceMissing(test *testing.T) {
 	test.Parallel()
 	store := newStubStore(test, mustSignedAmount(test, 0))
@@ -1049,4 +1211,72 @@ func newBatchRefundByOriginalIdempotencyKeyOperation(test *testing.T, operationI
 			Metadata:               mustMetadata(test, "{}"),
 		},
 	}
+}
+
+type duplicateInsertRefundStore struct {
+	originalEntry Entry
+	existingEntry Entry
+	existingErr   error
+	idemCalls     int
+}
+
+func (store *duplicateInsertRefundStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore Store) error) error {
+	if fn == nil {
+		return nil
+	}
+	return fn(ctx, store)
+}
+
+func (store *duplicateInsertRefundStore) GetOrCreateAccountID(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID) (AccountID, error) {
+	panic("GetOrCreateAccountID not used")
+}
+
+func (store *duplicateInsertRefundStore) InsertEntry(ctx context.Context, entry EntryInput) (Entry, error) {
+	return Entry{}, ErrDuplicateIdempotencyKey
+}
+
+func (store *duplicateInsertRefundStore) GetEntry(ctx context.Context, accountID AccountID, entryID EntryID) (Entry, error) {
+	if store.originalEntry.EntryID() != entryID {
+		return Entry{}, ErrUnknownEntry
+	}
+	return store.originalEntry, nil
+}
+
+func (store *duplicateInsertRefundStore) GetEntryByIdempotencyKey(ctx context.Context, accountID AccountID, idempotencyKey IdempotencyKey) (Entry, error) {
+	store.idemCalls++
+	if store.idemCalls == 1 {
+		return Entry{}, ErrUnknownEntry
+	}
+	if store.existingErr != nil {
+		return Entry{}, store.existingErr
+	}
+	return store.existingEntry, nil
+}
+
+func (store *duplicateInsertRefundStore) SumRefunds(ctx context.Context, accountID AccountID, originalEntryID EntryID) (AmountCents, error) {
+	return NewAmountCents(0)
+}
+
+func (store *duplicateInsertRefundStore) SumTotal(ctx context.Context, accountID AccountID, atUnixUTC int64) (SignedAmountCents, error) {
+	panic("SumTotal not used")
+}
+
+func (store *duplicateInsertRefundStore) SumActiveHolds(ctx context.Context, accountID AccountID, atUnixUTC int64) (AmountCents, error) {
+	panic("SumActiveHolds not used")
+}
+
+func (store *duplicateInsertRefundStore) CreateReservation(ctx context.Context, reservation Reservation) error {
+	panic("CreateReservation not used")
+}
+
+func (store *duplicateInsertRefundStore) GetReservation(ctx context.Context, accountID AccountID, reservationID ReservationID) (Reservation, error) {
+	panic("GetReservation not used")
+}
+
+func (store *duplicateInsertRefundStore) UpdateReservationStatus(ctx context.Context, accountID AccountID, reservationID ReservationID, from ReservationStatus, to ReservationStatus) error {
+	panic("UpdateReservationStatus not used")
+}
+
+func (store *duplicateInsertRefundStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error) {
+	panic("ListEntries not used")
 }

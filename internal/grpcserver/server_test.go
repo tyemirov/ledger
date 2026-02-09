@@ -1555,6 +1555,79 @@ func TestCreditServiceServerBatchSupportsRefundByOriginalEntryID(test *testing.T
 	}
 }
 
+func TestCreditServiceServerBatchRefundRejectsIdempotencyKeyConflictWithNonRefundEntry(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    1000,
+		IdempotencyKey: "collision-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	spendResponse, err := server.Spend(ctx, &creditv1.SpendRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    200,
+		IdempotencyKey: "spend-1",
+		MetadataJson:   "{}",
+	})
+	if err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+	if spendResponse.GetEntryId() == "" {
+		test.Fatalf("expected spend entry id")
+	}
+
+	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
+		Account: &creditv1.AccountContext{UserId: userID, TenantId: tenantID, LedgerId: ledgerID},
+		Atomic:  false,
+		Operations: []*creditv1.BatchOperation{
+			{
+				OperationId: "refund-1",
+				Operation: &creditv1.BatchOperation_Refund{Refund: &creditv1.BatchRefundOp{
+					Original:       &creditv1.BatchRefundOp_OriginalEntryId{OriginalEntryId: spendResponse.GetEntryId()},
+					AmountCents:    50,
+					IdempotencyKey: "collision-1",
+					MetadataJson:   "{}",
+				}},
+			},
+		},
+	})
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	results := batchResponse.GetResults()
+	if len(results) != 1 {
+		test.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].GetOk() || results[0].GetDuplicate() || results[0].GetErrorCode() != errorDuplicateIdempotencyKey {
+		test.Fatalf("expected idempotency conflict (code=%q), got ok=%v dup=%v code=%q", errorDuplicateIdempotencyKey, results[0].GetOk(), results[0].GetDuplicate(), results[0].GetErrorCode())
+	}
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: userID, TenantId: tenantID, LedgerId: ledgerID})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 800 || balanceResponse.GetAvailableCents() != 800 {
+		test.Fatalf("expected 800/800, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+}
+
 func TestCreditServiceServerBatchRefundOverRefundRejected(test *testing.T) {
 	test.Parallel()
 	creditService, err := newSQLiteLedgerService(test)

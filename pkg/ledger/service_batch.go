@@ -345,9 +345,12 @@ func (service *Service) applyBatchRelease(ctx context.Context, txStore Store, ac
 }
 
 func (service *Service) applyBatchRefund(ctx context.Context, txStore Store, accountID AccountID, operation BatchRefundOperation) (Entry, error) {
-	existingRefunds, err := txStore.GetEntryByIdempotencyKey(ctx, accountID, operation.IdempotencyKey)
+	existingEntry, err := txStore.GetEntryByIdempotencyKey(ctx, accountID, operation.IdempotencyKey)
 	if err == nil {
-		return existingRefunds, ErrDuplicateIdempotencyKey
+		if existingEntry.Type() != EntryRefund {
+			return Entry{}, fmt.Errorf("%w: existing entry is %s", ErrIdempotencyKeyConflict, existingEntry.Type())
+		}
+		return existingEntry, ErrDuplicateIdempotencyKey
 	}
 	if !errors.Is(err, ErrUnknownEntry) {
 		return Entry{}, err
@@ -402,5 +405,18 @@ func (service *Service) applyBatchRefund(ctx context.Context, txStore Store, acc
 	if err != nil {
 		return Entry{}, err
 	}
-	return txStore.InsertEntry(ctx, entryInput)
+
+	persistedEntry, err := txStore.InsertEntry(ctx, entryInput)
+	if !errors.Is(err, ErrDuplicateIdempotencyKey) {
+		return persistedEntry, err
+	}
+
+	existingEntry, lookupErr := txStore.GetEntryByIdempotencyKey(ctx, accountID, operation.IdempotencyKey)
+	if lookupErr != nil {
+		return Entry{}, lookupErr
+	}
+	if existingEntry.Type() != EntryRefund {
+		return Entry{}, fmt.Errorf("%w: existing entry is %s", ErrIdempotencyKeyConflict, existingEntry.Type())
+	}
+	return existingEntry, ErrDuplicateIdempotencyKey
 }

@@ -11,6 +11,7 @@ var (
 	ErrUnknownReservation       = errors.New("unknown reservation")
 	ErrUnknownEntry             = errors.New("unknown entry")
 	ErrDuplicateIdempotencyKey  = errors.New("duplicate idempotency key")
+	ErrIdempotencyKeyConflict   = errors.New("idempotency key conflict")
 	ErrReservationExists        = errors.New("reservation already exists")
 	ErrReservationClosed        = errors.New("reservation closed")
 	ErrInvalidRefundOriginal    = errors.New("invalid refund original")
