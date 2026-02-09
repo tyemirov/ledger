@@ -25,7 +25,9 @@ func TestGetReservationStateComputesDerivedFields(test *testing.T) {
 	store.reservations[activeID] = activeReservation
 
 	capturedID := mustReservationID(test, "res-captured")
-	capturedReservation, err := NewReservationWithTimestamps(store.accountID, capturedID, amount, ReservationStatusCaptured, 0, 11, 21)
+	// In production, captured reservations often retain a non-zero expires_at set at reserve time.
+	// They should not become "expired" after capture.
+	capturedReservation, err := NewReservationWithTimestamps(store.accountID, capturedID, amount, ReservationStatusCaptured, 50, 11, 21)
 	if err != nil {
 		test.Fatalf("captured reservation: %v", err)
 	}
@@ -39,7 +41,8 @@ func TestGetReservationStateComputesDerivedFields(test *testing.T) {
 	store.reservations[expiredID] = expiredReservation
 
 	releasedID := mustReservationID(test, "res-released")
-	releasedReservation, err := NewReservationWithTimestamps(store.accountID, releasedID, amount, ReservationStatusReleased, 0, 13, 23)
+	// Released reservations should also not flip to expired over time.
+	releasedReservation, err := NewReservationWithTimestamps(store.accountID, releasedID, amount, ReservationStatusReleased, 50, 13, 23)
 	if err != nil {
 		test.Fatalf("released reservation: %v", err)
 	}
@@ -63,7 +66,7 @@ func TestGetReservationStateComputesDerivedFields(test *testing.T) {
 	if err != nil {
 		test.Fatalf("get captured state: %v", err)
 	}
-	if capturedState.Status != ReservationStatusCaptured {
+	if capturedState.Status != ReservationStatusCaptured || capturedState.Expired {
 		test.Fatalf("unexpected captured status: %+v", capturedState)
 	}
 	if capturedState.HeldCents.Int64() != 0 || capturedState.CapturedCents.Int64() != 40 {

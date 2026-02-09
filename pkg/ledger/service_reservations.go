@@ -48,7 +48,11 @@ func (service *Service) ListReservationStates(ctx context.Context, tenantID Tena
 }
 
 func reservationStateFromReservation(reservation Reservation, nowUnixUTC int64) ReservationState {
-	expired := reservation.ExpiresAtUnixUTC() != 0 && reservation.ExpiresAtUnixUTC() <= nowUnixUTC
+	// A reservation is only "expired" if it expired while still active. Once it is
+	// captured or released, it is finalized and should not flip to expired over time.
+	expired := reservation.Status() == ReservationStatusActive &&
+		reservation.ExpiresAtUnixUTC() != 0 &&
+		reservation.ExpiresAtUnixUTC() <= nowUnixUTC
 	amount := reservation.AmountCents()
 	held := AmountCents(0)
 	if reservation.Status() == ReservationStatusActive && !expired {
