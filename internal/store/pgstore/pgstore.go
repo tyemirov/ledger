@@ -3,6 +3,9 @@ package pgstore
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"github.com/google/uuid"
@@ -31,7 +34,11 @@ const (
 	errorCodeInvalid                = "invalid"
 	errorCodeList                   = "list"
 	errorCodeLookup                 = "lookup"
+	errorCodeReleaseSavepoint       = "release_savepoint"
+	errorCodeRollbackToSavepoint    = "rollback_to_savepoint"
+	errorCodeSavepoint              = "savepoint"
 	errorCodeSumActiveHolds         = "sum_active_holds"
+	errorCodeSumRefunds             = "sum_refunds"
 	errorCodeSumTotal               = "sum_total"
 	errorCodeUpdateStatus           = "update_status"
 
@@ -43,15 +50,56 @@ const (
 
 	sqlInsertEntry = `
 		insert into ledger_entries(
-			entry_id, account_id, type, amount_cents, reservation_id, idempotency_key, expires_at, metadata, created_at
+			entry_id, account_id, type, amount_cents, reservation_id, refund_of_entry_id, idempotency_key, expires_at, metadata, created_at
 		)
 		values(
 			$1, $2, $3, $4,
-			nullif($5,''), $6,
-			to_timestamp(nullif($7,0)),
-			coalesce(nullif($8,''),'{}')::jsonb,
-			to_timestamp($9)
+			nullif($5,''),
+			nullif($6,'')::uuid,
+			$7,
+			to_timestamp(nullif($8,0)),
+			coalesce(nullif($9,''),'{}')::jsonb,
+			to_timestamp($10)
 		)
+	`
+
+	sqlSelectEntry = `
+		select
+			entry_id::text,
+			account_id::text,
+			type::text,
+			amount_cents,
+			coalesce(reservation_id,''),
+			coalesce(refund_of_entry_id::text,''),
+			idempotency_key,
+			coalesce(extract(epoch from expires_at)::bigint,0),
+			coalesce(metadata::text,'{}'),
+			extract(epoch from created_at)::bigint
+		from ledger_entries
+		where account_id = $1 and entry_id = $2
+		for update
+	`
+
+	sqlSelectEntryByIdempotencyKey = `
+		select
+			entry_id::text,
+			account_id::text,
+			type::text,
+			amount_cents,
+			coalesce(reservation_id,''),
+			coalesce(refund_of_entry_id::text,''),
+			idempotency_key,
+			coalesce(extract(epoch from expires_at)::bigint,0),
+			coalesce(metadata::text,'{}'),
+			extract(epoch from created_at)::bigint
+		from ledger_entries
+		where account_id = $1 and idempotency_key = $2
+	`
+
+	sqlSumRefunds = `
+		select coalesce(sum(amount_cents),0)
+		from ledger_entries
+		where account_id = $1 and type = 'refund' and refund_of_entry_id = $2::uuid
 	`
 
 	sqlSumTotal = `
@@ -81,23 +129,6 @@ const (
 		update reservations
 		set status = $4, updated_at = now()
 		where account_id = $1 and reservation_id = $2 and status = $3
-	`
-
-	sqlListEntriesBefore = `
-		select
-			entry_id::text,
-			account_id::text,
-			type::text,
-			amount_cents,
-			coalesce(reservation_id,''),
-			idempotency_key,
-			coalesce(extract(epoch from expires_at)::bigint,0),
-			coalesce(metadata::text,'{}'),
-			extract(epoch from created_at)::bigint
-		from ledger_entries
-		where account_id = $1 and created_at < to_timestamp($2)
-		order by created_at desc
-		limit $3
 	`
 )
 
@@ -237,31 +268,103 @@ func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.Te
 	return accountID, nil
 }
 
-func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) error {
+func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) (ledger.Entry, error) {
 	reservationValue, hasReservation := entryInput.ReservationID()
 	reservationID := ""
 	if hasReservation {
 		reservationID = reservationValue.String()
 	}
+	refundOfValue, hasRefundOf := entryInput.RefundOfEntryID()
+	refundOfEntryID := ""
+	if hasRefundOf {
+		refundOfEntryID = refundOfValue.String()
+	}
 	candidateEntryID := uuid.NewString()
+	createdUnixUTC := entryInput.CreatedUnixUTC()
+	if createdUnixUTC == 0 {
+		createdUnixUTC = time.Now().UTC().Unix()
+	}
 	_, err := store.pool.Exec(ctx, sqlInsertEntry,
 		candidateEntryID,
 		entryInput.AccountID().String(),
 		entryInput.Type().String(),
 		entryInput.AmountCents().Int64(),
 		reservationID,
+		refundOfEntryID,
 		entryInput.IdempotencyKey().String(),
 		entryInput.ExpiresAtUnixUTC(),
 		entryInput.MetadataJSON().String(),
-		entryInput.CreatedUnixUTC(),
+		createdUnixUTC,
 	)
 	if isIdempotencyConflict(err) {
-		return wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
 	}
 	if err != nil {
-		return wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
 	}
-	return nil
+	entryID, err := ledger.NewEntryID(candidateEntryID)
+	if err != nil {
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	var reservation *ledger.ReservationID
+	if hasReservation {
+		reservation = &reservationValue
+	}
+	var refundOf *ledger.EntryID
+	if hasRefundOf {
+		refundOf = &refundOfValue
+	}
+	entry, err := ledger.NewEntry(
+		entryID,
+		entryInput.AccountID(),
+		entryInput.Type(),
+		entryInput.AmountCents(),
+		reservation,
+		refundOf,
+		entryInput.IdempotencyKey(),
+		entryInput.ExpiresAtUnixUTC(),
+		entryInput.MetadataJSON(),
+		createdUnixUTC,
+	)
+	if err != nil {
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	return entry, nil
+}
+
+func (store *Store) GetEntry(ctx context.Context, accountID ledger.AccountID, entryID ledger.EntryID) (ledger.Entry, error) {
+	entry, err := scanEntryRow(store.pool.QueryRow(ctx, sqlSelectEntry, accountID.String(), entryID.String()))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeGet, ledger.ErrUnknownEntry)
+		}
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeGet, err)
+	}
+	return entry, nil
+}
+
+func (store *Store) GetEntryByIdempotencyKey(ctx context.Context, accountID ledger.AccountID, idempotencyKey ledger.IdempotencyKey) (ledger.Entry, error) {
+	entry, err := scanEntryRow(store.pool.QueryRow(ctx, sqlSelectEntryByIdempotencyKey, accountID.String(), idempotencyKey.String()))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeGet, ledger.ErrUnknownEntry)
+		}
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeGet, err)
+	}
+	return entry, nil
+}
+
+func (store *Store) SumRefunds(ctx context.Context, accountID ledger.AccountID, originalEntryID ledger.EntryID) (ledger.AmountCents, error) {
+	var sum int64
+	err := store.pool.QueryRow(ctx, sqlSumRefunds, accountID.String(), originalEntryID.String()).Scan(&sum)
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumRefunds, err)
+	}
+	refunded, err := ledger.NewAmountCents(sum)
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
+	}
+	return refunded, nil
 }
 
 func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {
@@ -355,21 +458,32 @@ func (store *Store) UpdateReservationStatus(ctx context.Context, accountID ledge
 	return nil
 }
 
-func (store *Store) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int) ([]ledger.Entry, error) {
-	rows, err := store.pool.Query(ctx, sqlListEntriesBefore, accountID.String(), beforeUnixUTC, limit)
-	if err != nil {
-		return nil, wrapStoreError(errorSubjectEntry, errorCodeList, err)
-	}
-	defer rows.Close()
-	entries, err := scanEntries(rows)
-	if err != nil {
-		return nil, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
-	}
-	return entries, nil
+func (store *Store) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {
+	return listEntries(ctx, store.pool, accountID, beforeUnixUTC, limit, filter)
 }
 
 func (store *TxStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore ledger.Store) error) error {
-	return fn(ctx, store)
+	if fn == nil {
+		return nil
+	}
+	savepointName := "sp_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err := store.tx.Exec(ctx, "savepoint "+savepointName); err != nil {
+		return wrapStoreError(errorSubjectTransaction, errorCodeSavepoint, err)
+	}
+	callbackError := fn(ctx, store)
+	if callbackError != nil {
+		if _, err := store.tx.Exec(ctx, "rollback to savepoint "+savepointName); err != nil {
+			return errors.Join(callbackError, wrapStoreError(errorSubjectTransaction, errorCodeRollbackToSavepoint, err))
+		}
+		if _, err := store.tx.Exec(ctx, "release savepoint "+savepointName); err != nil {
+			return errors.Join(callbackError, wrapStoreError(errorSubjectTransaction, errorCodeReleaseSavepoint, err))
+		}
+		return callbackError
+	}
+	if _, err := store.tx.Exec(ctx, "release savepoint "+savepointName); err != nil {
+		return wrapStoreError(errorSubjectTransaction, errorCodeReleaseSavepoint, err)
+	}
+	return nil
 }
 
 func (store *TxStore) GetOrCreateAccountID(ctx context.Context, tenantID ledger.TenantID, userID ledger.UserID, ledgerID ledger.LedgerID) (ledger.AccountID, error) {
@@ -386,31 +500,103 @@ func (store *TxStore) GetOrCreateAccountID(ctx context.Context, tenantID ledger.
 	return accountID, nil
 }
 
-func (store *TxStore) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) error {
+func (store *TxStore) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) (ledger.Entry, error) {
 	reservationValue, hasReservation := entryInput.ReservationID()
 	reservationID := ""
 	if hasReservation {
 		reservationID = reservationValue.String()
 	}
+	refundOfValue, hasRefundOf := entryInput.RefundOfEntryID()
+	refundOfEntryID := ""
+	if hasRefundOf {
+		refundOfEntryID = refundOfValue.String()
+	}
 	candidateEntryID := uuid.NewString()
+	createdUnixUTC := entryInput.CreatedUnixUTC()
+	if createdUnixUTC == 0 {
+		createdUnixUTC = time.Now().UTC().Unix()
+	}
 	_, err := store.tx.Exec(ctx, sqlInsertEntry,
 		candidateEntryID,
 		entryInput.AccountID().String(),
 		entryInput.Type().String(),
 		entryInput.AmountCents().Int64(),
 		reservationID,
+		refundOfEntryID,
 		entryInput.IdempotencyKey().String(),
 		entryInput.ExpiresAtUnixUTC(),
 		entryInput.MetadataJSON().String(),
-		entryInput.CreatedUnixUTC(),
+		createdUnixUTC,
 	)
 	if isIdempotencyConflict(err) {
-		return wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
 	}
 	if err != nil {
-		return wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
 	}
-	return nil
+	entryID, err := ledger.NewEntryID(candidateEntryID)
+	if err != nil {
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	var reservation *ledger.ReservationID
+	if hasReservation {
+		reservation = &reservationValue
+	}
+	var refundOf *ledger.EntryID
+	if hasRefundOf {
+		refundOf = &refundOfValue
+	}
+	entry, err := ledger.NewEntry(
+		entryID,
+		entryInput.AccountID(),
+		entryInput.Type(),
+		entryInput.AmountCents(),
+		reservation,
+		refundOf,
+		entryInput.IdempotencyKey(),
+		entryInput.ExpiresAtUnixUTC(),
+		entryInput.MetadataJSON(),
+		createdUnixUTC,
+	)
+	if err != nil {
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	return entry, nil
+}
+
+func (store *TxStore) GetEntry(ctx context.Context, accountID ledger.AccountID, entryID ledger.EntryID) (ledger.Entry, error) {
+	entry, err := scanEntryRow(store.tx.QueryRow(ctx, sqlSelectEntry, accountID.String(), entryID.String()))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeGet, ledger.ErrUnknownEntry)
+		}
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeGet, err)
+	}
+	return entry, nil
+}
+
+func (store *TxStore) GetEntryByIdempotencyKey(ctx context.Context, accountID ledger.AccountID, idempotencyKey ledger.IdempotencyKey) (ledger.Entry, error) {
+	entry, err := scanEntryRow(store.tx.QueryRow(ctx, sqlSelectEntryByIdempotencyKey, accountID.String(), idempotencyKey.String()))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeGet, ledger.ErrUnknownEntry)
+		}
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeGet, err)
+	}
+	return entry, nil
+}
+
+func (store *TxStore) SumRefunds(ctx context.Context, accountID ledger.AccountID, originalEntryID ledger.EntryID) (ledger.AmountCents, error) {
+	var sum int64
+	err := store.tx.QueryRow(ctx, sqlSumRefunds, accountID.String(), originalEntryID.String()).Scan(&sum)
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumRefunds, err)
+	}
+	refunded, err := ledger.NewAmountCents(sum)
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
+	}
+	return refunded, nil
 }
 
 func (store *TxStore) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {
@@ -504,8 +690,17 @@ func (store *TxStore) UpdateReservationStatus(ctx context.Context, accountID led
 	return nil
 }
 
-func (store *TxStore) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int) ([]ledger.Entry, error) {
-	rows, err := store.tx.Query(ctx, sqlListEntriesBefore, accountID.String(), beforeUnixUTC, limit)
+func (store *TxStore) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {
+	return listEntries(ctx, store.tx, accountID, beforeUnixUTC, limit, filter)
+}
+
+func listEntries(ctx context.Context, executor queryExecutor, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {
+	effectiveBeforeUnixUTC := beforeUnixUTC
+	if effectiveBeforeUnixUTC == 0 {
+		effectiveBeforeUnixUTC = time.Now().UTC().Add(time.Second).Unix()
+	}
+	statement, args := buildListEntriesSQL(accountID, effectiveBeforeUnixUTC, limit, filter)
+	rows, err := executor.Query(ctx, statement, args...)
 	if err != nil {
 		return nil, wrapStoreError(errorSubjectEntry, errorCodeList, err)
 	}
@@ -517,6 +712,52 @@ func (store *TxStore) ListEntries(ctx context.Context, accountID ledger.AccountI
 	return entries, nil
 }
 
+func buildListEntriesSQL(accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) (string, []any) {
+	var builder strings.Builder
+	builder.WriteString(`
+		select
+			entry_id::text,
+			account_id::text,
+			type::text,
+			amount_cents,
+			coalesce(reservation_id,''),
+			coalesce(refund_of_entry_id::text,''),
+			idempotency_key,
+			coalesce(extract(epoch from expires_at)::bigint,0),
+			coalesce(metadata::text,'{}'),
+			extract(epoch from created_at)::bigint
+		from ledger_entries
+		where account_id = $1 and created_at < to_timestamp($2)
+	`)
+	args := []any{accountID.String(), beforeUnixUTC}
+	nextParam := 3
+	if len(filter.Types) > 0 {
+		builder.WriteString(" and type in (")
+		for index, entryType := range filter.Types {
+			if index > 0 {
+				builder.WriteString(",")
+			}
+			builder.WriteString(fmt.Sprintf("$%d", nextParam))
+			args = append(args, entryType.String())
+			nextParam++
+		}
+		builder.WriteString(")")
+	}
+	if filter.ReservationID != nil {
+		builder.WriteString(fmt.Sprintf(" and reservation_id = $%d", nextParam))
+		args = append(args, filter.ReservationID.String())
+		nextParam++
+	}
+	if filter.IdempotencyKeyPrefix != nil {
+		builder.WriteString(fmt.Sprintf(" and idempotency_key like $%d", nextParam))
+		args = append(args, filter.IdempotencyKeyPrefix.String()+"%")
+		nextParam++
+	}
+	builder.WriteString(fmt.Sprintf(" order by created_at desc limit $%d", nextParam))
+	args = append(args, limit)
+	return builder.String(), args
+}
+
 func scanEntries(rows queryRows) ([]ledger.Entry, error) {
 	entries := make([]ledger.Entry, 0, 32)
 	for rows.Next() {
@@ -526,6 +767,7 @@ func scanEntries(rows queryRows) ([]ledger.Entry, error) {
 			entryTypeValue   string
 			amountValue      int64
 			reservationValue string
+			refundOfValue    string
 			idempotencyValue string
 			expiresAtUnixUTC int64
 			metadataValue    string
@@ -537,6 +779,7 @@ func scanEntries(rows queryRows) ([]ledger.Entry, error) {
 			&entryTypeValue,
 			&amountValue,
 			&reservationValue,
+			&refundOfValue,
 			&idempotencyValue,
 			&expiresAtUnixUTC,
 			&metadataValue,
@@ -544,55 +787,102 @@ func scanEntries(rows queryRows) ([]ledger.Entry, error) {
 		); err != nil {
 			return nil, err
 		}
-		entryID, err := ledger.NewEntryID(entryIDValue)
-		if err != nil {
-			return nil, err
-		}
-		accountID, err := ledger.NewAccountID(accountIDValue)
-		if err != nil {
-			return nil, err
-		}
-		entryType, err := ledger.ParseEntryType(entryTypeValue)
-		if err != nil {
-			return nil, err
-		}
-		amountCents, err := ledger.NewEntryAmountCents(amountValue)
-		if err != nil {
-			return nil, err
-		}
-		var reservationID *ledger.ReservationID
-		if reservationValue != "" {
-			parsedReservationID, err := ledger.NewReservationID(reservationValue)
-			if err != nil {
-				return nil, err
-			}
-			reservationID = &parsedReservationID
-		}
-		idempotencyKey, err := ledger.NewIdempotencyKey(idempotencyValue)
-		if err != nil {
-			return nil, err
-		}
-		metadata, err := ledger.NewMetadataJSON(metadataValue)
-		if err != nil {
-			return nil, err
-		}
-		entry, err := ledger.NewEntry(
-			entryID,
-			accountID,
-			entryType,
-			amountCents,
-			reservationID,
-			idempotencyKey,
-			expiresAtUnixUTC,
-			metadata,
-			createdAtUnixUTC,
-		)
+		entry, err := parseEntryValues(entryIDValue, accountIDValue, entryTypeValue, amountValue, reservationValue, refundOfValue, idempotencyValue, expiresAtUnixUTC, metadataValue, createdAtUnixUTC)
 		if err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
 	}
 	return entries, rows.Err()
+}
+
+func scanEntryRow(row queryRow) (ledger.Entry, error) {
+	var (
+		entryIDValue     string
+		accountIDValue   string
+		entryTypeValue   string
+		amountValue      int64
+		reservationValue string
+		refundOfValue    string
+		idempotencyValue string
+		expiresAtUnixUTC int64
+		metadataValue    string
+		createdAtUnixUTC int64
+	)
+	if err := row.Scan(
+		&entryIDValue,
+		&accountIDValue,
+		&entryTypeValue,
+		&amountValue,
+		&reservationValue,
+		&refundOfValue,
+		&idempotencyValue,
+		&expiresAtUnixUTC,
+		&metadataValue,
+		&createdAtUnixUTC,
+	); err != nil {
+		return ledger.Entry{}, err
+	}
+	return parseEntryValues(entryIDValue, accountIDValue, entryTypeValue, amountValue, reservationValue, refundOfValue, idempotencyValue, expiresAtUnixUTC, metadataValue, createdAtUnixUTC)
+}
+
+func parseEntryValues(entryIDValue string, accountIDValue string, entryTypeValue string, amountValue int64, reservationValue string, refundOfValue string, idempotencyValue string, expiresAtUnixUTC int64, metadataValue string, createdAtUnixUTC int64) (ledger.Entry, error) {
+	entryID, err := ledger.NewEntryID(entryIDValue)
+	if err != nil {
+		return ledger.Entry{}, err
+	}
+	accountID, err := ledger.NewAccountID(accountIDValue)
+	if err != nil {
+		return ledger.Entry{}, err
+	}
+	entryType, err := ledger.ParseEntryType(entryTypeValue)
+	if err != nil {
+		return ledger.Entry{}, err
+	}
+	amountCents, err := ledger.NewEntryAmountCents(amountValue)
+	if err != nil {
+		return ledger.Entry{}, err
+	}
+	var reservationID *ledger.ReservationID
+	if reservationValue != "" {
+		parsedReservationID, err := ledger.NewReservationID(reservationValue)
+		if err != nil {
+			return ledger.Entry{}, err
+		}
+		reservationID = &parsedReservationID
+	}
+	var refundOfEntryID *ledger.EntryID
+	if refundOfValue != "" {
+		parsedRefundOfEntryID, err := ledger.NewEntryID(refundOfValue)
+		if err != nil {
+			return ledger.Entry{}, err
+		}
+		refundOfEntryID = &parsedRefundOfEntryID
+	}
+	idempotencyKey, err := ledger.NewIdempotencyKey(idempotencyValue)
+	if err != nil {
+		return ledger.Entry{}, err
+	}
+	metadata, err := ledger.NewMetadataJSON(metadataValue)
+	if err != nil {
+		return ledger.Entry{}, err
+	}
+	entry, err := ledger.NewEntry(
+		entryID,
+		accountID,
+		entryType,
+		amountCents,
+		reservationID,
+		refundOfEntryID,
+		idempotencyKey,
+		expiresAtUnixUTC,
+		metadata,
+		createdAtUnixUTC,
+	)
+	if err != nil {
+		return ledger.Entry{}, err
+	}
+	return entry, nil
 }
 
 func wrapStoreError(subject string, code string, err error) error {

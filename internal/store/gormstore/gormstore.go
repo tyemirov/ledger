@@ -33,6 +33,7 @@ const (
 	errorCodeList                   = "list"
 	errorCodeLookup                 = "lookup"
 	errorCodeSumActiveHolds         = "sum_active_holds"
+	errorCodeSumRefunds             = "sum_refunds"
 	errorCodeSumTotal               = "sum_total"
 	errorCodeUpdateStatus           = "update_status"
 )
@@ -76,7 +77,7 @@ func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.Te
 	return accountID, nil
 }
 
-func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) error {
+func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) (ledger.Entry, error) {
 	var expiresAt *time.Time
 	if entryInput.ExpiresAtUnixUTC() != 0 {
 		value := time.Unix(entryInput.ExpiresAtUnixUTC(), 0).UTC()
@@ -88,29 +89,96 @@ func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInpu
 		value := reservationValue.String()
 		reservationID = &value
 	}
+	var refundOfEntryID *string
+	refundOfValue, hasRefundOf := entryInput.RefundOfEntryID()
+	if hasRefundOf {
+		value := refundOfValue.String()
+		refundOfEntryID = &value
+	}
 	createdUnixUTC := entryInput.CreatedUnixUTC()
 	createdAt := time.Now().UTC()
 	if createdUnixUTC != 0 {
 		createdAt = time.Unix(createdUnixUTC, 0).UTC()
 	}
 	entry := LedgerEntry{
-		AccountID:      entryInput.AccountID().String(),
-		Type:           entryInput.Type().String(),
-		AmountCents:    entryInput.AmountCents().Int64(),
-		ReservationID:  reservationID,
-		IdempotencyKey: entryInput.IdempotencyKey().String(),
-		ExpiresAt:      expiresAt,
-		Metadata:       datatypesJSON(entryInput.MetadataJSON().String()),
-		CreatedAt:      createdAt,
+		AccountID:       entryInput.AccountID().String(),
+		Type:            entryInput.Type().String(),
+		AmountCents:     entryInput.AmountCents().Int64(),
+		ReservationID:   reservationID,
+		RefundOfEntryID: refundOfEntryID,
+		IdempotencyKey:  entryInput.IdempotencyKey().String(),
+		ExpiresAt:       expiresAt,
+		Metadata:        datatypesJSON(entryInput.MetadataJSON().String()),
+		CreatedAt:       createdAt,
 	}
 	err := store.db.WithContext(ctx).Create(&entry).Error
 	if isIdempotencyConflict(err) {
-		return wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
 	}
 	if err != nil {
-		return wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
 	}
-	return nil
+	persistedEntry, err := mapLedgerEntry(entry)
+	if err != nil {
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	return persistedEntry, nil
+}
+
+func (store *Store) GetEntry(ctx context.Context, accountID ledger.AccountID, entryID ledger.EntryID) (ledger.Entry, error) {
+	var model LedgerEntry
+	err := store.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("account_id = ? AND entry_id = ?", accountID.String(), entryID.String()).
+		Take(&model).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeGet, ledger.ErrUnknownEntry)
+		}
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeGet, err)
+	}
+	entry, err := mapLedgerEntry(model)
+	if err != nil {
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	return entry, nil
+}
+
+func (store *Store) GetEntryByIdempotencyKey(ctx context.Context, accountID ledger.AccountID, idempotencyKey ledger.IdempotencyKey) (ledger.Entry, error) {
+	var model LedgerEntry
+	err := store.db.WithContext(ctx).
+		Where("account_id = ? AND idempotency_key = ?", accountID.String(), idempotencyKey.String()).
+		Take(&model).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeGet, ledger.ErrUnknownEntry)
+		}
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeGet, err)
+	}
+	entry, err := mapLedgerEntry(model)
+	if err != nil {
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	return entry, nil
+}
+
+func (store *Store) SumRefunds(ctx context.Context, accountID ledger.AccountID, originalEntryID ledger.EntryID) (ledger.AmountCents, error) {
+	var sum sqlSum
+	err := store.db.WithContext(ctx).
+		Model(&LedgerEntry{}).
+		Select("coalesce(sum(amount_cents),0) as total").
+		Where("account_id = ?", accountID.String()).
+		Where("type = ?", ledger.EntryRefund.String()).
+		Where("refund_of_entry_id = ?", originalEntryID.String()).
+		Scan(&sum).Error
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumRefunds, err)
+	}
+	refunded, err := ledger.NewAmountCents(sum.Total)
+	if err != nil {
+		return 0, wrapStoreError(errorSubjectBalance, errorCodeInvalid, err)
+	}
+	return refunded, nil
 }
 
 func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {
@@ -212,18 +280,30 @@ func (store *Store) UpdateReservationStatus(ctx context.Context, accountID ledge
 	return nil
 }
 
-func (store *Store) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int) ([]ledger.Entry, error) {
+func (store *Store) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {
 	before := time.Unix(beforeUnixUTC, 0).UTC()
 	if beforeUnixUTC == 0 {
 		before = time.Now().UTC().Add(time.Second)
 	}
 
 	var rows []LedgerEntry
-	err := store.db.WithContext(ctx).
+	query := store.db.WithContext(ctx).
 		Where("account_id = ? AND created_at < ?", accountID.String(), before).
-		Order("created_at DESC").
-		Limit(limit).
-		Find(&rows).Error
+		Order("created_at DESC")
+	if len(filter.Types) > 0 {
+		typeValues := make([]string, 0, len(filter.Types))
+		for _, entryType := range filter.Types {
+			typeValues = append(typeValues, entryType.String())
+		}
+		query = query.Where("type in ?", typeValues)
+	}
+	if filter.ReservationID != nil {
+		query = query.Where("reservation_id = ?", filter.ReservationID.String())
+	}
+	if filter.IdempotencyKeyPrefix != nil {
+		query = query.Where("idempotency_key like ?", filter.IdempotencyKeyPrefix.String()+"%")
+	}
+	err := query.Limit(limit).Find(&rows).Error
 	if err != nil {
 		return nil, wrapStoreError(errorSubjectEntry, errorCodeList, err)
 	}
@@ -272,6 +352,14 @@ func mapLedgerEntry(row LedgerEntry) (ledger.Entry, error) {
 		}
 		reservationID = &parsedReservationID
 	}
+	var refundOfEntryID *ledger.EntryID
+	if row.RefundOfEntryID != nil {
+		parsedRefundOfEntryID, err := ledger.NewEntryID(*row.RefundOfEntryID)
+		if err != nil {
+			return ledger.Entry{}, err
+		}
+		refundOfEntryID = &parsedRefundOfEntryID
+	}
 	idempotencyKey, err := ledger.NewIdempotencyKey(row.IdempotencyKey)
 	if err != nil {
 		return ledger.Entry{}, err
@@ -286,6 +374,7 @@ func mapLedgerEntry(row LedgerEntry) (ledger.Entry, error) {
 		entryType,
 		amountCents,
 		reservationID,
+		refundOfEntryID,
 		idempotencyKey,
 		timeOrZero(row.ExpiresAt),
 		metadata,

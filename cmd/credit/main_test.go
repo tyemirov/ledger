@@ -14,6 +14,7 @@ import (
 	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"github.com/glebarez/sqlite"
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -103,6 +104,61 @@ func TestLoadConfigRespectsEnvOverrides(test *testing.T) {
 	}
 }
 
+func TestLoadConfigFallsBackToDefaultsWhenEnvIsEmpty(test *testing.T) {
+	viper.Reset()
+	test.Setenv("DATABASE_URL", "")
+	test.Setenv("GRPC_LISTEN_ADDR", "")
+
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	if err := loadConfig(cmd, cfg); err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DatabaseURL != defaultDatabaseURL {
+		test.Fatalf("expected default database url %q, got %q", defaultDatabaseURL, cfg.DatabaseURL)
+	}
+	if cfg.ListenAddr != defaultGRPCListenAddr {
+		test.Fatalf("expected default listen addr %q, got %q", defaultGRPCListenAddr, cfg.ListenAddr)
+	}
+}
+
+func TestLoadConfigFallsBackToDefaultsWhenFlagsAreEmpty(test *testing.T) {
+	viper.Reset()
+	cfg := &runtimeConfig{}
+	cmd := &cobra.Command{}
+	cmd.Flags().String(flagDatabaseURL, "", "db")
+	cmd.Flags().String(flagListenAddr, "", "listen")
+
+	if err := loadConfig(cmd, cfg); err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DatabaseURL != defaultDatabaseURL {
+		test.Fatalf("expected default database url %q, got %q", defaultDatabaseURL, cfg.DatabaseURL)
+	}
+	if cfg.ListenAddr != defaultGRPCListenAddr {
+		test.Fatalf("expected default listen addr %q, got %q", defaultGRPCListenAddr, cfg.ListenAddr)
+	}
+}
+
+func TestLoadConfigErrorsWhenFlagsMissing(test *testing.T) {
+	viper.Reset()
+	cfg := &runtimeConfig{}
+	cmd := &cobra.Command{}
+	if err := loadConfig(cmd, cfg); err == nil {
+		test.Fatalf("expected error, got nil")
+	}
+}
+
+func TestLoadConfigErrorsWhenListenFlagMissing(test *testing.T) {
+	viper.Reset()
+	cfg := &runtimeConfig{}
+	cmd := &cobra.Command{}
+	cmd.Flags().String(flagDatabaseURL, defaultDatabaseURL, "db")
+	if err := loadConfig(cmd, cfg); err == nil {
+		test.Fatalf("expected error, got nil")
+	}
+}
+
 func TestNormalizeSQLitePath(test *testing.T) {
 	tempDir := test.TempDir()
 	absolutePath := filepath.Join(tempDir, "ledger.db")
@@ -130,6 +186,38 @@ func TestNormalizeSQLitePath(test *testing.T) {
 	}
 	if filepath.IsAbs(normalizedRelative) {
 		test.Fatalf("expected relative path, got %q", normalizedRelative)
+	}
+}
+
+func TestNormalizeSQLitePathReturnsErrorWhenDirectoryCreationFails(test *testing.T) {
+	tempDir := test.TempDir()
+	blockingFile := filepath.Join(tempDir, "not-a-directory")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o644); err != nil {
+		test.Fatalf("write file: %v", err)
+	}
+	_, err := normalizeSQLitePath(filepath.Join(blockingFile, "ledger.db"))
+	if err == nil {
+		test.Fatalf("expected error")
+	}
+}
+
+func TestNormalizeSQLitePathReturnsErrorForRelativePathsWhenDirectoryCreationFails(test *testing.T) {
+	tempDir := test.TempDir()
+	workingDir, err := os.Getwd()
+	if err != nil {
+		test.Fatalf("getwd: %v", err)
+	}
+	test.Cleanup(func() { _ = os.Chdir(workingDir) })
+	if err := os.Chdir(tempDir); err != nil {
+		test.Fatalf("chdir: %v", err)
+	}
+
+	if err := os.WriteFile("not-a-directory", []byte("x"), 0o644); err != nil {
+		test.Fatalf("write file: %v", err)
+	}
+	_, err = normalizeSQLitePath(filepath.Join("not-a-directory", "ledger.db"))
+	if err == nil {
+		test.Fatalf("expected error")
 	}
 }
 
@@ -186,6 +274,22 @@ func TestOpenDatabaseSQLiteAndUnsupportedScheme(test *testing.T) {
 	}
 }
 
+func TestOpenDatabaseReturnsErrorWhenDriverCannotBeResolved(test *testing.T) {
+	ctx := context.Background()
+	_, _, _, err := openDatabase(ctx, "http://%zz")
+	if err == nil {
+		test.Fatalf("expected error")
+	}
+}
+
+func TestOpenDatabasePostgresReturnsErrorWhenUnavailable(test *testing.T) {
+	ctx := context.Background()
+	_, _, _, err := openDatabase(ctx, "postgres://postgres:postgres@127.0.0.1:1/credit?sslmode=disable")
+	if err == nil {
+		test.Fatalf("expected error")
+	}
+}
+
 func TestPrepareSchemaSQLiteEnablesForeignKeys(test *testing.T) {
 	tempDir := test.TempDir()
 	sqlitePath := filepath.Join(tempDir, "ledger.db")
@@ -217,6 +321,29 @@ func TestPrepareSchemaSQLiteEnablesForeignKeys(test *testing.T) {
 	}
 	if !readSQLiteForeignKeys(test, db) {
 		test.Fatalf("expected foreign keys enabled")
+	}
+}
+
+func TestPrepareSchemaReturnsErrorWhenDatabaseIsClosed(test *testing.T) {
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "ledger.db")
+	db, err := gorm.Open(sqlite.Open(sqlitePath), &gorm.Config{})
+	if err != nil {
+		test.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		test.Fatalf("sql db: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		test.Fatalf("close sql db: %v", err)
+	}
+
+	if err := prepareSchema(db, "sqlite"); err == nil {
+		test.Fatalf("expected error")
+	}
+	if err := prepareSchema(db, "postgres"); err == nil {
+		test.Fatalf("expected error")
 	}
 }
 
@@ -496,6 +623,48 @@ func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 	}
 }
 
+func TestRunServerWithListenReturnsServeError(test *testing.T) {
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "ledger.db")
+	cfg := &runtimeConfig{
+		DatabaseURL: "sqlite://" + sqlitePath,
+		ListenAddr:  "127.0.0.1:0",
+	}
+	logger := zap.NewNop()
+
+	err := runServerWithListen(context.Background(), cfg, logger, func(network string, address string) (net.Listener, error) {
+		listener, err := net.Listen(network, "127.0.0.1:0")
+		if err != nil {
+			return nil, err
+		}
+		if err := listener.Close(); err != nil {
+			return nil, err
+		}
+		return listener, nil
+	})
+	if err == nil {
+		test.Fatalf("expected error")
+	}
+}
+
+func TestRunServerWithListenReturnsListenError(test *testing.T) {
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "ledger.db")
+	cfg := &runtimeConfig{
+		DatabaseURL: "sqlite://" + sqlitePath,
+		ListenAddr:  "127.0.0.1:0",
+	}
+	logger := zap.NewNop()
+	listenError := errors.New("listen failed")
+
+	err := runServerWithListen(context.Background(), cfg, logger, func(network string, address string) (net.Listener, error) {
+		return nil, listenError
+	})
+	if !errors.Is(err, listenError) {
+		test.Fatalf("expected listen error, got %v", err)
+	}
+}
+
 func TestRootCommandPreRunAndRun(test *testing.T) {
 	viper.Reset()
 	tempDir := test.TempDir()
@@ -525,6 +694,67 @@ func TestRootCommandPreRunAndRun(test *testing.T) {
 	cancel()
 	if err := <-runResultCh; err != nil {
 		test.Fatalf("run: %v", err)
+	}
+}
+
+func TestLedgerdMainHelpReturns(test *testing.T) {
+	originalArgs := os.Args
+	originalStdout := os.Stdout
+	originalStderr := os.Stderr
+	test.Cleanup(func() {
+		os.Args = originalArgs
+		os.Stdout = originalStdout
+		os.Stderr = originalStderr
+	})
+
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		test.Fatalf("stdout pipe: %v", err)
+	}
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		test.Fatalf("stderr pipe: %v", err)
+	}
+	os.Stdout = stdoutWriter
+	os.Stderr = stderrWriter
+	os.Args = []string{"ledgerd", "--help"}
+
+	main()
+
+	_ = stdoutWriter.Close()
+	_ = stderrWriter.Close()
+	_, _ = io.ReadAll(stdoutReader)
+	_, _ = io.ReadAll(stderrReader)
+	_ = stdoutReader.Close()
+	_ = stderrReader.Close()
+}
+
+func TestLedgerdMainExitsOnCommandError(test *testing.T) {
+	originalArgs := os.Args
+	originalExitFunc := exitFunc
+	originalStderrWriter := stderrWriter
+	test.Cleanup(func() {
+		os.Args = originalArgs
+		exitFunc = originalExitFunc
+		stderrWriter = originalStderrWriter
+	})
+
+	exitCalled := false
+	exitCode := 0
+	exitFunc = func(code int) {
+		exitCalled = true
+		exitCode = code
+	}
+	stderrWriter = io.Discard
+	os.Args = []string{"ledgerd", "--unknown-flag"}
+
+	main()
+
+	if !exitCalled {
+		test.Fatalf("expected exit to be called")
+	}
+	if exitCode != 1 {
+		test.Fatalf("expected exit code 1, got %d", exitCode)
 	}
 }
 

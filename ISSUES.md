@@ -41,7 +41,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Add store-level account listing/pagination to support backfill without direct SQL in callers.
   - Treat duplicate idempotency keys as no-op; emit a summary of accounts updated vs skipped.
   - Document the workflow and add integration tests for large account sets.
-- [ ] [LG-212] (P1) Support grant-only history and "last grant" queries in the gRPC API. Unresolved.
+- [x] [LG-212] (P1) Support grant-only history and "last grant" queries in the gRPC API. Resolved: `ListEntriesRequest.types` filter enables grant-only paging and `limit=1` last-grant lookups; `make ci` passing.
   - Callers need to display "last grant" reliably without paging through large volumes of non-grant entries (holds/spends/captures).
   - Options:
     - Add `type` filtering (or a dedicated `ListGrants` RPC) so clients can request only grant entries.
@@ -52,7 +52,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 - [x] [LG-214] (P1) Run Postgres migrations via GORM (remove manual SQL migrator). Resolved: `ledgerd` now `AutoMigrate`s for SQLite+Postgres; compose `migrate` services removed; `db/migrations.sql` deleted; docs updated; `make ci` passing.
 
-- [ ] [LG-215] (P0) Add batch gRPC operations for high-volume credit mutations. Unresolved.
+- [x] [LG-215] (P0) Add batch gRPC operations for high-volume credit mutations. Resolved: added unary Batch RPC with atomic/best-effort semantics and per-item results, enforced `maxBatchOperations=5000`, implemented Postgres savepoint-backed nested tx support, and added coverage across service/store/grpc; `make ci` passing.
   Context: real consumers (for example ProductScanner) may need to issue thousands of refunds/grants for a single job. Doing this via one unary gRPC request per product is slow and easy to break when callers run inside canceled request contexts (leading to partial execution and operational noise).
   Deliverables:
   - Add a unary `Batch` RPC that executes many operations against the same account (`tenant_id`, `ledger_id`, `user_id`) in a single DB transaction, returning per-item results.
@@ -70,7 +70,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   message BatchResponse { repeated BatchOperationResult results = 1; }
   ```
 
-- [ ] [LG-216] (P0) Add first-class refunds referencing debit entries (spend/capture). Unresolved.
+- [x] [LG-216] (P0) Add first-class refunds referencing debit entries (spend/capture). Resolved: added `Refund` RPC + refund ledger entry type referencing original debit entries, enforced refund<=debit invariants with idempotency-safe retries, updated stores + gRPC server, and expanded coverage; `make ci` passing.
   Context: consumers currently use `Grant` to reimburse users, but this loses audit semantics (refund vs grant) and cannot enforce "refund <= original debit".
   Deliverables:
   - Add a `Refund` RPC that creates a `refund` ledger entry referencing an original debit entry (a `spend` or `capture`).
@@ -110,13 +110,20 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Ensure computations are consistent with `GetBalance` enforcement rules (especially once TTL/expiry is supported).
   - Add integration tests covering partial capture, full capture, release, and expiry states.
 
-- [ ] [LG-219] (P2) Improve gRPC ergonomics: return entry IDs and add ListEntries filtering. Unresolved.
+- [x] [LG-219] (P2) Improve gRPC ergonomics: return entry IDs and add ListEntries filtering. Resolved: `Empty` responses now include `entry_id` + `created_unix_utc`, and `ListEntriesRequest` supports `types`, `reservation_id`, and `idempotency_key_prefix`; store/service/server/tests updated; `make ci` passing.
   Context: mutating RPCs currently return `Empty`, forcing clients to call `ListEntries` (and sometimes page) to correlate actions to ledger entries. This is especially painful for operational tooling and for "last grant" UX.
   Deliverables:
   - Return `entry_id` + `created_unix_utc` from mutating RPCs (`Grant`, `Spend`, `Reserve`, `Capture`, `Release`) and optionally include the updated balance in the response to reduce round-trips.
   - Extend `ListEntriesRequest` with server-side filters (at least `type`, `reservation_id`, and `idempotency_key` prefix) plus deterministic pagination/cursors.
   - Align with LG-212 ("last grant") so the API can satisfy grant-only and last-grant queries without client-side paging.
   - Add tests asserting filters are applied correctly and pagination is stable.
+
+- [x] [LG-220] (P1) Add Refund support to Batch gRPC operations. Resolved: added `BatchRefundOp` to proto + Batch execution path, supporting refund-by-entry-id and refund-by-original-idempotency-key with idempotency-safe duplicates and over-refund rejection; coverage added; `make ci` passing.
+  Context: after LG-216, callers can create first-class refunds, but batch flows cannot yet issue many refunds in one request. High-volume consumers should be able to batch reimbursements without falling back to thousands of unary `Refund` calls.
+  Deliverables:
+  - Extend `BatchOperation` with `RefundOp` supporting `oneof original { original_entry_id | original_idempotency_key }` plus `amount_cents`, `idempotency_key`, `metadata_json`.
+  - Implement atomic/best-effort semantics consistent with existing Batch behavior (duplicate idempotency treated as success, surfaced as `duplicate=true` in per-item results).
+  - Add coverage for batch refund by entry id and by original idempotency key, including over-refund rejection and duplicate idempotency handling.
 
 
 ## BugFixes (302–399)

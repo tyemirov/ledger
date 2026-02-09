@@ -140,6 +140,19 @@ func TestNewEntryID(test *testing.T) {
 	}
 }
 
+func TestNewEntryRejectsInvalidEntryIDInTypesTests(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test, "acct-1")
+	idempotencyKey := mustIdempotencyKey(test, "idem-1")
+	metadata := mustMetadata(test, "{}")
+	amount := mustEntryAmount(test, 25)
+
+	_, err := NewEntry(EntryID{}, accountID, EntryGrant, amount, nil, nil, idempotencyKey, 0, metadata, 100)
+	if !errors.Is(err, ErrInvalidEntryID) {
+		test.Fatalf("expected ErrInvalidEntryID, got %v", err)
+	}
+}
+
 func TestNewAmountCents(test *testing.T) {
 	test.Parallel()
 	testCases := []struct {
@@ -297,7 +310,7 @@ func TestParseReservationStatus(test *testing.T) {
 
 func TestParseEntryType(test *testing.T) {
 	test.Parallel()
-	validTypes := []EntryType{EntryGrant, EntryHold, EntryReverseHold, EntrySpend}
+	validTypes := []EntryType{EntryGrant, EntryHold, EntryReverseHold, EntrySpend, EntryRefund}
 	for _, entryType := range validTypes {
 		_, err := ParseEntryType(entryType.String())
 		if err != nil {
@@ -343,13 +356,14 @@ func TestEntryInputAndEntryGetters(test *testing.T) {
 	accountID := mustAccountID(test, "acct-1")
 	reservationID := mustReservationID(test, "res-1")
 	entryID := mustEntryID(test, "entry-1")
+	refundOfEntryID := mustEntryID(test, "entry-2")
 	idempotencyKey := mustIdempotencyKey(test, "idem-1")
 	metadata := mustMetadata(test, `{"source":"test"}`)
 	amount := mustEntryAmount(test, 25)
 	expiresAt := int64(50)
 	createdAt := int64(100)
 
-	entryInput, err := NewEntryInput(accountID, EntryGrant, amount, &reservationID, idempotencyKey, expiresAt, metadata, createdAt)
+	entryInput, err := NewEntryInput(accountID, EntryGrant, amount, &reservationID, &refundOfEntryID, idempotencyKey, expiresAt, metadata, createdAt)
 	if err != nil {
 		test.Fatalf("entry input: %v", err)
 	}
@@ -366,6 +380,10 @@ func TestEntryInputAndEntryGetters(test *testing.T) {
 	if !hasReservation || reservationValue != reservationID {
 		test.Fatalf("expected reservation id %s", reservationID.String())
 	}
+	refundOfValue, hasRefundOf := entryInput.RefundOfEntryID()
+	if !hasRefundOf || refundOfValue != refundOfEntryID {
+		test.Fatalf("expected refund of entry id %s", refundOfEntryID.String())
+	}
 	if entryInput.IdempotencyKey() != idempotencyKey {
 		test.Fatalf("expected idempotency key %s", idempotencyKey.String())
 	}
@@ -379,7 +397,7 @@ func TestEntryInputAndEntryGetters(test *testing.T) {
 		test.Fatalf("expected created at %d", createdAt)
 	}
 
-	entry, err := NewEntry(entryID, accountID, EntryGrant, amount, &reservationID, idempotencyKey, expiresAt, metadata, createdAt)
+	entry, err := NewEntry(entryID, accountID, EntryGrant, amount, &reservationID, &refundOfEntryID, idempotencyKey, expiresAt, metadata, createdAt)
 	if err != nil {
 		test.Fatalf("entry: %v", err)
 	}
@@ -399,6 +417,10 @@ func TestEntryInputAndEntryGetters(test *testing.T) {
 	if !hasReservation || reservationValue != reservationID {
 		test.Fatalf("expected reservation id %s", reservationID.String())
 	}
+	refundOfValue, hasRefundOf = entry.RefundOfEntryID()
+	if !hasRefundOf || refundOfValue != refundOfEntryID {
+		test.Fatalf("expected refund of entry id %s", refundOfEntryID.String())
+	}
 	if entry.IdempotencyKey() != idempotencyKey {
 		test.Fatalf("expected idempotency key %s", idempotencyKey.String())
 	}
@@ -412,12 +434,29 @@ func TestEntryInputAndEntryGetters(test *testing.T) {
 		test.Fatalf("expected created at %d", createdAt)
 	}
 
-	entryInputNoReservation, err := NewEntryInput(accountID, EntryGrant, amount, nil, idempotencyKey, 0, metadata, createdAt)
+	entryInputNoReservation, err := NewEntryInput(accountID, EntryGrant, amount, nil, nil, idempotencyKey, 0, metadata, createdAt)
 	if err != nil {
 		test.Fatalf("entry input without reservation: %v", err)
 	}
 	_, hasReservation = entryInputNoReservation.ReservationID()
 	if hasReservation {
 		test.Fatalf("expected no reservation id")
+	}
+	_, hasRefundOf = entryInputNoReservation.RefundOfEntryID()
+	if hasRefundOf {
+		test.Fatalf("expected no refund of entry id")
+	}
+
+	entryNoReservation, err := NewEntry(entryID, accountID, EntryGrant, amount, nil, nil, idempotencyKey, expiresAt, metadata, createdAt)
+	if err != nil {
+		test.Fatalf("entry without reservation: %v", err)
+	}
+	_, hasReservation = entryNoReservation.ReservationID()
+	if hasReservation {
+		test.Fatalf("expected no reservation id for entry")
+	}
+	_, hasRefundOf = entryNoReservation.RefundOfEntryID()
+	if hasRefundOf {
+		test.Fatalf("expected no refund of entry id for entry")
 	}
 }

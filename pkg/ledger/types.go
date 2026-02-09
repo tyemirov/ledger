@@ -86,6 +86,7 @@ const (
 	EntryHold        EntryType = "hold"
 	EntryReverseHold EntryType = "reverse_hold"
 	EntrySpend       EntryType = "spend"
+	EntryRefund      EntryType = "refund"
 )
 
 // Reservation represents a stored reservation record.
@@ -102,6 +103,7 @@ type EntryInput struct {
 	entryType        EntryType
 	amountCents      EntryAmountCents
 	reservationID    *ReservationID
+	refundOfEntryID  *EntryID
 	idempotencyKey   IdempotencyKey
 	expiresAtUnixUTC int64
 	metadata         MetadataJSON
@@ -115,6 +117,7 @@ type Entry struct {
 	entryType        EntryType
 	amountCents      EntryAmountCents
 	reservationID    *ReservationID
+	refundOfEntryID  *EntryID
 	idempotencyKey   IdempotencyKey
 	expiresAtUnixUTC int64
 	metadata         MetadataJSON
@@ -125,6 +128,13 @@ type Entry struct {
 type Balance struct {
 	TotalCents     SignedAmountCents
 	AvailableCents SignedAmountCents
+}
+
+// ListEntriesFilter narrows ListEntries queries.
+type ListEntriesFilter struct {
+	Types                []EntryType
+	ReservationID        *ReservationID
+	IdempotencyKeyPrefix *IdempotencyKey
 }
 
 // NewUserID validates and normalizes a user id.
@@ -347,7 +357,7 @@ func (entryType EntryType) String() string {
 // IsValid reports whether the entry type is recognized.
 func (entryType EntryType) IsValid() bool {
 	switch entryType {
-	case EntryGrant, EntryHold, EntryReverseHold, EntrySpend:
+	case EntryGrant, EntryHold, EntryReverseHold, EntrySpend, EntryRefund:
 		return true
 	default:
 		return false
@@ -397,7 +407,7 @@ func (reservation Reservation) Status() ReservationStatus {
 }
 
 // NewEntryInput constructs a new ledger entry payload.
-func NewEntryInput(accountID AccountID, entryType EntryType, amountCents EntryAmountCents, reservationID *ReservationID, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON, createdUnixUTC int64) (EntryInput, error) {
+func NewEntryInput(accountID AccountID, entryType EntryType, amountCents EntryAmountCents, reservationID *ReservationID, refundOfEntryID *EntryID, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON, createdUnixUTC int64) (EntryInput, error) {
 	if err := validateIdentifierValue(accountID.value, ErrInvalidAccountID); err != nil {
 		return EntryInput{}, err
 	}
@@ -412,6 +422,11 @@ func NewEntryInput(accountID AccountID, entryType EntryType, amountCents EntryAm
 			return EntryInput{}, err
 		}
 	}
+	if refundOfEntryID != nil {
+		if err := validateIdentifierValue(refundOfEntryID.value, ErrInvalidEntryID); err != nil {
+			return EntryInput{}, err
+		}
+	}
 	if !entryType.IsValid() {
 		return EntryInput{}, fmt.Errorf("%w: %s", ErrInvalidEntryType, errorUnknownValue)
 	}
@@ -423,6 +438,7 @@ func NewEntryInput(accountID AccountID, entryType EntryType, amountCents EntryAm
 		entryType:        entryType,
 		amountCents:      amountCents,
 		reservationID:    reservationID,
+		refundOfEntryID:  refundOfEntryID,
 		idempotencyKey:   idempotencyKey,
 		expiresAtUnixUTC: expiresAtUnixUTC,
 		metadata:         metadata,
@@ -453,6 +469,14 @@ func (entry EntryInput) ReservationID() (ReservationID, bool) {
 	return *entry.reservationID, true
 }
 
+// RefundOfEntryID returns the original debit entry identifier, if present.
+func (entry EntryInput) RefundOfEntryID() (EntryID, bool) {
+	if entry.refundOfEntryID == nil {
+		return EntryID{}, false
+	}
+	return *entry.refundOfEntryID, true
+}
+
 // IdempotencyKey returns the idempotency key.
 func (entry EntryInput) IdempotencyKey() IdempotencyKey {
 	return entry.idempotencyKey
@@ -474,11 +498,11 @@ func (entry EntryInput) CreatedUnixUTC() int64 {
 }
 
 // NewEntry constructs a persisted ledger entry.
-func NewEntry(entryID EntryID, accountID AccountID, entryType EntryType, amountCents EntryAmountCents, reservationID *ReservationID, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON, createdUnixUTC int64) (Entry, error) {
+func NewEntry(entryID EntryID, accountID AccountID, entryType EntryType, amountCents EntryAmountCents, reservationID *ReservationID, refundOfEntryID *EntryID, idempotencyKey IdempotencyKey, expiresAtUnixUTC int64, metadata MetadataJSON, createdUnixUTC int64) (Entry, error) {
 	if err := validateIdentifierValue(entryID.value, ErrInvalidEntryID); err != nil {
 		return Entry{}, err
 	}
-	entryInput, err := NewEntryInput(accountID, entryType, amountCents, reservationID, idempotencyKey, expiresAtUnixUTC, metadata, createdUnixUTC)
+	entryInput, err := NewEntryInput(accountID, entryType, amountCents, reservationID, refundOfEntryID, idempotencyKey, expiresAtUnixUTC, metadata, createdUnixUTC)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -488,6 +512,7 @@ func NewEntry(entryID EntryID, accountID AccountID, entryType EntryType, amountC
 		entryType:        entryInput.entryType,
 		amountCents:      entryInput.amountCents,
 		reservationID:    entryInput.reservationID,
+		refundOfEntryID:  entryInput.refundOfEntryID,
 		idempotencyKey:   entryInput.idempotencyKey,
 		expiresAtUnixUTC: entryInput.expiresAtUnixUTC,
 		metadata:         entryInput.metadata,
@@ -523,6 +548,14 @@ func (entry Entry) ReservationID() (ReservationID, bool) {
 	return *entry.reservationID, true
 }
 
+// RefundOfEntryID returns the original debit entry identifier, if present.
+func (entry Entry) RefundOfEntryID() (EntryID, bool) {
+	if entry.refundOfEntryID == nil {
+		return EntryID{}, false
+	}
+	return *entry.refundOfEntryID, true
+}
+
 // IdempotencyKey returns the idempotency key.
 func (entry Entry) IdempotencyKey() IdempotencyKey {
 	return entry.idempotencyKey
@@ -547,13 +580,16 @@ func (entry Entry) CreatedUnixUTC() int64 {
 type Store interface {
 	WithTx(ctx context.Context, fn func(ctx context.Context, txStore Store) error) error
 	GetOrCreateAccountID(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID) (AccountID, error)
-	InsertEntry(ctx context.Context, entry EntryInput) error
+	InsertEntry(ctx context.Context, entry EntryInput) (Entry, error)
+	GetEntry(ctx context.Context, accountID AccountID, entryID EntryID) (Entry, error)
+	GetEntryByIdempotencyKey(ctx context.Context, accountID AccountID, idempotencyKey IdempotencyKey) (Entry, error)
+	SumRefunds(ctx context.Context, accountID AccountID, originalEntryID EntryID) (AmountCents, error)
 	SumTotal(ctx context.Context, accountID AccountID, atUnixUTC int64) (SignedAmountCents, error)
 	SumActiveHolds(ctx context.Context, accountID AccountID, atUnixUTC int64) (AmountCents, error)
 	CreateReservation(ctx context.Context, reservation Reservation) error
 	GetReservation(ctx context.Context, accountID AccountID, reservationID ReservationID) (Reservation, error)
 	UpdateReservationStatus(ctx context.Context, accountID AccountID, reservationID ReservationID, from, to ReservationStatus) error
-	ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int) ([]Entry, error)
+	ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error)
 }
 
 func normalizeIdentifier(raw string, invalidError error) (string, error) {
