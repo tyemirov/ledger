@@ -34,6 +34,9 @@ const (
 	errorCodeInvalid                = "invalid"
 	errorCodeList                   = "list"
 	errorCodeLookup                 = "lookup"
+	errorCodeReleaseSavepoint       = "release_savepoint"
+	errorCodeRollbackToSavepoint    = "rollback_to_savepoint"
+	errorCodeSavepoint              = "savepoint"
 	errorCodeSumActiveHolds         = "sum_active_holds"
 	errorCodeSumTotal               = "sum_total"
 	errorCodeUpdateStatus           = "update_status"
@@ -372,7 +375,27 @@ func (store *Store) ListEntries(ctx context.Context, accountID ledger.AccountID,
 }
 
 func (store *TxStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore ledger.Store) error) error {
-	return fn(ctx, store)
+	if fn == nil {
+		return nil
+	}
+	savepointName := "sp_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err := store.tx.Exec(ctx, "savepoint "+savepointName); err != nil {
+		return wrapStoreError(errorSubjectTransaction, errorCodeSavepoint, err)
+	}
+	callbackError := fn(ctx, store)
+	if callbackError != nil {
+		if _, err := store.tx.Exec(ctx, "rollback to savepoint "+savepointName); err != nil {
+			return errors.Join(callbackError, wrapStoreError(errorSubjectTransaction, errorCodeRollbackToSavepoint, err))
+		}
+		if _, err := store.tx.Exec(ctx, "release savepoint "+savepointName); err != nil {
+			return errors.Join(callbackError, wrapStoreError(errorSubjectTransaction, errorCodeReleaseSavepoint, err))
+		}
+		return callbackError
+	}
+	if _, err := store.tx.Exec(ctx, "release savepoint "+savepointName); err != nil {
+		return wrapStoreError(errorSubjectTransaction, errorCodeReleaseSavepoint, err)
+	}
+	return nil
 }
 
 func (store *TxStore) GetOrCreateAccountID(ctx context.Context, tenantID ledger.TenantID, userID ledger.UserID, ledgerID ledger.LedgerID) (ledger.AccountID, error) {

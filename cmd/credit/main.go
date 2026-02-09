@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -40,11 +41,16 @@ type runtimeConfig struct {
 	ListenAddr  string
 }
 
+var (
+	exitFunc               = os.Exit
+	stderrWriter io.Writer = os.Stderr
+)
+
 func main() {
 	cmd := newRootCommand()
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "ledgerd: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderrWriter, "ledgerd: %v\n", err)
+		exitFunc(1)
 	}
 }
 

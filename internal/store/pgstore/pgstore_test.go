@@ -97,13 +97,134 @@ func TestBuildListEntriesSQLIncludesFilters(test *testing.T) {
 
 func TestTxStoreWithTxDelegates(test *testing.T) {
 	test.Parallel()
-	txStore := &TxStore{tx: &stubTx{}}
+	executedStatements := []string{}
+	stubTransaction := &stubTx{
+		execFn: func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+			executedStatements = append(executedStatements, sql)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	txStore := &TxStore{tx: stubTransaction}
 	sentinelError := errors.New("callback error")
 	err := txStore.WithTx(context.Background(), func(ctx context.Context, txStore ledger.Store) error {
 		return sentinelError
 	})
 	if !errors.Is(err, sentinelError) {
 		test.Fatalf("expected sentinel error, got %v", err)
+	}
+	if len(executedStatements) != 3 {
+		test.Fatalf("expected 3 exec calls, got %d", len(executedStatements))
+	}
+	if !strings.HasPrefix(executedStatements[0], "savepoint sp_") {
+		test.Fatalf("expected savepoint, got %q", executedStatements[0])
+	}
+	savepointName := strings.TrimPrefix(executedStatements[0], "savepoint ")
+	if executedStatements[1] != "rollback to savepoint "+savepointName {
+		test.Fatalf("expected rollback to savepoint, got %q", executedStatements[1])
+	}
+	if executedStatements[2] != "release savepoint "+savepointName {
+		test.Fatalf("expected release savepoint, got %q", executedStatements[2])
+	}
+}
+
+func TestTxStoreWithTxCreatesSavepointAndReleasesOnSuccess(test *testing.T) {
+	test.Parallel()
+	executedStatements := []string{}
+	stubTransaction := &stubTx{
+		execFn: func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+			executedStatements = append(executedStatements, sql)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	txStore := &TxStore{tx: stubTransaction}
+	if err := txStore.WithTx(context.Background(), func(ctx context.Context, txStore ledger.Store) error {
+		return nil
+	}); err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+	if len(executedStatements) != 2 {
+		test.Fatalf("expected 2 exec calls, got %d", len(executedStatements))
+	}
+	if !strings.HasPrefix(executedStatements[0], "savepoint sp_") {
+		test.Fatalf("expected savepoint, got %q", executedStatements[0])
+	}
+	savepointName := strings.TrimPrefix(executedStatements[0], "savepoint ")
+	if executedStatements[1] != "release savepoint "+savepointName {
+		test.Fatalf("expected release savepoint, got %q", executedStatements[1])
+	}
+}
+
+func TestTxStoreWithTxReturnsNilWhenCallbackIsNil(test *testing.T) {
+	test.Parallel()
+	txStore := &TxStore{tx: &stubTx{}}
+	if err := txStore.WithTx(context.Background(), nil); err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTxStoreWithTxJoinsRollbackToSavepointErrors(test *testing.T) {
+	test.Parallel()
+	sentinelError := errors.New("callback error")
+	rollbackError := errors.New("rollback error")
+	savepointName := ""
+	stubTransaction := &stubTx{
+		execFn: func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+			if strings.HasPrefix(sql, "savepoint ") {
+				savepointName = strings.TrimPrefix(sql, "savepoint ")
+				return pgconn.CommandTag{}, nil
+			}
+			if sql == "rollback to savepoint "+savepointName {
+				return pgconn.CommandTag{}, rollbackError
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	txStore := &TxStore{tx: stubTransaction}
+	err := txStore.WithTx(context.Background(), func(ctx context.Context, txStore ledger.Store) error {
+		return sentinelError
+	})
+	if !errors.Is(err, sentinelError) {
+		test.Fatalf("expected sentinel error, got %v", err)
+	}
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Operation() != errorOperationStore || operationError.Subject() != errorSubjectTransaction || operationError.Code() != errorCodeRollbackToSavepoint {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+}
+
+func TestTxStoreWithTxJoinsReleaseSavepointErrors(test *testing.T) {
+	test.Parallel()
+	sentinelError := errors.New("callback error")
+	releaseError := errors.New("release error")
+	savepointName := ""
+	stubTransaction := &stubTx{
+		execFn: func(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
+			if strings.HasPrefix(sql, "savepoint ") {
+				savepointName = strings.TrimPrefix(sql, "savepoint ")
+				return pgconn.CommandTag{}, nil
+			}
+			if sql == "release savepoint "+savepointName {
+				return pgconn.CommandTag{}, releaseError
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	txStore := &TxStore{tx: stubTransaction}
+	err := txStore.WithTx(context.Background(), func(ctx context.Context, txStore ledger.Store) error {
+		return sentinelError
+	})
+	if !errors.Is(err, sentinelError) {
+		test.Fatalf("expected sentinel error, got %v", err)
+	}
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Operation() != errorOperationStore || operationError.Subject() != errorSubjectTransaction || operationError.Code() != errorCodeReleaseSavepoint {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
 	}
 }
 

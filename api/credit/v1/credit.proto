@@ -99,6 +99,76 @@ message ListEntriesResponse {
   repeated Entry entries = 1;
 }
 
+message AccountContext {
+  string user_id = 1;
+  string ledger_id = 2;
+  string tenant_id = 3;
+}
+
+message BatchGrantOp {
+  int64 amount_cents = 1;
+  string idempotency_key = 2;
+  int64 expires_at_unix_utc = 3;
+  string metadata_json = 4;
+}
+
+message BatchReserveOp {
+  int64 amount_cents = 1;
+  string reservation_id = 2;
+  string idempotency_key = 3;
+  string metadata_json = 4;
+}
+
+message BatchCaptureOp {
+  string reservation_id = 1;
+  string idempotency_key = 2;
+  int64 amount_cents = 3;
+  string metadata_json = 4;
+}
+
+message BatchReleaseOp {
+  string reservation_id = 1;
+  string idempotency_key = 2;
+  string metadata_json = 3;
+}
+
+message BatchSpendOp {
+  int64 amount_cents = 1;
+  string idempotency_key = 2;
+  string metadata_json = 3;
+}
+
+message BatchOperation {
+  string operation_id = 1;
+  oneof operation {
+    BatchGrantOp grant = 2;
+    BatchSpendOp spend = 3;
+    BatchReserveOp reserve = 4;
+    BatchCaptureOp capture = 5;
+    BatchReleaseOp release = 6;
+  }
+}
+
+message BatchRequest {
+  AccountContext account = 1;
+  repeated BatchOperation operations = 2;
+  bool atomic = 3;
+}
+
+message BatchOperationResult {
+  string operation_id = 1;
+  bool ok = 2;
+  string error_code = 3;
+  string error_message = 4;
+  string entry_id = 5;
+  int64 created_unix_utc = 6;
+  bool duplicate = 7;
+}
+
+message BatchResponse {
+  repeated BatchOperationResult results = 1;
+}
+
 service CreditService {
   rpc GetBalance(BalanceRequest) returns (BalanceResponse);
   rpc Grant(GrantRequest) returns (Empty);
@@ -106,5 +176,6 @@ service CreditService {
   rpc Capture(CaptureRequest) returns (Empty);
   rpc Release(ReleaseRequest) returns (Empty);
   rpc Spend(SpendRequest) returns (Empty);
+  rpc Batch(BatchRequest) returns (BatchResponse);
   rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse);
 }

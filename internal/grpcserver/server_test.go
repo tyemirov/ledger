@@ -3,6 +3,7 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -86,6 +87,41 @@ func TestMapToGRPCError(test *testing.T) {
 			}
 			if gotStatus.Message() != testCase.wantMessage {
 				test.Fatalf("expected message %q, got %q", testCase.wantMessage, gotStatus.Message())
+			}
+		})
+	}
+}
+
+func TestMapToBatchErrorCode(test *testing.T) {
+	test.Parallel()
+	testCases := []struct {
+		name     string
+		input    error
+		wantCode string
+	}{
+		{name: "invalid user id", input: ledger.ErrInvalidUserID, wantCode: errorInvalidUserID},
+		{name: "invalid ledger id", input: ledger.ErrInvalidLedgerID, wantCode: errorInvalidLedgerID},
+		{name: "invalid tenant id", input: ledger.ErrInvalidTenantID, wantCode: errorInvalidTenantID},
+		{name: "invalid reservation id", input: ledger.ErrInvalidReservationID, wantCode: errorInvalidReservationID},
+		{name: "invalid idempotency key", input: ledger.ErrInvalidIdempotencyKey, wantCode: errorInvalidIdempotencyKey},
+		{name: "invalid amount", input: ledger.ErrInvalidAmountCents, wantCode: errorInvalidAmount},
+		{name: "invalid metadata", input: ledger.ErrInvalidMetadataJSON, wantCode: errorInvalidMetadata},
+		{name: "invalid entry type", input: ledger.ErrInvalidEntryType, wantCode: errorInvalidEntryType},
+		{name: "insufficient funds", input: ledger.ErrInsufficientFunds, wantCode: errorInsufficientFunds},
+		{name: "unknown reservation", input: ledger.ErrUnknownReservation, wantCode: errorUnknownReservation},
+		{name: "duplicate idempotency", input: ledger.ErrDuplicateIdempotencyKey, wantCode: errorDuplicateIdempotencyKey},
+		{name: "reservation exists", input: ledger.ErrReservationExists, wantCode: errorReservationExists},
+		{name: "reservation closed", input: ledger.ErrReservationClosed, wantCode: errorReservationClosed},
+		{name: "operation error", input: ledger.WrapError("store", "entry", "insert", errors.New("boom")), wantCode: "store.entry.insert"},
+		{name: "fallback", input: errors.New("boom"), wantCode: errorInternal},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			code := mapToBatchErrorCode(testCase.input)
+			if code != testCase.wantCode {
+				test.Fatalf("expected %q, got %q", testCase.wantCode, code)
 			}
 		})
 	}
@@ -412,6 +448,269 @@ func TestCreditServiceServerFlow(test *testing.T) {
 	}
 }
 
+func TestCreditServiceServerBatchValidationErrors(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+	ctx := context.Background()
+
+	_, err = server.Batch(ctx, &creditv1.BatchRequest{})
+	if status.Code(err) != codes.InvalidArgument {
+		test.Fatalf("expected invalid argument, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorInvalidAccountContext {
+		test.Fatalf("expected %q, got %q", errorInvalidAccountContext, status.Convert(err).Message())
+	}
+
+	_, err = server.Batch(ctx, &creditv1.BatchRequest{
+		Account:    &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"},
+		Operations: []*creditv1.BatchOperation{{OperationId: "   ", Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{AmountCents: 1, IdempotencyKey: "idem", MetadataJson: "{}"}}}},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		test.Fatalf("expected invalid argument, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorInvalidOperationID {
+		test.Fatalf("expected %q, got %q", errorInvalidOperationID, status.Convert(err).Message())
+	}
+
+	_, err = server.Batch(ctx, &creditv1.BatchRequest{
+		Account:    &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"},
+		Operations: []*creditv1.BatchOperation{{OperationId: "op-1"}},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		test.Fatalf("expected invalid argument, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorMissingBatchOperation {
+		test.Fatalf("expected %q, got %q", errorMissingBatchOperation, status.Convert(err).Message())
+	}
+
+	_, err = server.Batch(ctx, &creditv1.BatchRequest{
+		Account:    &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"},
+		Operations: []*creditv1.BatchOperation{{OperationId: "op-1", Operation: &creditv1.BatchOperation_Grant{Grant: nil}}},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		test.Fatalf("expected invalid argument, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorMissingBatchOperation {
+		test.Fatalf("expected %q, got %q", errorMissingBatchOperation, status.Convert(err).Message())
+	}
+}
+
+func TestCreditServiceServerBatchAccountContextValidation(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+	ctx := context.Background()
+
+	testCases := []struct {
+		name        string
+		account     *creditv1.AccountContext
+		wantMessage string
+	}{
+		{name: "invalid user id", account: &creditv1.AccountContext{UserId: "", TenantId: "default", LedgerId: "default"}, wantMessage: errorInvalidUserID},
+		{name: "invalid ledger id", account: &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: ""}, wantMessage: errorInvalidLedgerID},
+		{name: "invalid tenant id", account: &creditv1.AccountContext{UserId: "user", TenantId: "", LedgerId: "default"}, wantMessage: errorInvalidTenantID},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			_, err := server.Batch(ctx, &creditv1.BatchRequest{
+				Account:    testCase.account,
+				Operations: []*creditv1.BatchOperation{{OperationId: "grant-1", Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{AmountCents: 1, IdempotencyKey: "grant-1", MetadataJson: "{}"}}}},
+			})
+			if status.Code(err) != codes.InvalidArgument {
+				test.Fatalf("expected invalid argument, got %v", status.Code(err))
+			}
+			if status.Convert(err).Message() != testCase.wantMessage {
+				test.Fatalf("expected %q, got %q", testCase.wantMessage, status.Convert(err).Message())
+			}
+		})
+	}
+}
+
+func TestCreditServiceServerBatchOperationValidationErrors(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+	ctx := context.Background()
+	account := &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"}
+
+	testCases := []struct {
+		name        string
+		operation   *creditv1.BatchOperation
+		wantMessage string
+	}{
+		{
+			name:        "grant invalid amount",
+			operation:   &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{AmountCents: 0, IdempotencyKey: "grant-1", MetadataJson: "{}"}}},
+			wantMessage: errorInvalidAmount,
+		},
+		{
+			name:        "grant invalid idempotency key",
+			operation:   &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{AmountCents: 1, IdempotencyKey: "", MetadataJson: "{}"}}},
+			wantMessage: errorInvalidIdempotencyKey,
+		},
+		{
+			name:        "grant invalid metadata",
+			operation:   &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{AmountCents: 1, IdempotencyKey: "grant-1", MetadataJson: "{"}}},
+			wantMessage: errorInvalidMetadata,
+		},
+		{
+			name:        "spend invalid amount",
+			operation:   &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Spend{Spend: &creditv1.BatchSpendOp{AmountCents: 0, IdempotencyKey: "spend-1", MetadataJson: "{}"}}},
+			wantMessage: errorInvalidAmount,
+		},
+		{
+			name:        "reserve invalid reservation id",
+			operation:   &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Reserve{Reserve: &creditv1.BatchReserveOp{AmountCents: 1, ReservationId: "", IdempotencyKey: "reserve-1", MetadataJson: "{}"}}},
+			wantMessage: errorInvalidReservationID,
+		},
+		{
+			name:        "capture invalid amount",
+			operation:   &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Capture{Capture: &creditv1.BatchCaptureOp{ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 0, MetadataJson: "{}"}}},
+			wantMessage: errorInvalidAmount,
+		},
+		{
+			name:        "release invalid reservation id",
+			operation:   &creditv1.BatchOperation{OperationId: "op-1", Operation: &creditv1.BatchOperation_Release{Release: &creditv1.BatchReleaseOp{ReservationId: "", IdempotencyKey: "release-1", MetadataJson: "{}"}}},
+			wantMessage: errorInvalidReservationID,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			_, err := server.Batch(ctx, &creditv1.BatchRequest{
+				Account:    account,
+				Operations: []*creditv1.BatchOperation{testCase.operation},
+			})
+			if status.Code(err) != codes.InvalidArgument {
+				test.Fatalf("expected invalid argument, got %v", status.Code(err))
+			}
+			if status.Convert(err).Message() != testCase.wantMessage {
+				test.Fatalf("expected %q, got %q", testCase.wantMessage, status.Convert(err).Message())
+			}
+		})
+	}
+}
+
+func TestCreditServiceServerBatchMapsServiceErrors(test *testing.T) {
+	test.Parallel()
+	clock := func() int64 { return 1700000000 }
+	service, err := ledger.NewService(&alwaysErrorStore{err: errors.New("boom")}, clock)
+	if err != nil {
+		test.Fatalf("service init: %v", err)
+	}
+	server := NewCreditServiceServer(service)
+	_, err = server.Batch(context.Background(), &creditv1.BatchRequest{
+		Account: &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"},
+		Operations: []*creditv1.BatchOperation{
+			{OperationId: "grant-1", Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{AmountCents: 1, IdempotencyKey: "grant-1", MetadataJson: "{}"}}},
+		},
+	})
+	if status.Code(err) != codes.Internal {
+		test.Fatalf("expected internal, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != "boom" {
+		test.Fatalf("expected boom, got %q", status.Convert(err).Message())
+	}
+}
+
+func TestCreditServiceServerBatchSupportsReserveCaptureAndRelease(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
+		Account: &creditv1.AccountContext{UserId: userID, TenantId: tenantID, LedgerId: ledgerID},
+		Atomic:  false,
+		Operations: []*creditv1.BatchOperation{
+			{
+				OperationId: "grant-1",
+				Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{
+					AmountCents:    1000,
+					IdempotencyKey: "grant-1",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "reserve-1",
+				Operation: &creditv1.BatchOperation_Reserve{Reserve: &creditv1.BatchReserveOp{
+					AmountCents:    300,
+					ReservationId:  "order-1",
+					IdempotencyKey: "reserve-1",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "capture-1",
+				Operation: &creditv1.BatchOperation_Capture{Capture: &creditv1.BatchCaptureOp{
+					ReservationId:  "order-1",
+					IdempotencyKey: "capture-1",
+					AmountCents:    300,
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "reserve-2",
+				Operation: &creditv1.BatchOperation_Reserve{Reserve: &creditv1.BatchReserveOp{
+					AmountCents:    100,
+					ReservationId:  "order-2",
+					IdempotencyKey: "reserve-2",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "release-1",
+				Operation: &creditv1.BatchOperation_Release{Release: &creditv1.BatchReleaseOp{
+					ReservationId:  "order-2",
+					IdempotencyKey: "release-1",
+					MetadataJson:   "{}",
+				}},
+			},
+		},
+	})
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	results := batchResponse.GetResults()
+	if len(results) != 5 {
+		test.Fatalf("expected 5 results, got %d", len(results))
+	}
+	for resultIndex, result := range results {
+		if !result.GetOk() || result.GetDuplicate() || result.GetEntryId() == "" {
+			test.Fatalf("unexpected result[%d]: ok=%v dup=%v entry_id=%q code=%q", resultIndex, result.GetOk(), result.GetDuplicate(), result.GetEntryId(), result.GetErrorCode())
+		}
+	}
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: userID, TenantId: tenantID, LedgerId: ledgerID})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 700 || balanceResponse.GetAvailableCents() != 700 {
+		test.Fatalf("expected 700/700, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+}
+
 func TestCreditServiceServerListEntriesAppliesFilters(test *testing.T) {
 	test.Parallel()
 	creditService, err := newSQLiteLedgerService(test)
@@ -482,6 +781,338 @@ func TestCreditServiceServerListEntriesAppliesFilters(test *testing.T) {
 	}
 	if entry.GetIdempotencyKey() != "reserve-1" {
 		test.Fatalf("expected idempotency reserve-1, got %q", entry.GetIdempotencyKey())
+	}
+}
+
+func TestCreditServiceServerBatchBestEffortReturnsPerItemResults(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
+		Account: &creditv1.AccountContext{UserId: userID, TenantId: tenantID, LedgerId: ledgerID},
+		Atomic:  false,
+		Operations: []*creditv1.BatchOperation{
+			{
+				OperationId: "grant-1",
+				Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{
+					AmountCents:    1000,
+					IdempotencyKey: "grant-1",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "spend-1",
+				Operation: &creditv1.BatchOperation_Spend{Spend: &creditv1.BatchSpendOp{
+					AmountCents:    200,
+					IdempotencyKey: "spend-1",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "spend-2",
+				Operation: &creditv1.BatchOperation_Spend{Spend: &creditv1.BatchSpendOp{
+					AmountCents:    2000,
+					IdempotencyKey: "spend-2",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "reserve-1",
+				Operation: &creditv1.BatchOperation_Reserve{Reserve: &creditv1.BatchReserveOp{
+					AmountCents:    300,
+					ReservationId:  "order-1",
+					IdempotencyKey: "reserve-1",
+					MetadataJson:   "{}",
+				}},
+			},
+		},
+	})
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	results := batchResponse.GetResults()
+	if len(results) != 4 {
+		test.Fatalf("expected 4 results, got %d", len(results))
+	}
+
+	if !results[0].GetOk() || results[0].GetDuplicate() {
+		test.Fatalf("expected grant ok without duplicate, got ok=%v dup=%v code=%q", results[0].GetOk(), results[0].GetDuplicate(), results[0].GetErrorCode())
+	}
+	if results[0].GetEntryId() == "" {
+		test.Fatalf("expected grant entry id")
+	}
+	if results[0].GetCreatedUnixUtc() != 1700000000 {
+		test.Fatalf("expected created unix utc 1700000000, got %d", results[0].GetCreatedUnixUtc())
+	}
+
+	if !results[1].GetOk() || results[1].GetDuplicate() {
+		test.Fatalf("expected spend ok without duplicate, got ok=%v dup=%v code=%q", results[1].GetOk(), results[1].GetDuplicate(), results[1].GetErrorCode())
+	}
+	if results[1].GetEntryId() == "" {
+		test.Fatalf("expected spend entry id")
+	}
+	if results[1].GetCreatedUnixUtc() != 1700000000 {
+		test.Fatalf("expected created unix utc 1700000000, got %d", results[1].GetCreatedUnixUtc())
+	}
+
+	if results[2].GetOk() {
+		test.Fatalf("expected spend-2 to fail")
+	}
+	if results[2].GetErrorCode() != errorInsufficientFunds {
+		test.Fatalf("expected error code %q, got %q", errorInsufficientFunds, results[2].GetErrorCode())
+	}
+
+	if !results[3].GetOk() || results[3].GetDuplicate() {
+		test.Fatalf("expected reserve ok without duplicate, got ok=%v dup=%v code=%q", results[3].GetOk(), results[3].GetDuplicate(), results[3].GetErrorCode())
+	}
+	if results[3].GetEntryId() == "" {
+		test.Fatalf("expected reserve entry id")
+	}
+	if results[3].GetCreatedUnixUtc() != 1700000000 {
+		test.Fatalf("expected created unix utc 1700000000, got %d", results[3].GetCreatedUnixUtc())
+	}
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{
+		UserId: userID, TenantId: tenantID, LedgerId: ledgerID,
+	})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 800 || balanceResponse.GetAvailableCents() != 500 {
+		test.Fatalf("expected 800/500, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+}
+
+func TestCreditServiceServerBatchTreatsDuplicateIdempotencyAsSuccess(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	batchRequest := &creditv1.BatchRequest{
+		Account: &creditv1.AccountContext{UserId: userID, TenantId: tenantID, LedgerId: ledgerID},
+		Atomic:  false,
+		Operations: []*creditv1.BatchOperation{
+			{
+				OperationId: "grant-a",
+				Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{
+					AmountCents:    100,
+					IdempotencyKey: "grant-a",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "grant-b",
+				Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{
+					AmountCents:    200,
+					IdempotencyKey: "grant-b",
+					MetadataJson:   "{}",
+				}},
+			},
+		},
+	}
+
+	firstResponse, err := server.Batch(ctx, batchRequest)
+	if err != nil {
+		test.Fatalf("first batch: %v", err)
+	}
+	for _, result := range firstResponse.GetResults() {
+		if !result.GetOk() || result.GetDuplicate() {
+			test.Fatalf("expected ok without duplicate, got ok=%v dup=%v code=%q", result.GetOk(), result.GetDuplicate(), result.GetErrorCode())
+		}
+	}
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{
+		UserId: userID, TenantId: tenantID, LedgerId: ledgerID,
+	})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 300 || balanceResponse.GetAvailableCents() != 300 {
+		test.Fatalf("expected 300/300, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+
+	secondResponse, err := server.Batch(ctx, batchRequest)
+	if err != nil {
+		test.Fatalf("second batch: %v", err)
+	}
+	for _, result := range secondResponse.GetResults() {
+		if !result.GetOk() || !result.GetDuplicate() {
+			test.Fatalf("expected ok with duplicate, got ok=%v dup=%v code=%q", result.GetOk(), result.GetDuplicate(), result.GetErrorCode())
+		}
+		if result.GetEntryId() != "" {
+			test.Fatalf("expected empty entry id on duplicate, got %q", result.GetEntryId())
+		}
+	}
+	balanceResponse, err = server.GetBalance(ctx, &creditv1.BalanceRequest{
+		UserId: userID, TenantId: tenantID, LedgerId: ledgerID,
+	})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 300 || balanceResponse.GetAvailableCents() != 300 {
+		test.Fatalf("expected 300/300 after duplicate batch, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+}
+
+func TestCreditServiceServerBatchAtomicRollsBackAllMutations(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
+		Account: &creditv1.AccountContext{UserId: userID, TenantId: tenantID, LedgerId: ledgerID},
+		Atomic:  true,
+		Operations: []*creditv1.BatchOperation{
+			{
+				OperationId: "grant-1",
+				Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{
+					AmountCents:    1000,
+					IdempotencyKey: "grant-1",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "spend-1",
+				Operation: &creditv1.BatchOperation_Spend{Spend: &creditv1.BatchSpendOp{
+					AmountCents:    200,
+					IdempotencyKey: "spend-1",
+					MetadataJson:   "{}",
+				}},
+			},
+			{
+				OperationId: "spend-2",
+				Operation: &creditv1.BatchOperation_Spend{Spend: &creditv1.BatchSpendOp{
+					AmountCents:    2000,
+					IdempotencyKey: "spend-2",
+					MetadataJson:   "{}",
+				}},
+			},
+		},
+	})
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	results := batchResponse.GetResults()
+	if len(results) != 3 {
+		test.Fatalf("expected 3 results, got %d", len(results))
+	}
+	if results[0].GetOk() || results[0].GetErrorCode() != errorRolledBack {
+		test.Fatalf("expected rolled back grant, got ok=%v code=%q", results[0].GetOk(), results[0].GetErrorCode())
+	}
+	if results[1].GetOk() || results[1].GetErrorCode() != errorRolledBack {
+		test.Fatalf("expected rolled back spend, got ok=%v code=%q", results[1].GetOk(), results[1].GetErrorCode())
+	}
+	if results[2].GetOk() || results[2].GetErrorCode() != errorInsufficientFunds {
+		test.Fatalf("expected insufficient funds, got ok=%v code=%q", results[2].GetOk(), results[2].GetErrorCode())
+	}
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{
+		UserId: userID, TenantId: tenantID, LedgerId: ledgerID,
+	})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != 0 || balanceResponse.GetAvailableCents() != 0 {
+		test.Fatalf("expected 0/0 after atomic rollback, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+}
+
+func TestCreditServiceServerBatchSupportsLargeBatches(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	operations := make([]*creditv1.BatchOperation, 0, maxBatchOperations)
+	for operationIndex := 0; operationIndex < maxBatchOperations; operationIndex++ {
+		operationID := fmt.Sprintf("grant-%d", operationIndex)
+		operations = append(operations, &creditv1.BatchOperation{
+			OperationId: operationID,
+			Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{
+				AmountCents:    1,
+				IdempotencyKey: operationID,
+				MetadataJson:   "{}",
+			}},
+		})
+	}
+
+	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
+		Account:    &creditv1.AccountContext{UserId: userID, TenantId: tenantID, LedgerId: ledgerID},
+		Atomic:     false,
+		Operations: operations,
+	})
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(batchResponse.GetResults()) != maxBatchOperations {
+		test.Fatalf("expected %d results, got %d", maxBatchOperations, len(batchResponse.GetResults()))
+	}
+	if !batchResponse.GetResults()[0].GetOk() {
+		test.Fatalf("expected first result to succeed")
+	}
+	if !batchResponse.GetResults()[len(batchResponse.GetResults())-1].GetOk() {
+		test.Fatalf("expected last result to succeed")
+	}
+
+	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{
+		UserId: userID, TenantId: tenantID, LedgerId: ledgerID,
+	})
+	if err != nil {
+		test.Fatalf("get balance: %v", err)
+	}
+	if balanceResponse.GetTotalCents() != int64(maxBatchOperations) || balanceResponse.GetAvailableCents() != int64(maxBatchOperations) {
+		test.Fatalf("expected %d/%d, got total=%d available=%d", maxBatchOperations, maxBatchOperations, balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	}
+
+	tooLargeOperations := append(operations, &creditv1.BatchOperation{
+		OperationId: "grant-too-many",
+		Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{
+			AmountCents:    1,
+			IdempotencyKey: "grant-too-many",
+			MetadataJson:   "{}",
+		}},
+	})
+	_, err = server.Batch(ctx, &creditv1.BatchRequest{
+		Account:    &creditv1.AccountContext{UserId: userID, TenantId: tenantID, LedgerId: ledgerID},
+		Operations: tooLargeOperations,
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		test.Fatalf("expected invalid argument, got %v", status.Code(err))
+	}
+	if status.Convert(err).Message() != errorBatchTooLarge {
+		test.Fatalf("expected %q, got %q", errorBatchTooLarge, status.Convert(err).Message())
 	}
 }
 

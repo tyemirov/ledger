@@ -52,7 +52,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 - [x] [LG-214] (P1) Run Postgres migrations via GORM (remove manual SQL migrator). Resolved: `ledgerd` now `AutoMigrate`s for SQLite+Postgres; compose `migrate` services removed; `db/migrations.sql` deleted; docs updated; `make ci` passing.
 
-- [ ] [LG-215] (P0) Add batch gRPC operations for high-volume credit mutations. Unresolved.
+- [x] [LG-215] (P0) Add batch gRPC operations for high-volume credit mutations. Resolved: added unary Batch RPC with atomic/best-effort semantics and per-item results, enforced `maxBatchOperations=5000`, implemented Postgres savepoint-backed nested tx support, and added coverage across service/store/grpc; `make ci` passing.
   Context: real consumers (for example ProductScanner) may need to issue thousands of refunds/grants for a single job. Doing this via one unary gRPC request per product is slow and easy to break when callers run inside canceled request contexts (leading to partial execution and operational noise).
   Deliverables:
   - Add a unary `Batch` RPC that executes many operations against the same account (`tenant_id`, `ledger_id`, `user_id`) in a single DB transaction, returning per-item results.

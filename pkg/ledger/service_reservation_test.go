@@ -381,7 +381,44 @@ func newStubStore(test *testing.T, initialTotal SignedAmountCents) *stubStore {
 }
 
 func (store *stubStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore Store) error) error {
-	return fn(ctx, store)
+	if fn == nil {
+		return nil
+	}
+	transactionStore := store.clone()
+	if err := fn(ctx, transactionStore); err != nil {
+		return err
+	}
+	store.applyTransaction(transactionStore)
+	return nil
+}
+
+func (store *stubStore) clone() *stubStore {
+	clone := *store
+
+	clone.reservations = make(map[ReservationID]Reservation, len(store.reservations))
+	for reservationID, reservation := range store.reservations {
+		clone.reservations[reservationID] = reservation
+	}
+
+	clone.entries = append([]EntryInput(nil), store.entries...)
+	clone.listEntries = append([]Entry(nil), store.listEntries...)
+
+	clone.idempotency = make(map[IdempotencyKey]struct{}, len(store.idempotency))
+	for idempotencyKey := range store.idempotency {
+		clone.idempotency[idempotencyKey] = struct{}{}
+	}
+
+	return &clone
+}
+
+func (store *stubStore) applyTransaction(transactionStore *stubStore) {
+	store.total = transactionStore.total
+	store.reservations = transactionStore.reservations
+	store.entries = transactionStore.entries
+	store.listEntries = transactionStore.listEntries
+	store.listErr = transactionStore.listErr
+	store.idempotency = transactionStore.idempotency
+	store.insertEntryCallCount = transactionStore.insertEntryCallCount
 }
 
 func (store *stubStore) GetOrCreateAccountID(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID) (AccountID, error) {
