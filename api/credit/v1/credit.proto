@@ -119,6 +119,42 @@ message ListEntriesResponse {
   repeated Entry entries = 1;
 }
 
+message Reservation {
+  string reservation_id = 1;
+  int64 amount_cents = 2;
+  string status = 3;
+  int64 expires_at_unix_utc = 4;
+  int64 created_unix_utc = 5;
+  int64 updated_unix_utc = 6;
+  bool expired = 7;
+  int64 held_cents = 8;
+  int64 captured_cents = 9;
+}
+
+message GetReservationRequest {
+  string user_id = 1;
+  string ledger_id = 2;
+  string tenant_id = 3;
+  string reservation_id = 4;
+}
+
+message GetReservationResponse {
+  Reservation reservation = 1;
+}
+
+message ListReservationsRequest {
+  string user_id = 1;
+  string ledger_id = 2;
+  string tenant_id = 3;
+  int64 before_created_unix_utc = 4;
+  int32 limit = 5;
+  repeated string statuses = 6;
+}
+
+message ListReservationsResponse {
+  repeated Reservation reservations = 1;
+}
+
 message AccountContext {
   string user_id = 1;
   string ledger_id = 2;
@@ -211,4 +247,6 @@ service CreditService {
   rpc Refund(RefundRequest) returns (RefundResponse);
   rpc Batch(BatchRequest) returns (BatchResponse);
   rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse);
+  rpc GetReservation(GetReservationRequest) returns (GetReservationResponse);
+  rpc ListReservations(ListReservationsRequest) returns (ListReservationsResponse);
 }

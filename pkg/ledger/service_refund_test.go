@@ -519,6 +519,10 @@ func (store *insertDuplicateRefundStore) UpdateReservationStatus(ctx context.Con
 	return ErrUnknownReservation
 }
 
+func (store *insertDuplicateRefundStore) ListReservations(ctx context.Context, accountID AccountID, beforeCreatedUnixUTC int64, limit int, filter ListReservationsFilter) ([]Reservation, error) {
+	return nil, nil
+}
+
 func (store *insertDuplicateRefundStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error) {
 	return nil, nil
 }
