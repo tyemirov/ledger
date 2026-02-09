@@ -236,12 +236,14 @@ func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, at
 	return ledger.SignedAmountCents(sum.Total), nil
 }
 
-func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, _ int64) (ledger.AmountCents, error) {
+func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.AmountCents, error) {
+	at := time.Unix(atUnixUTC, 0).UTC()
 	var sum sqlSum
 	err := store.db.WithContext(ctx).
 		Model(&Reservation{}).
 		Select("coalesce(sum(amount_cents),0) as total").
 		Where("account_id = ? AND status = ?", accountID.String(), ledger.ReservationStatusActive.String()).
+		Where("(expires_at is null or expires_at > ?)", at).
 		Scan(&sum).Error
 	if err != nil {
 		return 0, wrapStoreError(errorSubjectBalance, errorCodeSumActiveHolds, err)
@@ -254,11 +256,17 @@ func (store *Store) SumActiveHolds(ctx context.Context, accountID ledger.Account
 }
 
 func (store *Store) CreateReservation(ctx context.Context, reservation ledger.Reservation) error {
+	var expiresAt *time.Time
+	if reservation.ExpiresAtUnixUTC() != 0 {
+		value := time.Unix(reservation.ExpiresAtUnixUTC(), 0).UTC()
+		expiresAt = &value
+	}
 	model := Reservation{
 		AccountID:     reservation.AccountID().String(),
 		ReservationID: reservation.ReservationID().String(),
 		AmountCents:   reservation.AmountCents().Int64(),
 		Status:        reservation.Status().String(),
+		ExpiresAt:     expiresAt,
 	}
 	err := store.db.WithContext(ctx).Create(&model).Error
 	if isReservationConflict(err) {
@@ -298,7 +306,19 @@ func (store *Store) GetReservation(ctx context.Context, accountID ledger.Account
 	if err != nil {
 		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
 	}
-	reservation, err := ledger.NewReservation(parsedAccountID, parsedReservationID, amountCents, status)
+	expiresAtUnixUTC := int64(0)
+	if model.ExpiresAt != nil {
+		expiresAtUnixUTC = model.ExpiresAt.UTC().Unix()
+	}
+	reservation, err := ledger.NewReservationWithTimestamps(
+		parsedAccountID,
+		parsedReservationID,
+		amountCents,
+		status,
+		expiresAtUnixUTC,
+		model.CreatedAt.UTC().Unix(),
+		model.UpdatedAt.UTC().Unix(),
+	)
 	if err != nil {
 		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
 	}
@@ -317,6 +337,65 @@ func (store *Store) UpdateReservationStatus(ctx context.Context, accountID ledge
 		return wrapStoreError(errorSubjectReservation, errorCodeUpdateStatus, ledger.ErrReservationClosed)
 	}
 	return nil
+}
+
+func (store *Store) ListReservations(ctx context.Context, accountID ledger.AccountID, beforeCreatedUnixUTC int64, limit int, filter ledger.ListReservationsFilter) ([]ledger.Reservation, error) {
+	before := time.Unix(beforeCreatedUnixUTC, 0).UTC()
+	if beforeCreatedUnixUTC == 0 {
+		before = time.Now().UTC().Add(time.Second)
+	}
+
+	var rows []Reservation
+	query := store.db.WithContext(ctx).
+		Model(&Reservation{}).
+		Where("account_id = ? AND created_at < ?", accountID.String(), before).
+		Order("created_at DESC").
+		Limit(limit)
+	if len(filter.Statuses) > 0 {
+		statusValues := make([]string, 0, len(filter.Statuses))
+		for _, status := range filter.Statuses {
+			statusValues = append(statusValues, status.String())
+		}
+		query = query.Where("status in ?", statusValues)
+	}
+
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, wrapStoreError(errorSubjectReservation, errorCodeList, err)
+	}
+
+	reservations := make([]ledger.Reservation, 0, len(rows))
+	for _, row := range rows {
+		reservationID, err := ledger.NewReservationID(row.ReservationID)
+		if err != nil {
+			return nil, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+		}
+		amountCents, err := ledger.NewPositiveAmountCents(row.AmountCents)
+		if err != nil {
+			return nil, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+		}
+		status, err := ledger.ParseReservationStatus(row.Status)
+		if err != nil {
+			return nil, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+		}
+		expiresAtUnixUTC := int64(0)
+		if row.ExpiresAt != nil {
+			expiresAtUnixUTC = row.ExpiresAt.UTC().Unix()
+		}
+		reservation, err := ledger.NewReservationWithTimestamps(
+			accountID,
+			reservationID,
+			amountCents,
+			status,
+			expiresAtUnixUTC,
+			row.CreatedAt.UTC().Unix(),
+			row.UpdatedAt.UTC().Unix(),
+		)
+		if err != nil {
+			return nil, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
+		}
+		reservations = append(reservations, reservation)
+	}
+	return reservations, nil
 }
 
 func (store *Store) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {

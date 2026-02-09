@@ -92,7 +92,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   message RefundResponse { string entry_id = 1; int64 created_unix_utc = 2; BalanceResponse balance = 3; }
   ```
 
-- [ ] [LG-217] (P1) Support reservation TTLs and automatic expiry cleanup. Unresolved.
+- [x] [LG-217] (P1) Support reservation TTLs and automatic expiry cleanup. Resolved: added `expires_at_unix_utc` to `Reserve` + `BatchReserve` APIs, persisted TTL on reservations and hold entries, excluded expired active reservations from `available_cents` calculations, and rejected capture attempts on expired reservations; coverage added and `make ci` passing.
   Context: leaked holds (reservations that are never released due to caller crashes / canceled contexts) permanently reduce `available_cents`. Consumers need a safety net even when they use Reserve/Capture/Release flows.
   Deliverables:
   - Extend `ReserveRequest` with `expires_at_unix_utc` (mirroring `GrantRequest`), and treat expired holds as no longer impacting `available_cents`.
@@ -102,7 +102,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Add deterministic behavior under concurrent cleanup (avoid double-releasing).
   - Add tests with an injected clock to validate expiry and ensure available funds recover after TTL.
 
-- [ ] [LG-218] (P1) Add reservation introspection APIs (GetReservation / ListReservations). Unresolved.
+- [x] [LG-218] (P1) Add reservation introspection APIs (GetReservation / ListReservations). Resolved: added gRPC APIs returning computed reservation state (held/captured/expired + timestamps) with store support for paging/filtering; tests added and `make ci` passing.
   Context: today, callers cannot reliably introspect reservation state without paging and aggregating `ListEntries`, which is slow and brittle for high-activity accounts.
   Deliverables:
   - Add `GetReservation` to return the computed state for a `reservation_id` (reserved, captured, released, remaining held, created time, expires time, status).

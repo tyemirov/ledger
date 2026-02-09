@@ -80,7 +80,7 @@ func TestRefundByEntryIDEntryReferencesReservationWhenOriginalHasReservation(tes
 	}
 	reservationID := mustReservationID(test, "order-1")
 	reservationAmount := mustPositiveAmount(test, 200)
-	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, reservationAmount, reservationID, mustIdempotencyKey(test, "reserve-1"), metadata); err != nil {
+	if err := service.Reserve(context.Background(), tenantID, userID, ledgerID, reservationAmount, reservationID, mustIdempotencyKey(test, "reserve-1"), 0, metadata); err != nil {
 		test.Fatalf("reserve: %v", err)
 	}
 	captureDebitEntry, err := service.CaptureDebitEntry(context.Background(), tenantID, userID, ledgerID, reservationID, mustIdempotencyKey(test, "capture-1"), reservationAmount, metadata)
@@ -517,6 +517,10 @@ func (store *insertDuplicateRefundStore) GetReservation(ctx context.Context, acc
 
 func (store *insertDuplicateRefundStore) UpdateReservationStatus(ctx context.Context, accountID AccountID, reservationID ReservationID, from, to ReservationStatus) error {
 	return ErrUnknownReservation
+}
+
+func (store *insertDuplicateRefundStore) ListReservations(ctx context.Context, accountID AccountID, beforeCreatedUnixUTC int64, limit int, filter ListReservationsFilter) ([]Reservation, error) {
+	return nil, nil
 }
 
 func (store *insertDuplicateRefundStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error) {

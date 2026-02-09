@@ -122,6 +122,59 @@ func TestStoreListAccountSummariesWithCursor(test *testing.T) {
 	}
 }
 
+func TestStoreListAccountSummariesWrapsScanErrors(test *testing.T) {
+	test.Parallel()
+	tenantID := mustTenantID(test)
+	ledgerID := mustLedgerID(test)
+	stubPool := &stubPool{
+		queryRowsFn: func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+			return &stubRows{
+				records: [][]any{
+					{uuid.NewString()},
+				},
+			}, nil
+		},
+	}
+	store := &Store{pool: stubPool}
+
+	_, err := store.ListAccountSummaries(context.Background(), tenantID, ledgerID, nil, 2)
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectAccount || operationError.Code() != errorCodeList {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+}
+
+func TestStoreListAccountSummariesWrapsInvalidUserID(test *testing.T) {
+	test.Parallel()
+	tenantID := mustTenantID(test)
+	ledgerID := mustLedgerID(test)
+	stubPool := &stubPool{
+		queryRowsFn: func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+			return &stubRows{
+				records: [][]any{
+					{uuid.NewString(), " "},
+				},
+			}, nil
+		},
+	}
+	store := &Store{pool: stubPool}
+
+	_, err := store.ListAccountSummaries(context.Background(), tenantID, ledgerID, nil, 2)
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectAccount || operationError.Code() != errorCodeInvalid {
+		test.Fatalf("unexpected op error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+	if !errors.Is(err, ledger.ErrInvalidUserID) {
+		test.Fatalf("expected invalid user id error, got %v", err)
+	}
+}
+
 func TestBuildListEntriesSQLIncludesFilters(test *testing.T) {
 	test.Parallel()
 	accountID := mustAccountID(test)
@@ -172,6 +225,242 @@ func TestBuildListEntriesSQLIncludesFilters(test *testing.T) {
 	}
 	if args[6] != 50 {
 		test.Fatalf("expected limit arg 50, got %+v", args[6])
+	}
+}
+
+func TestBuildListReservationsSQLIncludesFilters(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	statement, args := buildListReservationsSQL(accountID, 1700000000, 50, ledger.ListReservationsFilter{
+		Statuses: []ledger.ReservationStatus{ledger.ReservationStatusActive, ledger.ReservationStatusCaptured},
+	})
+	if !strings.Contains(statement, "status in ($3,$4)") {
+		test.Fatalf("expected status filter in sql, got %q", statement)
+	}
+	if !strings.Contains(statement, "limit $5") {
+		test.Fatalf("expected limit placeholder $5, got %q", statement)
+	}
+
+	if len(args) != 5 {
+		test.Fatalf("expected 5 args, got %d", len(args))
+	}
+	if args[0] != accountID.String() {
+		test.Fatalf("expected account arg %q, got %+v", accountID.String(), args[0])
+	}
+	if args[1] != int64(1700000000) {
+		test.Fatalf("expected before arg 1700000000, got %+v", args[1])
+	}
+	if args[2] != ledger.ReservationStatusActive.String() || args[3] != ledger.ReservationStatusCaptured.String() {
+		test.Fatalf("unexpected status args: %+v", args[2:4])
+	}
+	if args[4] != 50 {
+		test.Fatalf("expected limit arg 50, got %+v", args[4])
+	}
+}
+
+func TestStoreListReservationsScansRows(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+
+	var capturedSQL string
+	var capturedArgs []any
+	stubPool := &stubPool{
+		queryRowsFn: func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+			capturedSQL = sql
+			capturedArgs = arguments
+			return &stubRows{
+				records: [][]any{
+					{"order-2", int64(200), "active", int64(0), int64(1700000000), int64(1700000001)},
+					{"order-1", int64(100), "captured", int64(1700000100), int64(1699999999), int64(1700000002)},
+				},
+			}, nil
+		},
+	}
+	store := &Store{pool: stubPool}
+
+	reservations, err := store.ListReservations(context.Background(), accountID, 1700001000, 10, ledger.ListReservationsFilter{
+		Statuses: []ledger.ReservationStatus{ledger.ReservationStatusActive, ledger.ReservationStatusCaptured},
+	})
+	if err != nil {
+		test.Fatalf("list reservations: %v", err)
+	}
+	if !strings.Contains(capturedSQL, "status in ($3,$4)") {
+		test.Fatalf("expected status filter in sql, got %q", capturedSQL)
+	}
+	if len(capturedArgs) != 5 {
+		test.Fatalf("expected 5 args, got %d", len(capturedArgs))
+	}
+	if capturedArgs[0] != accountID.String() || capturedArgs[1] != int64(1700001000) || capturedArgs[4] != 10 {
+		test.Fatalf("unexpected args: %+v", capturedArgs)
+	}
+	if len(reservations) != 2 {
+		test.Fatalf("expected 2 reservations, got %d", len(reservations))
+	}
+
+	if reservations[0].AccountID() != accountID || reservations[0].ReservationID().String() != "order-2" || reservations[0].AmountCents().Int64() != 200 {
+		test.Fatalf("unexpected first reservation: %+v", reservations[0])
+	}
+	if reservations[0].Status() != ledger.ReservationStatusActive || reservations[0].ExpiresAtUnixUTC() != 0 || reservations[0].CreatedUnixUTC() != 1700000000 || reservations[0].UpdatedUnixUTC() != 1700000001 {
+		test.Fatalf("unexpected first reservation values: %+v", reservations[0])
+	}
+
+	if reservations[1].AccountID() != accountID || reservations[1].ReservationID().String() != "order-1" || reservations[1].AmountCents().Int64() != 100 {
+		test.Fatalf("unexpected second reservation: %+v", reservations[1])
+	}
+	if reservations[1].Status() != ledger.ReservationStatusCaptured || reservations[1].ExpiresAtUnixUTC() != 1700000100 || reservations[1].CreatedUnixUTC() != 1699999999 || reservations[1].UpdatedUnixUTC() != 1700000002 {
+		test.Fatalf("unexpected second reservation values: %+v", reservations[1])
+	}
+
+	var capturedTxSQL string
+	var capturedTxArgs []any
+	stubTransaction := &stubTx{
+		queryFn: func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+			capturedTxSQL = sql
+			capturedTxArgs = arguments
+			return &stubRows{
+				records: [][]any{
+					{"order-2", int64(200), "active", int64(0), int64(1700000000), int64(1700000001)},
+				},
+			}, nil
+		},
+	}
+	txStore := &TxStore{tx: stubTransaction}
+	txReservations, err := txStore.ListReservations(context.Background(), accountID, 1700001000, 10, ledger.ListReservationsFilter{
+		Statuses: []ledger.ReservationStatus{ledger.ReservationStatusActive},
+	})
+	if err != nil {
+		test.Fatalf("list reservations tx: %v", err)
+	}
+	if capturedTxSQL == "" || len(capturedTxArgs) == 0 {
+		test.Fatalf("expected query to be executed")
+	}
+	if len(txReservations) != 1 || txReservations[0].ReservationID().String() != "order-2" {
+		test.Fatalf("unexpected tx reservations: %+v", txReservations)
+	}
+}
+
+func TestStoreListReservationsDefaultsCursorWhenZero(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+
+	var capturedArgs []any
+	stubPool := &stubPool{
+		queryRowsFn: func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+			capturedArgs = arguments
+			return &stubRows{records: nil}, nil
+		},
+	}
+	store := &Store{pool: stubPool}
+	reservations, err := store.ListReservations(context.Background(), accountID, 0, 10, ledger.ListReservationsFilter{})
+	if err != nil {
+		test.Fatalf("list reservations: %v", err)
+	}
+	if len(reservations) != 0 {
+		test.Fatalf("expected no reservations, got %d", len(reservations))
+	}
+	if len(capturedArgs) < 2 {
+		test.Fatalf("expected query args to include before cursor")
+	}
+	if capturedArgs[1] == int64(0) {
+		test.Fatalf("expected before cursor to be non-zero")
+	}
+}
+
+func TestStoreListReservationsWrapsQueryErrors(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	sentinelError := errors.New("query failed")
+	stubPool := &stubPool{
+		queryRowsFn: func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+			return nil, sentinelError
+		},
+	}
+	store := &Store{pool: stubPool}
+	_, err := store.ListReservations(context.Background(), accountID, 1700000000, 10, ledger.ListReservationsFilter{})
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectReservation || operationError.Code() != errorCodeList {
+		test.Fatalf("unexpected operation error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+	if !errors.Is(err, sentinelError) {
+		test.Fatalf("expected sentinel error, got %v", err)
+	}
+}
+
+func TestStoreListReservationsWrapsScanErrors(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	stubPool := &stubPool{
+		queryRowsFn: func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+			return &stubRows{
+				records: [][]any{
+					{"", int64(200), "active", int64(0), int64(1700000000), int64(1700000001)},
+				},
+			}, nil
+		},
+	}
+	store := &Store{pool: stubPool}
+	_, err := store.ListReservations(context.Background(), accountID, 1700000000, 10, ledger.ListReservationsFilter{})
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectReservation || operationError.Code() != errorCodeInvalid {
+		test.Fatalf("unexpected operation error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+	if !errors.Is(err, ledger.ErrInvalidReservationID) {
+		test.Fatalf("expected invalid reservation id error, got %v", err)
+	}
+}
+
+func TestStoreListReservationsWrapsRowsErr(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	sentinelError := errors.New("rows error")
+	stubPool := &stubPool{
+		queryRowsFn: func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+			return &stubRows{records: nil, err: sentinelError}, nil
+		},
+	}
+	store := &Store{pool: stubPool}
+	_, err := store.ListReservations(context.Background(), accountID, 1700000000, 10, ledger.ListReservationsFilter{})
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectReservation || operationError.Code() != errorCodeInvalid {
+		test.Fatalf("unexpected operation error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+	if !errors.Is(err, sentinelError) {
+		test.Fatalf("expected sentinel error, got %v", err)
+	}
+}
+
+func TestStoreListReservationsWrapsInvalidStatus(test *testing.T) {
+	test.Parallel()
+	accountID := mustAccountID(test)
+	stubPool := &stubPool{
+		queryRowsFn: func(ctx context.Context, sql string, arguments ...any) (queryRows, error) {
+			return &stubRows{
+				records: [][]any{
+					{"order-1", int64(200), "not-a-status", int64(0), int64(1700000000), int64(1700000001)},
+				},
+			}, nil
+		},
+	}
+	store := &Store{pool: stubPool}
+	_, err := store.ListReservations(context.Background(), accountID, 1700000000, 10, ledger.ListReservationsFilter{})
+	var operationError ledger.OperationError
+	if !errors.As(err, &operationError) {
+		test.Fatalf("expected operation error, got %v", err)
+	}
+	if operationError.Subject() != errorSubjectReservation || operationError.Code() != errorCodeInvalid {
+		test.Fatalf("unexpected operation error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
+	}
+	if !errors.Is(err, ledger.ErrInvalidReservationStatus) {
+		test.Fatalf("expected invalid reservation status error, got %v", err)
 	}
 }
 
@@ -1378,7 +1667,7 @@ func TestStoreTxStoreMethods(test *testing.T) {
 	if err != nil {
 		test.Fatalf("amount: %v", err)
 	}
-	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive)
+	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}
@@ -1524,7 +1813,7 @@ func TestStoreAutocommitMethods(test *testing.T) {
 	if err != nil {
 		test.Fatalf("amount: %v", err)
 	}
-	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive)
+	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}
@@ -1633,7 +1922,7 @@ func TestTxStoreMethodsWrapErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("amount: %v", err)
 	}
-	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive)
+	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}
@@ -1929,7 +2218,7 @@ func TestStoreCreateReservationWrapsErrorsAndConflicts(test *testing.T) {
 	if err != nil {
 		test.Fatalf("amount: %v", err)
 	}
-	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive)
+	reservation, err := ledger.NewReservation(accountID, reservationID, reservationAmount, ledger.ReservationStatusActive, 0)
 	if err != nil {
 		test.Fatalf("reservation: %v", err)
 	}

@@ -74,6 +74,10 @@ func (store *stubLedgerStore) UpdateReservationStatus(ctx context.Context, accou
 	return errors.New("not implemented")
 }
 
+func (store *stubLedgerStore) ListReservations(ctx context.Context, accountID ledger.AccountID, beforeCreatedUnixUTC int64, limit int, filter ledger.ListReservationsFilter) ([]ledger.Reservation, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (store *stubLedgerStore) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {
 	return nil, errors.New("not implemented")
 }
