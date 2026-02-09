@@ -96,6 +96,8 @@ type Reservation struct {
 	amountCents      PositiveAmountCents
 	status           ReservationStatus
 	expiresAtUnixUTC int64
+	createdUnixUTC   int64
+	updatedUnixUTC   int64
 }
 
 // EntryInput represents a new ledger entry to persist.
@@ -136,6 +138,11 @@ type ListEntriesFilter struct {
 	Types                []EntryType
 	ReservationID        *ReservationID
 	IdempotencyKeyPrefix *IdempotencyKey
+}
+
+// ListReservationsFilter narrows ListReservations queries.
+type ListReservationsFilter struct {
+	Statuses []ReservationStatus
 }
 
 // NewUserID validates and normalizes a user id.
@@ -388,6 +395,31 @@ func NewReservation(accountID AccountID, reservationID ReservationID, amountCent
 	}, nil
 }
 
+// NewReservationWithTimestamps constructs a reservation record including persistence timestamps.
+func NewReservationWithTimestamps(accountID AccountID, reservationID ReservationID, amountCents PositiveAmountCents, status ReservationStatus, expiresAtUnixUTC int64, createdUnixUTC int64, updatedUnixUTC int64) (Reservation, error) {
+	if err := validateIdentifierValue(accountID.value, ErrInvalidAccountID); err != nil {
+		return Reservation{}, err
+	}
+	if err := validateIdentifierValue(reservationID.value, ErrInvalidReservationID); err != nil {
+		return Reservation{}, err
+	}
+	if err := validatePositiveAmount(amountCents); err != nil {
+		return Reservation{}, err
+	}
+	if !status.IsValid() {
+		return Reservation{}, fmt.Errorf("%w: %s", ErrInvalidReservationStatus, errorUnknownValue)
+	}
+	return Reservation{
+		accountID:        accountID,
+		reservationID:    reservationID,
+		amountCents:      amountCents,
+		status:           status,
+		expiresAtUnixUTC: expiresAtUnixUTC,
+		createdUnixUTC:   createdUnixUTC,
+		updatedUnixUTC:   updatedUnixUTC,
+	}, nil
+}
+
 // AccountID returns the associated account.
 func (reservation Reservation) AccountID() AccountID {
 	return reservation.accountID
@@ -411,6 +443,16 @@ func (reservation Reservation) Status() ReservationStatus {
 // ExpiresAtUnixUTC returns the expiration timestamp, if set.
 func (reservation Reservation) ExpiresAtUnixUTC() int64 {
 	return reservation.expiresAtUnixUTC
+}
+
+// CreatedUnixUTC returns the creation timestamp, if known.
+func (reservation Reservation) CreatedUnixUTC() int64 {
+	return reservation.createdUnixUTC
+}
+
+// UpdatedUnixUTC returns the last update timestamp, if known.
+func (reservation Reservation) UpdatedUnixUTC() int64 {
+	return reservation.updatedUnixUTC
 }
 
 // NewEntryInput constructs a new ledger entry payload.
@@ -596,6 +638,7 @@ type Store interface {
 	CreateReservation(ctx context.Context, reservation Reservation) error
 	GetReservation(ctx context.Context, accountID AccountID, reservationID ReservationID) (Reservation, error)
 	UpdateReservationStatus(ctx context.Context, accountID AccountID, reservationID ReservationID, from, to ReservationStatus) error
+	ListReservations(ctx context.Context, accountID AccountID, beforeCreatedUnixUTC int64, limit int, filter ListReservationsFilter) ([]Reservation, error)
 	ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error)
 }
 

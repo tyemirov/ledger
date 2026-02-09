@@ -19,15 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CreditService_GetBalance_FullMethodName  = "/credit.v1.CreditService/GetBalance"
-	CreditService_Grant_FullMethodName       = "/credit.v1.CreditService/Grant"
-	CreditService_Reserve_FullMethodName     = "/credit.v1.CreditService/Reserve"
-	CreditService_Capture_FullMethodName     = "/credit.v1.CreditService/Capture"
-	CreditService_Release_FullMethodName     = "/credit.v1.CreditService/Release"
-	CreditService_Spend_FullMethodName       = "/credit.v1.CreditService/Spend"
-	CreditService_Refund_FullMethodName      = "/credit.v1.CreditService/Refund"
-	CreditService_Batch_FullMethodName       = "/credit.v1.CreditService/Batch"
-	CreditService_ListEntries_FullMethodName = "/credit.v1.CreditService/ListEntries"
+	CreditService_GetBalance_FullMethodName       = "/credit.v1.CreditService/GetBalance"
+	CreditService_Grant_FullMethodName            = "/credit.v1.CreditService/Grant"
+	CreditService_Reserve_FullMethodName          = "/credit.v1.CreditService/Reserve"
+	CreditService_Capture_FullMethodName          = "/credit.v1.CreditService/Capture"
+	CreditService_Release_FullMethodName          = "/credit.v1.CreditService/Release"
+	CreditService_Spend_FullMethodName            = "/credit.v1.CreditService/Spend"
+	CreditService_Refund_FullMethodName           = "/credit.v1.CreditService/Refund"
+	CreditService_Batch_FullMethodName            = "/credit.v1.CreditService/Batch"
+	CreditService_ListEntries_FullMethodName      = "/credit.v1.CreditService/ListEntries"
+	CreditService_GetReservation_FullMethodName   = "/credit.v1.CreditService/GetReservation"
+	CreditService_ListReservations_FullMethodName = "/credit.v1.CreditService/ListReservations"
 )
 
 // CreditServiceClient is the client API for CreditService service.
@@ -43,6 +45,8 @@ type CreditServiceClient interface {
 	Refund(ctx context.Context, in *RefundRequest, opts ...grpc.CallOption) (*RefundResponse, error)
 	Batch(ctx context.Context, in *BatchRequest, opts ...grpc.CallOption) (*BatchResponse, error)
 	ListEntries(ctx context.Context, in *ListEntriesRequest, opts ...grpc.CallOption) (*ListEntriesResponse, error)
+	GetReservation(ctx context.Context, in *GetReservationRequest, opts ...grpc.CallOption) (*GetReservationResponse, error)
+	ListReservations(ctx context.Context, in *ListReservationsRequest, opts ...grpc.CallOption) (*ListReservationsResponse, error)
 }
 
 type creditServiceClient struct {
@@ -143,6 +147,26 @@ func (c *creditServiceClient) ListEntries(ctx context.Context, in *ListEntriesRe
 	return out, nil
 }
 
+func (c *creditServiceClient) GetReservation(ctx context.Context, in *GetReservationRequest, opts ...grpc.CallOption) (*GetReservationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetReservationResponse)
+	err := c.cc.Invoke(ctx, CreditService_GetReservation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *creditServiceClient) ListReservations(ctx context.Context, in *ListReservationsRequest, opts ...grpc.CallOption) (*ListReservationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReservationsResponse)
+	err := c.cc.Invoke(ctx, CreditService_ListReservations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CreditServiceServer is the server API for CreditService service.
 // All implementations must embed UnimplementedCreditServiceServer
 // for forward compatibility.
@@ -156,6 +180,8 @@ type CreditServiceServer interface {
 	Refund(context.Context, *RefundRequest) (*RefundResponse, error)
 	Batch(context.Context, *BatchRequest) (*BatchResponse, error)
 	ListEntries(context.Context, *ListEntriesRequest) (*ListEntriesResponse, error)
+	GetReservation(context.Context, *GetReservationRequest) (*GetReservationResponse, error)
+	ListReservations(context.Context, *ListReservationsRequest) (*ListReservationsResponse, error)
 	mustEmbedUnimplementedCreditServiceServer()
 }
 
@@ -192,6 +218,12 @@ func (UnimplementedCreditServiceServer) Batch(context.Context, *BatchRequest) (*
 }
 func (UnimplementedCreditServiceServer) ListEntries(context.Context, *ListEntriesRequest) (*ListEntriesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListEntries not implemented")
+}
+func (UnimplementedCreditServiceServer) GetReservation(context.Context, *GetReservationRequest) (*GetReservationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetReservation not implemented")
+}
+func (UnimplementedCreditServiceServer) ListReservations(context.Context, *ListReservationsRequest) (*ListReservationsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListReservations not implemented")
 }
 func (UnimplementedCreditServiceServer) mustEmbedUnimplementedCreditServiceServer() {}
 func (UnimplementedCreditServiceServer) testEmbeddedByValue()                       {}
@@ -376,6 +408,42 @@ func _CreditService_ListEntries_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CreditService_GetReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CreditServiceServer).GetReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CreditService_GetReservation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CreditServiceServer).GetReservation(ctx, req.(*GetReservationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CreditService_ListReservations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReservationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CreditServiceServer).ListReservations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CreditService_ListReservations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CreditServiceServer).ListReservations(ctx, req.(*ListReservationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CreditService_ServiceDesc is the grpc.ServiceDesc for CreditService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -418,6 +486,14 @@ var CreditService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListEntries",
 			Handler:    _CreditService_ListEntries_Handler,
+		},
+		{
+			MethodName: "GetReservation",
+			Handler:    _CreditService_GetReservation_Handler,
+		},
+		{
+			MethodName: "ListReservations",
+			Handler:    _CreditService_ListReservations_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

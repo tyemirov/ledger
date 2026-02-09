@@ -633,6 +633,34 @@ func (store *stubStore) UpdateReservationStatus(ctx context.Context, accountID A
 	return nil
 }
 
+func (store *stubStore) ListReservations(ctx context.Context, accountID AccountID, beforeCreatedUnixUTC int64, limit int, filter ListReservationsFilter) ([]Reservation, error) {
+	if store.listErr != nil {
+		return nil, store.listErr
+	}
+
+	reservations := make([]Reservation, 0, len(store.reservations))
+	for _, reservation := range store.reservations {
+		if len(filter.Statuses) > 0 {
+			matches := false
+			for _, status := range filter.Statuses {
+				if reservation.Status() == status {
+					matches = true
+					break
+				}
+			}
+			if !matches {
+				continue
+			}
+		}
+		reservations = append(reservations, reservation)
+	}
+
+	if limit <= 0 || limit >= len(reservations) {
+		return reservations, nil
+	}
+	return reservations[:limit], nil
+}
+
 func (store *stubStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error) {
 	if store.listErr != nil {
 		return nil, store.listErr
@@ -875,6 +903,10 @@ func (store *failingStore) GetReservation(ctx context.Context, accountID Account
 
 func (store *failingStore) UpdateReservationStatus(ctx context.Context, accountID AccountID, reservationID ReservationID, from, to ReservationStatus) error {
 	return nil
+}
+
+func (store *failingStore) ListReservations(ctx context.Context, accountID AccountID, beforeCreatedUnixUTC int64, limit int, filter ListReservationsFilter) ([]Reservation, error) {
+	return nil, store.err
 }
 
 func (store *failingStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error) {

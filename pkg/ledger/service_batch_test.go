@@ -1316,6 +1316,10 @@ func (store *duplicateInsertRefundStore) UpdateReservationStatus(ctx context.Con
 	panic("UpdateReservationStatus not used")
 }
 
+func (store *duplicateInsertRefundStore) ListReservations(ctx context.Context, accountID AccountID, beforeCreatedUnixUTC int64, limit int, filter ListReservationsFilter) ([]Reservation, error) {
+	panic("ListReservations not used")
+}
+
 func (store *duplicateInsertRefundStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error) {
 	panic("ListEntries not used")
 }

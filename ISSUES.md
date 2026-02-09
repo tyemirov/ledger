@@ -102,7 +102,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Add deterministic behavior under concurrent cleanup (avoid double-releasing).
   - Add tests with an injected clock to validate expiry and ensure available funds recover after TTL.
 
-- [ ] [LG-218] (P1) Add reservation introspection APIs (GetReservation / ListReservations). Unresolved.
+- [x] [LG-218] (P1) Add reservation introspection APIs (GetReservation / ListReservations). Resolved: added gRPC APIs returning computed reservation state (held/captured/expired + timestamps) with store support for paging/filtering; tests added and `make ci` passing.
   Context: today, callers cannot reliably introspect reservation state without paging and aggregating `ListEntries`, which is slow and brittle for high-activity accounts.
   Deliverables:
   - Add `GetReservation` to return the computed state for a `reservation_id` (reserved, captured, released, remaining held, created time, expires time, status).

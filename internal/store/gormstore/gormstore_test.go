@@ -486,6 +486,64 @@ func TestStoreGetReservationRejectsInvalidAmountCents(test *testing.T) {
 	}
 }
 
+func TestStoreListReservationsAppliesFilters(test *testing.T) {
+	test.Parallel()
+	db := newSQLiteDB(test)
+	store := New(db)
+
+	ctx := context.Background()
+	accountID, err := store.GetOrCreateAccountID(ctx, mustTenantID(test), mustUserID(test), mustLedgerID(test))
+	if err != nil {
+		test.Fatalf("get account: %v", err)
+	}
+	amount, err := ledger.NewPositiveAmountCents(100)
+	if err != nil {
+		test.Fatalf("amount: %v", err)
+	}
+
+	activeID, err := ledger.NewReservationID("order-1")
+	if err != nil {
+		test.Fatalf("reservation id: %v", err)
+	}
+	activeReservation, err := ledger.NewReservation(accountID, activeID, amount, ledger.ReservationStatusActive, 0)
+	if err != nil {
+		test.Fatalf("reservation: %v", err)
+	}
+	if err := store.CreateReservation(ctx, activeReservation); err != nil {
+		test.Fatalf("create reservation: %v", err)
+	}
+
+	capturedID, err := ledger.NewReservationID("order-2")
+	if err != nil {
+		test.Fatalf("reservation id: %v", err)
+	}
+	capturedReservation, err := ledger.NewReservation(accountID, capturedID, amount, ledger.ReservationStatusCaptured, 0)
+	if err != nil {
+		test.Fatalf("reservation: %v", err)
+	}
+	if err := store.CreateReservation(ctx, capturedReservation); err != nil {
+		test.Fatalf("create captured reservation: %v", err)
+	}
+
+	activeReservations, err := store.ListReservations(ctx, accountID, 0, 10, ledger.ListReservationsFilter{
+		Statuses: []ledger.ReservationStatus{ledger.ReservationStatusActive},
+	})
+	if err != nil {
+		test.Fatalf("list active reservations: %v", err)
+	}
+	if len(activeReservations) != 1 || activeReservations[0].ReservationID().String() != activeID.String() {
+		test.Fatalf("expected active reservation %s, got %+v", activeID.String(), activeReservations)
+	}
+
+	allReservations, err := store.ListReservations(ctx, accountID, time.Now().UTC().Add(time.Hour).Unix(), 10, ledger.ListReservationsFilter{})
+	if err != nil {
+		test.Fatalf("list reservations: %v", err)
+	}
+	if len(allReservations) != 2 {
+		test.Fatalf("expected 2 reservations, got %d", len(allReservations))
+	}
+}
+
 func TestStoreSumActiveHoldsRejectsNegativeSum(test *testing.T) {
 	test.Parallel()
 	db := newSQLiteDB(test)
