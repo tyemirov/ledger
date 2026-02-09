@@ -118,6 +118,13 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Align with LG-212 ("last grant") so the API can satisfy grant-only and last-grant queries without client-side paging.
   - Add tests asserting filters are applied correctly and pagination is stable.
 
+- [x] [LG-220] (P1) Add Refund support to Batch gRPC operations. Resolved: added `BatchRefundOp` to proto + Batch execution path, supporting refund-by-entry-id and refund-by-original-idempotency-key with idempotency-safe duplicates and over-refund rejection; coverage added; `make ci` passing.
+  Context: after LG-216, callers can create first-class refunds, but batch flows cannot yet issue many refunds in one request. High-volume consumers should be able to batch reimbursements without falling back to thousands of unary `Refund` calls.
+  Deliverables:
+  - Extend `BatchOperation` with `RefundOp` supporting `oneof original { original_entry_id | original_idempotency_key }` plus `amount_cents`, `idempotency_key`, `metadata_json`.
+  - Implement atomic/best-effort semantics consistent with existing Batch behavior (duplicate idempotency treated as success, surfaced as `duplicate=true` in per-item results).
+  - Add coverage for batch refund by entry id and by original idempotency key, including over-refund rejection and duplicate idempotency handling.
+
 
 ## BugFixes (302–399)
 

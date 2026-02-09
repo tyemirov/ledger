@@ -176,6 +176,386 @@ func TestBatchReserveCaptureAndReleaseSucceed(test *testing.T) {
 	}
 }
 
+func TestBatchRefundByOriginalEntryIDSucceeds(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	if err := service.Grant(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 1000), mustIdempotencyKey(test, "grant-1"), 0, mustMetadata(test, "{}")); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	spendEntry, err := service.SpendEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 200), mustIdempotencyKey(test, "spend-1"), mustMetadata(test, "{}"))
+	if err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+
+	operations := []BatchOperation{
+		newBatchRefundByEntryIDOperation(test, "refund-1", 50, spendEntry.EntryID(), "refund-1"),
+	}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(results) != 1 {
+		test.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Entry == nil || results[0].Error != nil || results[0].Duplicate || results[0].RolledBack {
+		test.Fatalf("unexpected result: entry=%v err=%v dup=%v rolled_back=%v", results[0].Entry, results[0].Error, results[0].Duplicate, results[0].RolledBack)
+	}
+	if results[0].Entry.Type() != EntryRefund {
+		test.Fatalf("expected refund entry, got %s", results[0].Entry.Type())
+	}
+	refundOfEntryID, ok := results[0].Entry.RefundOfEntryID()
+	if !ok || refundOfEntryID != spendEntry.EntryID() {
+		test.Fatalf("expected refund_of_entry_id %s, got %v", spendEntry.EntryID().String(), refundOfEntryID.String())
+	}
+	if store.total != 850 {
+		test.Fatalf("expected total 850, got %d", store.total)
+	}
+}
+
+func TestBatchRefundByOriginalIdempotencyKeySucceeds(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	if err := service.Grant(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 1000), mustIdempotencyKey(test, "grant-1"), 0, mustMetadata(test, "{}")); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	spendEntry, err := service.SpendEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 200), mustIdempotencyKey(test, "spend-1"), mustMetadata(test, "{}"))
+	if err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+
+	operations := []BatchOperation{
+		newBatchRefundByOriginalIdempotencyKeyOperation(test, "refund-1", 50, mustIdempotencyKey(test, "spend-1"), "refund-1"),
+	}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(results) != 1 {
+		test.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Entry == nil || results[0].Error != nil || results[0].Duplicate || results[0].RolledBack {
+		test.Fatalf("unexpected result: entry=%v err=%v dup=%v rolled_back=%v", results[0].Entry, results[0].Error, results[0].Duplicate, results[0].RolledBack)
+	}
+	refundOfEntryID, ok := results[0].Entry.RefundOfEntryID()
+	if !ok || refundOfEntryID != spendEntry.EntryID() {
+		test.Fatalf("expected refund_of_entry_id %s, got %v", spendEntry.EntryID().String(), refundOfEntryID.String())
+	}
+	if store.total != 850 {
+		test.Fatalf("expected total 850, got %d", store.total)
+	}
+}
+
+func TestBatchRefundRejectsOverRefund(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	if err := service.Grant(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 1000), mustIdempotencyKey(test, "grant-1"), 0, mustMetadata(test, "{}")); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	spendEntry, err := service.SpendEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 100), mustIdempotencyKey(test, "spend-1"), mustMetadata(test, "{}"))
+	if err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+
+	operations := []BatchOperation{
+		newBatchRefundByEntryIDOperation(test, "refund-1", 80, spendEntry.EntryID(), "refund-1"),
+		newBatchRefundByEntryIDOperation(test, "refund-2", 30, spendEntry.EntryID(), "refund-2"),
+	}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(results) != 2 {
+		test.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if results[0].Entry == nil || results[0].Error != nil || results[0].Duplicate || results[0].RolledBack {
+		test.Fatalf("unexpected first result: entry=%v err=%v dup=%v rolled_back=%v", results[0].Entry, results[0].Error, results[0].Duplicate, results[0].RolledBack)
+	}
+	if !errors.Is(results[1].Error, ErrRefundExceedsDebit) || results[1].Entry != nil || results[1].Duplicate || results[1].RolledBack {
+		test.Fatalf("unexpected second result: entry=%v err=%v dup=%v rolled_back=%v", results[1].Entry, results[1].Error, results[1].Duplicate, results[1].RolledBack)
+	}
+	if store.total != 980 {
+		test.Fatalf("expected total 980, got %d", store.total)
+	}
+}
+
+func TestBatchRefundDuplicateIdempotencyIsMarkedDuplicate(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	if err := service.Grant(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 1000), mustIdempotencyKey(test, "grant-1"), 0, mustMetadata(test, "{}")); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	spendEntry, err := service.SpendEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 100), mustIdempotencyKey(test, "spend-1"), mustMetadata(test, "{}"))
+	if err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+
+	operations := []BatchOperation{
+		newBatchRefundByEntryIDOperation(test, "refund-1", 50, spendEntry.EntryID(), "refund-1"),
+		newBatchRefundByEntryIDOperation(test, "refund-2", 50, spendEntry.EntryID(), "refund-1"),
+	}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(results) != 2 {
+		test.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if results[0].Entry == nil || results[0].Error != nil || results[0].Duplicate || results[0].RolledBack {
+		test.Fatalf("unexpected first result: entry=%v err=%v dup=%v rolled_back=%v", results[0].Entry, results[0].Error, results[0].Duplicate, results[0].RolledBack)
+	}
+	if results[1].Entry != nil || results[1].Error != nil || !results[1].Duplicate || results[1].RolledBack {
+		test.Fatalf("unexpected duplicate result: entry=%v err=%v dup=%v rolled_back=%v", results[1].Entry, results[1].Error, results[1].Duplicate, results[1].RolledBack)
+	}
+	if store.total != 950 {
+		test.Fatalf("expected total 950, got %d", store.total)
+	}
+}
+
+func TestBatchRefundReturnsErrorWhenOriginalReferenceMissing(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	operations := []BatchOperation{
+		{
+			OperationID: "refund-1",
+			Refund: &BatchRefundOperation{
+				Amount:         mustPositiveAmount(test, 50),
+				IdempotencyKey: mustIdempotencyKey(test, "refund-1"),
+				Metadata:       mustMetadata(test, "{}"),
+			},
+		},
+	}
+
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(results) != 1 {
+		test.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Entry != nil || results[0].Duplicate || results[0].RolledBack {
+		test.Fatalf("unexpected result: entry=%v err=%v dup=%v rolled_back=%v", results[0].Entry, results[0].Error, results[0].Duplicate, results[0].RolledBack)
+	}
+	if results[0].Error == nil || results[0].Error.Error() != "missing_refund_original" {
+		test.Fatalf("expected missing_refund_original, got %v", results[0].Error)
+	}
+}
+
+func TestBatchRefundRejectsNonDebitOriginal(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	grantEntry, err := service.GrantEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 1000), mustIdempotencyKey(test, "grant-1"), 0, mustMetadata(test, "{}"))
+	if err != nil {
+		test.Fatalf("grant entry: %v", err)
+	}
+
+	operations := []BatchOperation{
+		newBatchRefundByEntryIDOperation(test, "refund-1", 50, grantEntry.EntryID(), "refund-1"),
+	}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(results) != 1 {
+		test.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Entry != nil || results[0].Duplicate || results[0].RolledBack {
+		test.Fatalf("unexpected result: entry=%v err=%v dup=%v rolled_back=%v", results[0].Entry, results[0].Error, results[0].Duplicate, results[0].RolledBack)
+	}
+	if !errors.Is(results[0].Error, ErrInvalidRefundOriginal) {
+		test.Fatalf("expected invalid refund original, got %v", results[0].Error)
+	}
+	if store.total != 1000 {
+		test.Fatalf("expected total 1000, got %d", store.total)
+	}
+}
+
+func TestBatchRefundCopiesReservationIDWhenOriginalHasReservation(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	if err := service.Grant(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 1000), mustIdempotencyKey(test, "grant-1"), 0, mustMetadata(test, "{}")); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	reservationID := mustReservationID(test, "res-1")
+	if _, err := service.ReserveEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 200), reservationID, mustIdempotencyKey(test, "reserve-1"), mustMetadata(test, "{}")); err != nil {
+		test.Fatalf("reserve entry: %v", err)
+	}
+	originalSpend, err := service.CaptureDebitEntry(context.Background(), tenantID, userID, ledgerID, reservationID, mustIdempotencyKey(test, "capture-1"), mustPositiveAmount(test, 200), mustMetadata(test, "{}"))
+	if err != nil {
+		test.Fatalf("capture debit entry: %v", err)
+	}
+
+	operations := []BatchOperation{
+		newBatchRefundByEntryIDOperation(test, "refund-1", 50, originalSpend.EntryID(), "refund-1"),
+	}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(results) != 1 {
+		test.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Entry == nil || results[0].Error != nil || results[0].Duplicate || results[0].RolledBack {
+		test.Fatalf("unexpected result: entry=%v err=%v dup=%v rolled_back=%v", results[0].Entry, results[0].Error, results[0].Duplicate, results[0].RolledBack)
+	}
+	operationReservationID, ok := results[0].Entry.ReservationID()
+	if !ok || operationReservationID != reservationID {
+		test.Fatalf("expected reservation id %s, got %v", reservationID.String(), operationReservationID.String())
+	}
+	if store.total != 850 {
+		test.Fatalf("expected total 850, got %d", store.total)
+	}
+}
+
+func TestBatchRefundReturnsUnknownEntryWhenOriginalEntryDoesNotExist(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	if err := service.Grant(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 1000), mustIdempotencyKey(test, "grant-1"), 0, mustMetadata(test, "{}")); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+
+	operations := []BatchOperation{
+		newBatchRefundByEntryIDOperation(test, "refund-1", 50, mustEntryID(test, "missing-entry"), "refund-1"),
+	}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(results) != 1 {
+		test.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Entry != nil || results[0].Duplicate || results[0].RolledBack {
+		test.Fatalf("unexpected result: entry=%v err=%v dup=%v rolled_back=%v", results[0].Entry, results[0].Error, results[0].Duplicate, results[0].RolledBack)
+	}
+	if !errors.Is(results[0].Error, ErrUnknownEntry) {
+		test.Fatalf("expected unknown entry, got %v", results[0].Error)
+	}
+	if store.total != 1000 {
+		test.Fatalf("expected total 1000, got %d", store.total)
+	}
+}
+
+func TestBatchRefundReturnsErrorWhenInsertEntryFails(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	if err := service.Grant(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 1000), mustIdempotencyKey(test, "grant-1"), 0, mustMetadata(test, "{}")); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	spendEntry, err := service.SpendEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 200), mustIdempotencyKey(test, "spend-1"), mustMetadata(test, "{}"))
+	if err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+
+	insertError := errors.New("insert failed")
+	store.insertEntryError = insertError
+	store.insertEntryErrorAtCall = store.insertEntryCallCount + 1
+
+	operations := []BatchOperation{
+		newBatchRefundByEntryIDOperation(test, "refund-1", 50, spendEntry.EntryID(), "refund-1"),
+	}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(results) != 1 {
+		test.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Entry != nil || results[0].Duplicate || results[0].RolledBack {
+		test.Fatalf("unexpected result: entry=%v err=%v dup=%v rolled_back=%v", results[0].Entry, results[0].Error, results[0].Duplicate, results[0].RolledBack)
+	}
+	if !errors.Is(results[0].Error, insertError) {
+		test.Fatalf("expected insert error, got %v", results[0].Error)
+	}
+	if store.total != 800 {
+		test.Fatalf("expected total 800, got %d", store.total)
+	}
+}
+
+func TestBatchCaptureReturnsErrorWhenUpdateReservationStatusFails(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	if err := service.Grant(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 200), mustIdempotencyKey(test, "grant-1"), 0, mustMetadata(test, "{}")); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	reservationID := mustReservationID(test, "res-1")
+	if _, err := service.ReserveEntry(context.Background(), tenantID, userID, ledgerID, mustPositiveAmount(test, 10), reservationID, mustIdempotencyKey(test, "reserve-1"), mustMetadata(test, "{}")); err != nil {
+		test.Fatalf("reserve entry: %v", err)
+	}
+
+	updateError := errors.New("update failed")
+	store.updateReservationError = updateError
+
+	operations := []BatchOperation{
+		newBatchCaptureOperation(test, "capture-1", 10, reservationID.String(), "capture-1"),
+	}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if len(results) != 1 {
+		test.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Entry != nil || results[0].Duplicate || results[0].RolledBack {
+		test.Fatalf("unexpected result: entry=%v err=%v dup=%v rolled_back=%v", results[0].Entry, results[0].Error, results[0].Duplicate, results[0].RolledBack)
+	}
+	if !errors.Is(results[0].Error, updateError) {
+		test.Fatalf("expected update error, got %v", results[0].Error)
+	}
+	reservation := store.mustReservation(test, reservationID)
+	if reservation.Status() != ReservationStatusActive {
+		test.Fatalf("expected reservation to remain active, got %s", reservation.Status())
+	}
+}
+
 func TestBatchSavepointRollsBackFailedOperationButKeepsPriorSuccess(test *testing.T) {
 	test.Parallel()
 	store := newStubStore(test, mustSignedAmount(test, 200))
@@ -639,6 +1019,34 @@ func newBatchReleaseOperation(test *testing.T, operationID string, reservationID
 			ReservationID:  mustReservationID(test, reservationIDValue),
 			IdempotencyKey: mustIdempotencyKey(test, idempotencyKeyValue),
 			Metadata:       mustMetadata(test, "{}"),
+		},
+	}
+}
+
+func newBatchRefundByEntryIDOperation(test *testing.T, operationID string, amountCents int64, originalEntryID EntryID, idempotencyKeyValue string) BatchOperation {
+	test.Helper()
+	originalEntryIDValue := originalEntryID
+	return BatchOperation{
+		OperationID: operationID,
+		Refund: &BatchRefundOperation{
+			OriginalEntryID: &originalEntryIDValue,
+			Amount:          mustPositiveAmount(test, amountCents),
+			IdempotencyKey:  mustIdempotencyKey(test, idempotencyKeyValue),
+			Metadata:        mustMetadata(test, "{}"),
+		},
+	}
+}
+
+func newBatchRefundByOriginalIdempotencyKeyOperation(test *testing.T, operationID string, amountCents int64, originalIdempotencyKey IdempotencyKey, idempotencyKeyValue string) BatchOperation {
+	test.Helper()
+	originalIdempotencyKeyValue := originalIdempotencyKey
+	return BatchOperation{
+		OperationID: operationID,
+		Refund: &BatchRefundOperation{
+			OriginalIdempotencyKey: &originalIdempotencyKeyValue,
+			Amount:                 mustPositiveAmount(test, amountCents),
+			IdempotencyKey:         mustIdempotencyKey(test, idempotencyKeyValue),
+			Metadata:               mustMetadata(test, "{}"),
 		},
 	}
 }
