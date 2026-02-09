@@ -108,6 +108,20 @@ Environment variables:
 
 When configured, the server applies the bootstrap grant exactly once for newly created accounts (accounts with no prior ledger entries). Existing accounts are not retroactively bootstrapped; use the bootstrap backfill workflow to apply grants to pre-existing accounts.
 
+### Bootstrap backfill (existing accounts)
+
+To apply bootstrap grants to accounts that already exist (for example, accounts created before `BOOTSTRAP_GRANTS_JSON` was enabled), run:
+
+```bash
+DATABASE_URL=sqlite:///tmp/ledger.db \
+BOOTSTRAP_GRANTS_JSON='[{"tenant_id":"default","ledger_id":"default","amount_cents":1000,"idempotency_key_prefix":"bootstrap","metadata_json":"{}"}]' \
+go run ./cmd/credit bootstrap-backfill --page-size 1000
+```
+
+Notes:
+- The command iterates accounts per `{tenant_id, ledger_id}` scope and applies the deterministic bootstrap grant only when missing.
+- If the bootstrap idempotency key already exists for an account and the existing entry is not a `grant`, the command fails with a duplicate idempotency error (to avoid silently masking key collisions).
+
 ---
 
 ## Running the service

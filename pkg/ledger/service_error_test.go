@@ -179,7 +179,7 @@ func TestReserveReturnsStoreErrors(test *testing.T) {
 
 			testCase.configure(test, store, reservationID, amount)
 
-			err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, metadata)
+			err := service.Reserve(context.Background(), tenantID, userID, ledgerID, amount, reservationID, idempotencyKey, 0, metadata)
 			if !errors.Is(err, testCase.wantErr) {
 				test.Fatalf(errorMismatchMessage, testCase.wantErr, err)
 			}

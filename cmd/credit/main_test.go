@@ -328,6 +328,17 @@ func TestLoadConfigErrorsWhenListenFlagMissing(test *testing.T) {
 	}
 }
 
+func TestLoadConfigErrorsWhenBootstrapFlagMissing(test *testing.T) {
+	viper.Reset()
+	cfg := &runtimeConfig{}
+	cmd := &cobra.Command{}
+	cmd.Flags().String(flagDatabaseURL, defaultDatabaseURL, "db")
+	cmd.Flags().String(flagListenAddr, defaultGRPCListenAddr, "listen")
+	if err := loadConfig(cmd, cfg); err == nil {
+		test.Fatalf("expected error, got nil")
+	}
+}
+
 func TestNormalizeSQLitePath(test *testing.T) {
 	tempDir := test.TempDir()
 	absolutePath := filepath.Join(tempDir, "ledger.db")
@@ -530,6 +541,19 @@ func TestExtractIDs(test *testing.T) {
 
 	if got := extractUserID(struct{}{}); got != "" {
 		test.Fatalf("expected empty user id, got %q", got)
+	}
+}
+
+func TestLookupFlagFindsInheritedPersistentFlags(test *testing.T) {
+	root := &cobra.Command{Use: "root"}
+	root.PersistentFlags().String(flagDatabaseURL, defaultDatabaseURL, "db")
+
+	child := &cobra.Command{Use: "child"}
+	root.AddCommand(child)
+
+	flag := lookupFlag(child, flagDatabaseURL)
+	if flag == nil {
+		test.Fatalf("expected inherited flag")
 	}
 }
 
@@ -831,6 +855,33 @@ func TestRunServerWithListenReturnsListenError(test *testing.T) {
 	})
 	if !errors.Is(err, listenError) {
 		test.Fatalf("expected listen error, got %v", err)
+	}
+}
+
+func TestRunServerWithListenReturnsDatabaseOpenError(test *testing.T) {
+	cfg := &runtimeConfig{
+		DatabaseURL: "http://%zz",
+		ListenAddr:  "127.0.0.1:0",
+	}
+	logger := zap.NewNop()
+
+	err := runServerWithListen(context.Background(), cfg, logger, net.Listen)
+	if err == nil {
+		test.Fatalf("expected error")
+	}
+}
+
+func TestRunServerWithListenReturnsErrorForInvalidBootstrapPolicy(test *testing.T) {
+	cfg := &runtimeConfig{
+		DatabaseURL:         "sqlite://:memory:",
+		ListenAddr:          "127.0.0.1:0",
+		BootstrapGrantsJSON: "{",
+	}
+	logger := zap.NewNop()
+
+	err := runServerWithListen(context.Background(), cfg, logger, net.Listen)
+	if err == nil {
+		test.Fatalf("expected error")
 	}
 }
 

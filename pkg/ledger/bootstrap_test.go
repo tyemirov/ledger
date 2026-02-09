@@ -359,3 +359,44 @@ func TestBootstrapGrantPropagatesStoreErrors(test *testing.T) {
 		})
 	}
 }
+
+func TestBootstrapGrantPolicyRulesReturnsSorted(test *testing.T) {
+	test.Parallel()
+
+	makeRule := func(tenant string, ledger string) BootstrapGrantRule {
+		test.Helper()
+		tenantID := mustTenantID(test, tenant)
+		ledgerID := mustLedgerID(test, ledger)
+		amount := mustPositiveAmount(test, 100)
+		idempotencyKeyBase := mustIdempotencyKey(test, "bootstrap")
+		metadata := mustMetadata(test, "{}")
+		rule, err := NewBootstrapGrantRule(tenantID, ledgerID, amount, idempotencyKeyBase, metadata)
+		if err != nil {
+			test.Fatalf("rule: %v", err)
+		}
+		return rule
+	}
+
+	ruleA := makeRule("tenant-a", "ledger-b")
+	ruleB := makeRule("tenant-a", "ledger-a")
+	ruleC := makeRule("tenant-0", "ledger-z")
+
+	policy, err := NewBootstrapGrantPolicy([]BootstrapGrantRule{ruleA, ruleB, ruleC})
+	if err != nil {
+		test.Fatalf("policy: %v", err)
+	}
+
+	rules := policy.Rules()
+	if len(rules) != 3 {
+		test.Fatalf("expected 3 rules, got %d", len(rules))
+	}
+	if rules[0].TenantID().String() != "tenant-0" || rules[0].LedgerID().String() != "ledger-z" {
+		test.Fatalf("unexpected first rule: tenant=%s ledger=%s", rules[0].TenantID().String(), rules[0].LedgerID().String())
+	}
+	if rules[1].TenantID().String() != "tenant-a" || rules[1].LedgerID().String() != "ledger-a" {
+		test.Fatalf("unexpected second rule: tenant=%s ledger=%s", rules[1].TenantID().String(), rules[1].LedgerID().String())
+	}
+	if rules[2].TenantID().String() != "tenant-a" || rules[2].LedgerID().String() != "ledger-b" {
+		test.Fatalf("unexpected third rule: tenant=%s ledger=%s", rules[2].TenantID().String(), rules[2].LedgerID().String())
+	}
+}

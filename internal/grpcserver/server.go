@@ -14,31 +14,32 @@ import (
 )
 
 const (
-	errorInsufficientFunds       = "insufficient_funds"
-	errorUnknownReservation      = "unknown_reservation"
-	errorUnknownEntry            = "unknown_entry"
-	errorDuplicateIdempotencyKey = "duplicate_idempotency_key"
-	errorInvalidUserID           = "invalid_user_id"
-	errorInvalidLedgerID         = "invalid_ledger_id"
-	errorInvalidTenantID         = "invalid_tenant_id"
-	errorInvalidReservationID    = "invalid_reservation_id"
-	errorInvalidEntryID          = "invalid_entry_id"
-	errorInvalidIdempotencyKey   = "invalid_idempotency_key"
-	errorInvalidAmount           = "invalid_amount_cents"
-	errorInvalidMetadata         = "invalid_metadata_json"
-	errorInvalidEntryType        = "invalid_entry_type"
-	errorInvalidListLimit        = "invalid_list_limit"
-	errorInvalidAccountContext   = "invalid_account_context"
-	errorInvalidOperationID      = "invalid_operation_id"
-	errorMissingBatchOperation   = "missing_batch_operation"
-	errorBatchTooLarge           = "batch_too_large"
-	errorRolledBack              = "rolled_back"
-	errorInternal                = "internal"
-	errorReservationExists       = "reservation_exists"
-	errorReservationClosed       = "reservation_closed"
-	errorMissingRefundOriginal   = "missing_refund_original"
-	errorInvalidRefundOriginal   = "invalid_refund_original"
-	errorRefundExceedsDebit      = "refund_exceeds_debit"
+	errorInsufficientFunds        = "insufficient_funds"
+	errorUnknownReservation       = "unknown_reservation"
+	errorUnknownEntry             = "unknown_entry"
+	errorDuplicateIdempotencyKey  = "duplicate_idempotency_key"
+	errorInvalidUserID            = "invalid_user_id"
+	errorInvalidLedgerID          = "invalid_ledger_id"
+	errorInvalidTenantID          = "invalid_tenant_id"
+	errorInvalidReservationID     = "invalid_reservation_id"
+	errorInvalidReservationStatus = "invalid_reservation_status"
+	errorInvalidEntryID           = "invalid_entry_id"
+	errorInvalidIdempotencyKey    = "invalid_idempotency_key"
+	errorInvalidAmount            = "invalid_amount_cents"
+	errorInvalidMetadata          = "invalid_metadata_json"
+	errorInvalidEntryType         = "invalid_entry_type"
+	errorInvalidListLimit         = "invalid_list_limit"
+	errorInvalidAccountContext    = "invalid_account_context"
+	errorInvalidOperationID       = "invalid_operation_id"
+	errorMissingBatchOperation    = "missing_batch_operation"
+	errorBatchTooLarge            = "batch_too_large"
+	errorRolledBack               = "rolled_back"
+	errorInternal                 = "internal"
+	errorReservationExists        = "reservation_exists"
+	errorReservationClosed        = "reservation_closed"
+	errorMissingRefundOriginal    = "missing_refund_original"
+	errorInvalidRefundOriginal    = "invalid_refund_original"
+	errorRefundExceedsDebit       = "refund_exceeds_debit"
 
 	defaultListEntriesLimit = 50
 	maxListEntriesLimit     = 200
@@ -140,7 +141,7 @@ func (service *CreditServiceServer) Reserve(ctx context.Context, request *credit
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	entry, operationError := service.creditService.ReserveEntry(ctx, tenantID, userID, ledgerID, amount, reservationID, idem, metadata)
+	entry, operationError := service.creditService.ReserveEntry(ctx, tenantID, userID, ledgerID, amount, reservationID, idem, request.GetExpiresAtUnixUtc(), metadata)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
@@ -399,10 +400,11 @@ func (service *CreditServiceServer) Batch(ctx context.Context, request *creditv1
 				return nil, mapToGRPCError(err)
 			}
 			parsedOperation.Reserve = &ledger.BatchReserveOperation{
-				Amount:         amount,
-				ReservationID:  reservationID,
-				IdempotencyKey: idem,
-				Metadata:       metadata,
+				Amount:           amount,
+				ReservationID:    reservationID,
+				IdempotencyKey:   idem,
+				ExpiresAtUnixUTC: operationValue.Reserve.GetExpiresAtUnixUtc(),
+				Metadata:         metadata,
 			}
 		case *creditv1.BatchOperation_Capture:
 			if operationValue.Capture == nil {
@@ -633,6 +635,86 @@ func (service *CreditServiceServer) ListEntries(ctx context.Context, request *cr
 	return response, nil
 }
 
+func (service *CreditServiceServer) GetReservation(ctx context.Context, request *creditv1.GetReservationRequest) (*creditv1.GetReservationResponse, error) {
+	userID, err := ledger.NewUserID(request.GetUserId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	ledgerID, err := ledger.NewLedgerID(request.GetLedgerId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	tenantID, err := ledger.NewTenantID(request.GetTenantId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	reservationID, err := ledger.NewReservationID(request.GetReservationId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+
+	state, operationError := service.creditService.GetReservationState(ctx, tenantID, userID, ledgerID, reservationID)
+	if operationError != nil {
+		return nil, mapToGRPCError(operationError)
+	}
+	return &creditv1.GetReservationResponse{Reservation: mapReservationState(state)}, nil
+}
+
+func (service *CreditServiceServer) ListReservations(ctx context.Context, request *creditv1.ListReservationsRequest) (*creditv1.ListReservationsResponse, error) {
+	userID, err := ledger.NewUserID(request.GetUserId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	ledgerID, err := ledger.NewLedgerID(request.GetLedgerId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	tenantID, err := ledger.NewTenantID(request.GetTenantId())
+	if err != nil {
+		return nil, mapToGRPCError(err)
+	}
+	limit, err := normalizeListLimit(request.GetLimit())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, errorInvalidListLimit)
+	}
+
+	statuses := make([]ledger.ReservationStatus, 0, len(request.GetStatuses()))
+	for _, rawStatus := range request.GetStatuses() {
+		parsedStatus, err := ledger.ParseReservationStatus(rawStatus)
+		if err != nil {
+			return nil, mapToGRPCError(err)
+		}
+		statuses = append(statuses, parsedStatus)
+	}
+
+	states, operationError := service.creditService.ListReservationStates(ctx, tenantID, userID, ledgerID, request.GetBeforeCreatedUnixUtc(), int(limit), ledger.ListReservationsFilter{
+		Statuses: statuses,
+	})
+	if operationError != nil {
+		return nil, mapToGRPCError(operationError)
+	}
+
+	response := &creditv1.ListReservationsResponse{Reservations: make([]*creditv1.Reservation, 0, len(states))}
+	for _, state := range states {
+		response.Reservations = append(response.Reservations, mapReservationState(state))
+	}
+	return response, nil
+}
+
+func mapReservationState(state ledger.ReservationState) *creditv1.Reservation {
+	return &creditv1.Reservation{
+		ReservationId:    state.ReservationID.String(),
+		AmountCents:      state.AmountCents.Int64(),
+		Status:           state.Status.String(),
+		ExpiresAtUnixUtc: state.ExpiresAtUnixUTC,
+		CreatedUnixUtc:   state.CreatedUnixUTC,
+		UpdatedUnixUtc:   state.UpdatedUnixUTC,
+		Expired:          state.Expired,
+		HeldCents:        state.HeldCents.Int64(),
+		CapturedCents:    state.CapturedCents.Int64(),
+	}
+}
+
 func normalizeListLimit(limit int32) (int32, error) {
 	if limit <= 0 {
 		return defaultListEntriesLimit, nil
@@ -655,6 +737,9 @@ func mapToBatchErrorCode(source error) string {
 	}
 	if errors.Is(source, ledger.ErrInvalidReservationID) {
 		return errorInvalidReservationID
+	}
+	if errors.Is(source, ledger.ErrInvalidReservationStatus) {
+		return errorInvalidReservationStatus
 	}
 	if errors.Is(source, ledger.ErrInvalidEntryID) {
 		return errorInvalidEntryID
@@ -718,6 +803,9 @@ func mapToGRPCError(source error) error {
 	}
 	if errors.Is(source, ledger.ErrInvalidReservationID) {
 		return status.Error(codes.InvalidArgument, errorInvalidReservationID)
+	}
+	if errors.Is(source, ledger.ErrInvalidReservationStatus) {
+		return status.Error(codes.InvalidArgument, errorInvalidReservationStatus)
 	}
 	if errors.Is(source, ledger.ErrInvalidEntryID) {
 		return status.Error(codes.InvalidArgument, errorInvalidEntryID)
