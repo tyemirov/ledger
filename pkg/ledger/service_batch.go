@@ -44,6 +44,15 @@ type BatchSpendOperation struct {
 	Metadata       MetadataJSON
 }
 
+// BatchRefundOperation describes a refund mutation within a batch request.
+type BatchRefundOperation struct {
+	OriginalEntryID        *EntryID
+	OriginalIdempotencyKey *IdempotencyKey
+	Amount                 PositiveAmountCents
+	IdempotencyKey         IdempotencyKey
+	Metadata               MetadataJSON
+}
+
 // BatchOperation is a single credit mutation within a batch request.
 type BatchOperation struct {
 	OperationID string
@@ -52,6 +61,7 @@ type BatchOperation struct {
 	Capture     *BatchCaptureOperation
 	Release     *BatchReleaseOperation
 	Spend       *BatchSpendOperation
+	Refund      *BatchRefundOperation
 }
 
 // BatchOperationResult captures the outcome of a single batch operation.
@@ -153,6 +163,9 @@ func (service *Service) applyBatchOperationWithinTx(ctx context.Context, txStore
 	}
 	if operation.Release != nil {
 		return service.applyBatchRelease(ctx, txStore, accountID, *operation.Release)
+	}
+	if operation.Refund != nil {
+		return service.applyBatchRefund(ctx, txStore, accountID, *operation.Refund)
 	}
 	return Entry{}, errors.New("unknown_batch_operation")
 }
@@ -320,6 +333,67 @@ func (service *Service) applyBatchRelease(ctx context.Context, txStore Store, ac
 		reservation.AmountCents().ToEntryAmountCents(),
 		&operation.ReservationID,
 		nil,
+		operation.IdempotencyKey,
+		0,
+		operation.Metadata,
+		service.nowFn(),
+	)
+	if err != nil {
+		return Entry{}, err
+	}
+	return txStore.InsertEntry(ctx, entryInput)
+}
+
+func (service *Service) applyBatchRefund(ctx context.Context, txStore Store, accountID AccountID, operation BatchRefundOperation) (Entry, error) {
+	existingRefunds, err := txStore.GetEntryByIdempotencyKey(ctx, accountID, operation.IdempotencyKey)
+	if err == nil {
+		return existingRefunds, ErrDuplicateIdempotencyKey
+	}
+	if !errors.Is(err, ErrUnknownEntry) {
+		return Entry{}, err
+	}
+
+	var originalEntry Entry
+	if operation.OriginalEntryID != nil {
+		originalEntry, err = txStore.GetEntry(ctx, accountID, *operation.OriginalEntryID)
+	} else if operation.OriginalIdempotencyKey != nil {
+		originalEntry, err = txStore.GetEntryByIdempotencyKey(ctx, accountID, *operation.OriginalIdempotencyKey)
+	} else {
+		return Entry{}, errors.New("missing_refund_original")
+	}
+	if err != nil {
+		return Entry{}, err
+	}
+
+	reservationID, hasReservation := originalEntry.ReservationID()
+	var reservationRef *ReservationID
+	if hasReservation {
+		reservationRef = &reservationID
+	}
+
+	if originalEntry.Type() != EntrySpend || originalEntry.AmountCents().Int64() >= 0 {
+		return Entry{}, ErrInvalidRefundOriginal
+	}
+
+	refunded, err := txStore.SumRefunds(ctx, accountID, originalEntry.EntryID())
+	if err != nil {
+		return Entry{}, err
+	}
+	debitAmount, err := NewAmountCents(-originalEntry.AmountCents().Int64())
+	if err != nil {
+		return Entry{}, err
+	}
+	if refunded.Int64()+operation.Amount.ToAmountCents().Int64() > debitAmount.Int64() {
+		return Entry{}, ErrRefundExceedsDebit
+	}
+
+	refundOfEntryID := originalEntry.EntryID()
+	entryInput, err := NewEntryInput(
+		accountID,
+		EntryRefund,
+		operation.Amount.ToEntryAmountCents(),
+		reservationRef,
+		&refundOfEntryID,
 		operation.IdempotencyKey,
 		0,
 		operation.Metadata,

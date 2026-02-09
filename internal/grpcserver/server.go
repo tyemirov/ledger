@@ -451,6 +451,48 @@ func (service *CreditServiceServer) Batch(ctx context.Context, request *creditv1
 				IdempotencyKey: idem,
 				Metadata:       metadata,
 			}
+		case *creditv1.BatchOperation_Refund:
+			if operationValue.Refund == nil {
+				return nil, status.Error(codes.InvalidArgument, errorMissingBatchOperation)
+			}
+			amount, err := ledger.NewPositiveAmountCents(operationValue.Refund.GetAmountCents())
+			if err != nil {
+				return nil, mapToGRPCError(err)
+			}
+			idem, err := ledger.NewIdempotencyKey(operationValue.Refund.GetIdempotencyKey())
+			if err != nil {
+				return nil, mapToGRPCError(err)
+			}
+			metadata, err := ledger.NewMetadataJSON(operationValue.Refund.GetMetadataJson())
+			if err != nil {
+				return nil, mapToGRPCError(err)
+			}
+
+			var originalEntryID *ledger.EntryID
+			var originalIdempotencyKey *ledger.IdempotencyKey
+			if operationValue.Refund.GetOriginalEntryId() != "" {
+				parsedOriginalEntryID, err := ledger.NewEntryID(operationValue.Refund.GetOriginalEntryId())
+				if err != nil {
+					return nil, mapToGRPCError(err)
+				}
+				originalEntryID = &parsedOriginalEntryID
+			} else if operationValue.Refund.GetOriginalIdempotencyKey() != "" {
+				parsedOriginalIdempotencyKey, err := ledger.NewIdempotencyKey(operationValue.Refund.GetOriginalIdempotencyKey())
+				if err != nil {
+					return nil, mapToGRPCError(err)
+				}
+				originalIdempotencyKey = &parsedOriginalIdempotencyKey
+			} else {
+				return nil, status.Error(codes.InvalidArgument, errorMissingRefundOriginal)
+			}
+
+			parsedOperation.Refund = &ledger.BatchRefundOperation{
+				OriginalEntryID:        originalEntryID,
+				OriginalIdempotencyKey: originalIdempotencyKey,
+				Amount:                 amount,
+				IdempotencyKey:         idem,
+				Metadata:               metadata,
+			}
 		default:
 			return nil, status.Error(codes.InvalidArgument, errorMissingBatchOperation)
 		}

@@ -157,6 +157,16 @@ message BatchSpendOp {
   string metadata_json = 3;
 }
 
+message BatchRefundOp {
+  oneof original {
+    string original_entry_id = 1;
+    string original_idempotency_key = 2;
+  }
+  int64 amount_cents = 3;
+  string idempotency_key = 4;
+  string metadata_json = 5;
+}
+
 message BatchOperation {
   string operation_id = 1;
   oneof operation {
@@ -165,6 +175,7 @@ message BatchOperation {
     BatchReserveOp reserve = 4;
     BatchCaptureOp capture = 5;
     BatchReleaseOp release = 6;
+    BatchRefundOp refund = 7;
   }
 }
 

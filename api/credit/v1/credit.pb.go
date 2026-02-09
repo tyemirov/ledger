@@ -1499,6 +1499,112 @@ func (x *BatchSpendOp) GetMetadataJson() string {
 	return ""
 }
 
+type BatchRefundOp struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Original:
+	//
+	//	*BatchRefundOp_OriginalEntryId
+	//	*BatchRefundOp_OriginalIdempotencyKey
+	Original       isBatchRefundOp_Original `protobuf_oneof:"original"`
+	AmountCents    int64                    `protobuf:"varint,3,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
+	IdempotencyKey string                   `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	MetadataJson   string                   `protobuf:"bytes,5,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *BatchRefundOp) Reset() {
+	*x = BatchRefundOp{}
+	mi := &file_api_credit_v1_credit_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchRefundOp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchRefundOp) ProtoMessage() {}
+
+func (x *BatchRefundOp) ProtoReflect() protoreflect.Message {
+	mi := &file_api_credit_v1_credit_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchRefundOp.ProtoReflect.Descriptor instead.
+func (*BatchRefundOp) Descriptor() ([]byte, []int) {
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *BatchRefundOp) GetOriginal() isBatchRefundOp_Original {
+	if x != nil {
+		return x.Original
+	}
+	return nil
+}
+
+func (x *BatchRefundOp) GetOriginalEntryId() string {
+	if x != nil {
+		if x, ok := x.Original.(*BatchRefundOp_OriginalEntryId); ok {
+			return x.OriginalEntryId
+		}
+	}
+	return ""
+}
+
+func (x *BatchRefundOp) GetOriginalIdempotencyKey() string {
+	if x != nil {
+		if x, ok := x.Original.(*BatchRefundOp_OriginalIdempotencyKey); ok {
+			return x.OriginalIdempotencyKey
+		}
+	}
+	return ""
+}
+
+func (x *BatchRefundOp) GetAmountCents() int64 {
+	if x != nil {
+		return x.AmountCents
+	}
+	return 0
+}
+
+func (x *BatchRefundOp) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *BatchRefundOp) GetMetadataJson() string {
+	if x != nil {
+		return x.MetadataJson
+	}
+	return ""
+}
+
+type isBatchRefundOp_Original interface {
+	isBatchRefundOp_Original()
+}
+
+type BatchRefundOp_OriginalEntryId struct {
+	OriginalEntryId string `protobuf:"bytes,1,opt,name=original_entry_id,json=originalEntryId,proto3,oneof"`
+}
+
+type BatchRefundOp_OriginalIdempotencyKey struct {
+	OriginalIdempotencyKey string `protobuf:"bytes,2,opt,name=original_idempotency_key,json=originalIdempotencyKey,proto3,oneof"`
+}
+
+func (*BatchRefundOp_OriginalEntryId) isBatchRefundOp_Original() {}
+
+func (*BatchRefundOp_OriginalIdempotencyKey) isBatchRefundOp_Original() {}
+
 type BatchOperation struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	OperationId string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
@@ -1509,6 +1615,7 @@ type BatchOperation struct {
 	//	*BatchOperation_Reserve
 	//	*BatchOperation_Capture
 	//	*BatchOperation_Release
+	//	*BatchOperation_Refund
 	Operation     isBatchOperation_Operation `protobuf_oneof:"operation"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1516,7 +1623,7 @@ type BatchOperation struct {
 
 func (x *BatchOperation) Reset() {
 	*x = BatchOperation{}
-	mi := &file_api_credit_v1_credit_proto_msgTypes[20]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1528,7 +1635,7 @@ func (x *BatchOperation) String() string {
 func (*BatchOperation) ProtoMessage() {}
 
 func (x *BatchOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_api_credit_v1_credit_proto_msgTypes[20]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1541,7 +1648,7 @@ func (x *BatchOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchOperation.ProtoReflect.Descriptor instead.
 func (*BatchOperation) Descriptor() ([]byte, []int) {
-	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{20}
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *BatchOperation) GetOperationId() string {
@@ -1603,6 +1710,15 @@ func (x *BatchOperation) GetRelease() *BatchReleaseOp {
 	return nil
 }
 
+func (x *BatchOperation) GetRefund() *BatchRefundOp {
+	if x != nil {
+		if x, ok := x.Operation.(*BatchOperation_Refund); ok {
+			return x.Refund
+		}
+	}
+	return nil
+}
+
 type isBatchOperation_Operation interface {
 	isBatchOperation_Operation()
 }
@@ -1627,6 +1743,10 @@ type BatchOperation_Release struct {
 	Release *BatchReleaseOp `protobuf:"bytes,6,opt,name=release,proto3,oneof"`
 }
 
+type BatchOperation_Refund struct {
+	Refund *BatchRefundOp `protobuf:"bytes,7,opt,name=refund,proto3,oneof"`
+}
+
 func (*BatchOperation_Grant) isBatchOperation_Operation() {}
 
 func (*BatchOperation_Spend) isBatchOperation_Operation() {}
@@ -1636,6 +1756,8 @@ func (*BatchOperation_Reserve) isBatchOperation_Operation() {}
 func (*BatchOperation_Capture) isBatchOperation_Operation() {}
 
 func (*BatchOperation_Release) isBatchOperation_Operation() {}
+
+func (*BatchOperation_Refund) isBatchOperation_Operation() {}
 
 type BatchRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1648,7 +1770,7 @@ type BatchRequest struct {
 
 func (x *BatchRequest) Reset() {
 	*x = BatchRequest{}
-	mi := &file_api_credit_v1_credit_proto_msgTypes[21]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1660,7 +1782,7 @@ func (x *BatchRequest) String() string {
 func (*BatchRequest) ProtoMessage() {}
 
 func (x *BatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_credit_v1_credit_proto_msgTypes[21]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1673,7 +1795,7 @@ func (x *BatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchRequest.ProtoReflect.Descriptor instead.
 func (*BatchRequest) Descriptor() ([]byte, []int) {
-	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{21}
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *BatchRequest) GetAccount() *AccountContext {
@@ -1712,7 +1834,7 @@ type BatchOperationResult struct {
 
 func (x *BatchOperationResult) Reset() {
 	*x = BatchOperationResult{}
-	mi := &file_api_credit_v1_credit_proto_msgTypes[22]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1724,7 +1846,7 @@ func (x *BatchOperationResult) String() string {
 func (*BatchOperationResult) ProtoMessage() {}
 
 func (x *BatchOperationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_api_credit_v1_credit_proto_msgTypes[22]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1737,7 +1859,7 @@ func (x *BatchOperationResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchOperationResult.ProtoReflect.Descriptor instead.
 func (*BatchOperationResult) Descriptor() ([]byte, []int) {
-	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{22}
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *BatchOperationResult) GetOperationId() string {
@@ -1798,7 +1920,7 @@ type BatchResponse struct {
 
 func (x *BatchResponse) Reset() {
 	*x = BatchResponse{}
-	mi := &file_api_credit_v1_credit_proto_msgTypes[23]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1810,7 +1932,7 @@ func (x *BatchResponse) String() string {
 func (*BatchResponse) ProtoMessage() {}
 
 func (x *BatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_credit_v1_credit_proto_msgTypes[23]
+	mi := &file_api_credit_v1_credit_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1823,7 +1945,7 @@ func (x *BatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchResponse.ProtoReflect.Descriptor instead.
 func (*BatchResponse) Descriptor() ([]byte, []int) {
-	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{23}
+	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *BatchResponse) GetResults() []*BatchOperationResult {
@@ -1953,14 +2075,23 @@ const file_api_credit_v1_credit_proto_rawDesc = "" +
 	"\fBatchSpendOp\x12!\n" +
 	"\famount_cents\x18\x01 \x01(\x03R\vamountCents\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12#\n" +
-	"\rmetadata_json\x18\x03 \x01(\tR\fmetadataJson\"\xc7\x02\n" +
+	"\rmetadata_json\x18\x03 \x01(\tR\fmetadataJson\"\xf6\x01\n" +
+	"\rBatchRefundOp\x12,\n" +
+	"\x11original_entry_id\x18\x01 \x01(\tH\x00R\x0foriginalEntryId\x12:\n" +
+	"\x18original_idempotency_key\x18\x02 \x01(\tH\x00R\x16originalIdempotencyKey\x12!\n" +
+	"\famount_cents\x18\x03 \x01(\x03R\vamountCents\x12'\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x12#\n" +
+	"\rmetadata_json\x18\x05 \x01(\tR\fmetadataJsonB\n" +
+	"\n" +
+	"\boriginal\"\xfb\x02\n" +
 	"\x0eBatchOperation\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12/\n" +
 	"\x05grant\x18\x02 \x01(\v2\x17.credit.v1.BatchGrantOpH\x00R\x05grant\x12/\n" +
 	"\x05spend\x18\x03 \x01(\v2\x17.credit.v1.BatchSpendOpH\x00R\x05spend\x125\n" +
 	"\areserve\x18\x04 \x01(\v2\x19.credit.v1.BatchReserveOpH\x00R\areserve\x125\n" +
 	"\acapture\x18\x05 \x01(\v2\x19.credit.v1.BatchCaptureOpH\x00R\acapture\x125\n" +
-	"\arelease\x18\x06 \x01(\v2\x19.credit.v1.BatchReleaseOpH\x00R\areleaseB\v\n" +
+	"\arelease\x18\x06 \x01(\v2\x19.credit.v1.BatchReleaseOpH\x00R\arelease\x122\n" +
+	"\x06refund\x18\a \x01(\v2\x18.credit.v1.BatchRefundOpH\x00R\x06refundB\v\n" +
 	"\toperation\"\x96\x01\n" +
 	"\fBatchRequest\x123\n" +
 	"\aaccount\x18\x01 \x01(\v2\x19.credit.v1.AccountContextR\aaccount\x129\n" +
@@ -2003,7 +2134,7 @@ func file_api_credit_v1_credit_proto_rawDescGZIP() []byte {
 	return file_api_credit_v1_credit_proto_rawDescData
 }
 
-var file_api_credit_v1_credit_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_api_credit_v1_credit_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_api_credit_v1_credit_proto_goTypes = []any{
 	(*Empty)(nil),                // 0: credit.v1.Empty
 	(*Amount)(nil),               // 1: credit.v1.Amount
@@ -2025,10 +2156,11 @@ var file_api_credit_v1_credit_proto_goTypes = []any{
 	(*BatchCaptureOp)(nil),       // 17: credit.v1.BatchCaptureOp
 	(*BatchReleaseOp)(nil),       // 18: credit.v1.BatchReleaseOp
 	(*BatchSpendOp)(nil),         // 19: credit.v1.BatchSpendOp
-	(*BatchOperation)(nil),       // 20: credit.v1.BatchOperation
-	(*BatchRequest)(nil),         // 21: credit.v1.BatchRequest
-	(*BatchOperationResult)(nil), // 22: credit.v1.BatchOperationResult
-	(*BatchResponse)(nil),        // 23: credit.v1.BatchResponse
+	(*BatchRefundOp)(nil),        // 20: credit.v1.BatchRefundOp
+	(*BatchOperation)(nil),       // 21: credit.v1.BatchOperation
+	(*BatchRequest)(nil),         // 22: credit.v1.BatchRequest
+	(*BatchOperationResult)(nil), // 23: credit.v1.BatchOperationResult
+	(*BatchResponse)(nil),        // 24: credit.v1.BatchResponse
 }
 var file_api_credit_v1_credit_proto_depIdxs = []int32{
 	11, // 0: credit.v1.ListEntriesResponse.entries:type_name -> credit.v1.Entry
@@ -2037,32 +2169,33 @@ var file_api_credit_v1_credit_proto_depIdxs = []int32{
 	16, // 3: credit.v1.BatchOperation.reserve:type_name -> credit.v1.BatchReserveOp
 	17, // 4: credit.v1.BatchOperation.capture:type_name -> credit.v1.BatchCaptureOp
 	18, // 5: credit.v1.BatchOperation.release:type_name -> credit.v1.BatchReleaseOp
-	14, // 6: credit.v1.BatchRequest.account:type_name -> credit.v1.AccountContext
-	20, // 7: credit.v1.BatchRequest.operations:type_name -> credit.v1.BatchOperation
-	22, // 8: credit.v1.BatchResponse.results:type_name -> credit.v1.BatchOperationResult
-	2,  // 9: credit.v1.CreditService.GetBalance:input_type -> credit.v1.BalanceRequest
-	4,  // 10: credit.v1.CreditService.Grant:input_type -> credit.v1.GrantRequest
-	5,  // 11: credit.v1.CreditService.Reserve:input_type -> credit.v1.ReserveRequest
-	6,  // 12: credit.v1.CreditService.Capture:input_type -> credit.v1.CaptureRequest
-	7,  // 13: credit.v1.CreditService.Release:input_type -> credit.v1.ReleaseRequest
-	8,  // 14: credit.v1.CreditService.Spend:input_type -> credit.v1.SpendRequest
-	9,  // 15: credit.v1.CreditService.Refund:input_type -> credit.v1.RefundRequest
-	21, // 16: credit.v1.CreditService.Batch:input_type -> credit.v1.BatchRequest
-	12, // 17: credit.v1.CreditService.ListEntries:input_type -> credit.v1.ListEntriesRequest
-	3,  // 18: credit.v1.CreditService.GetBalance:output_type -> credit.v1.BalanceResponse
-	0,  // 19: credit.v1.CreditService.Grant:output_type -> credit.v1.Empty
-	0,  // 20: credit.v1.CreditService.Reserve:output_type -> credit.v1.Empty
-	0,  // 21: credit.v1.CreditService.Capture:output_type -> credit.v1.Empty
-	0,  // 22: credit.v1.CreditService.Release:output_type -> credit.v1.Empty
-	0,  // 23: credit.v1.CreditService.Spend:output_type -> credit.v1.Empty
-	10, // 24: credit.v1.CreditService.Refund:output_type -> credit.v1.RefundResponse
-	23, // 25: credit.v1.CreditService.Batch:output_type -> credit.v1.BatchResponse
-	13, // 26: credit.v1.CreditService.ListEntries:output_type -> credit.v1.ListEntriesResponse
-	18, // [18:27] is the sub-list for method output_type
-	9,  // [9:18] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	20, // 6: credit.v1.BatchOperation.refund:type_name -> credit.v1.BatchRefundOp
+	14, // 7: credit.v1.BatchRequest.account:type_name -> credit.v1.AccountContext
+	21, // 8: credit.v1.BatchRequest.operations:type_name -> credit.v1.BatchOperation
+	23, // 9: credit.v1.BatchResponse.results:type_name -> credit.v1.BatchOperationResult
+	2,  // 10: credit.v1.CreditService.GetBalance:input_type -> credit.v1.BalanceRequest
+	4,  // 11: credit.v1.CreditService.Grant:input_type -> credit.v1.GrantRequest
+	5,  // 12: credit.v1.CreditService.Reserve:input_type -> credit.v1.ReserveRequest
+	6,  // 13: credit.v1.CreditService.Capture:input_type -> credit.v1.CaptureRequest
+	7,  // 14: credit.v1.CreditService.Release:input_type -> credit.v1.ReleaseRequest
+	8,  // 15: credit.v1.CreditService.Spend:input_type -> credit.v1.SpendRequest
+	9,  // 16: credit.v1.CreditService.Refund:input_type -> credit.v1.RefundRequest
+	22, // 17: credit.v1.CreditService.Batch:input_type -> credit.v1.BatchRequest
+	12, // 18: credit.v1.CreditService.ListEntries:input_type -> credit.v1.ListEntriesRequest
+	3,  // 19: credit.v1.CreditService.GetBalance:output_type -> credit.v1.BalanceResponse
+	0,  // 20: credit.v1.CreditService.Grant:output_type -> credit.v1.Empty
+	0,  // 21: credit.v1.CreditService.Reserve:output_type -> credit.v1.Empty
+	0,  // 22: credit.v1.CreditService.Capture:output_type -> credit.v1.Empty
+	0,  // 23: credit.v1.CreditService.Release:output_type -> credit.v1.Empty
+	0,  // 24: credit.v1.CreditService.Spend:output_type -> credit.v1.Empty
+	10, // 25: credit.v1.CreditService.Refund:output_type -> credit.v1.RefundResponse
+	24, // 26: credit.v1.CreditService.Batch:output_type -> credit.v1.BatchResponse
+	13, // 27: credit.v1.CreditService.ListEntries:output_type -> credit.v1.ListEntriesResponse
+	19, // [19:28] is the sub-list for method output_type
+	10, // [10:19] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_api_credit_v1_credit_proto_init() }
@@ -2075,11 +2208,16 @@ func file_api_credit_v1_credit_proto_init() {
 		(*RefundRequest_OriginalIdempotencyKey)(nil),
 	}
 	file_api_credit_v1_credit_proto_msgTypes[20].OneofWrappers = []any{
+		(*BatchRefundOp_OriginalEntryId)(nil),
+		(*BatchRefundOp_OriginalIdempotencyKey)(nil),
+	}
+	file_api_credit_v1_credit_proto_msgTypes[21].OneofWrappers = []any{
 		(*BatchOperation_Grant)(nil),
 		(*BatchOperation_Spend)(nil),
 		(*BatchOperation_Reserve)(nil),
 		(*BatchOperation_Capture)(nil),
 		(*BatchOperation_Release)(nil),
+		(*BatchOperation_Refund)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2087,7 +2225,7 @@ func file_api_credit_v1_credit_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_credit_v1_credit_proto_rawDesc), len(file_api_credit_v1_credit_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   24,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
