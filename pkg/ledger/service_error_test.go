@@ -429,7 +429,7 @@ func TestListEntriesReturnsStoreErrors(test *testing.T) {
 			ledgerID := mustLedgerID(test, defaultLedgerIDValue)
 			tenantID := mustTenantID(test, defaultTenantIDValue)
 
-			_, err := service.ListEntries(context.Background(), tenantID, userID, ledgerID, 0, 5)
+			_, err := service.ListEntries(context.Background(), tenantID, userID, ledgerID, 0, 5, ListEntriesFilter{})
 			if !errors.Is(err, testCase.wantErr) {
 				test.Fatalf(errorMismatchMessage, testCase.wantErr, err)
 			}

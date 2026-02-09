@@ -70,10 +70,10 @@ func TestStoreFlow(test *testing.T) {
 	if err != nil {
 		test.Fatalf("entry input: %v", err)
 	}
-	if err := store.InsertEntry(ctx, entryInput); err != nil {
+	if _, err := store.InsertEntry(ctx, entryInput); err != nil {
 		test.Fatalf("insert entry: %v", err)
 	}
-	if err := store.InsertEntry(ctx, entryInput); !errors.Is(err, ledger.ErrDuplicateIdempotencyKey) {
+	if _, err := store.InsertEntry(ctx, entryInput); !errors.Is(err, ledger.ErrDuplicateIdempotencyKey) {
 		test.Fatalf("expected duplicate idempotency error, got %v", err)
 	}
 
@@ -127,12 +127,143 @@ func TestStoreFlow(test *testing.T) {
 		test.Fatalf("expected reservation closed error, got %v", err)
 	}
 
-	entries, err := store.ListEntries(ctx, accountID, 0, 10)
+	entries, err := store.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{})
 	if err != nil {
 		test.Fatalf("list entries: %v", err)
 	}
 	if len(entries) == 0 {
 		test.Fatalf("expected entries, got none")
+	}
+}
+
+func TestStoreListEntriesAppliesFilters(test *testing.T) {
+	test.Parallel()
+	db := newSQLiteDB(test)
+	store := New(db)
+
+	ctx := context.Background()
+	accountID, err := store.GetOrCreateAccountID(ctx, mustTenantID(test), mustUserID(test), mustLedgerID(test))
+	if err != nil {
+		test.Fatalf("account: %v", err)
+	}
+	amount, err := ledger.NewPositiveAmountCents(100)
+	if err != nil {
+		test.Fatalf("amount: %v", err)
+	}
+	metadata, err := ledger.NewMetadataJSON("{}")
+	if err != nil {
+		test.Fatalf("metadata: %v", err)
+	}
+	createdUnixUTC := time.Now().UTC().Unix()
+
+	grantIdempotencyKey, err := ledger.NewIdempotencyKey("grant-1")
+	if err != nil {
+		test.Fatalf("idempotency: %v", err)
+	}
+	grantInput, err := ledger.NewEntryInput(
+		accountID,
+		ledger.EntryGrant,
+		amount.ToEntryAmountCents(),
+		nil,
+		grantIdempotencyKey,
+		0,
+		metadata,
+		createdUnixUTC,
+	)
+	if err != nil {
+		test.Fatalf("grant input: %v", err)
+	}
+	grantEntry, err := store.InsertEntry(ctx, grantInput)
+	if err != nil {
+		test.Fatalf("insert grant: %v", err)
+	}
+
+	reservationID, err := ledger.NewReservationID("order-1")
+	if err != nil {
+		test.Fatalf("reservation id: %v", err)
+	}
+	holdIdempotencyKey, err := ledger.NewIdempotencyKey("reserve-1")
+	if err != nil {
+		test.Fatalf("idempotency: %v", err)
+	}
+	holdInput, err := ledger.NewEntryInput(
+		accountID,
+		ledger.EntryHold,
+		amount.ToEntryAmountCents().Negated(),
+		&reservationID,
+		holdIdempotencyKey,
+		0,
+		metadata,
+		createdUnixUTC,
+	)
+	if err != nil {
+		test.Fatalf("hold input: %v", err)
+	}
+	holdEntry, err := store.InsertEntry(ctx, holdInput)
+	if err != nil {
+		test.Fatalf("insert hold: %v", err)
+	}
+
+	spendIdempotencyKey, err := ledger.NewIdempotencyKey("spend-1")
+	if err != nil {
+		test.Fatalf("idempotency: %v", err)
+	}
+	spendInput, err := ledger.NewEntryInput(
+		accountID,
+		ledger.EntrySpend,
+		amount.ToEntryAmountCents().Negated(),
+		nil,
+		spendIdempotencyKey,
+		0,
+		metadata,
+		createdUnixUTC,
+	)
+	if err != nil {
+		test.Fatalf("spend input: %v", err)
+	}
+	spendEntry, err := store.InsertEntry(ctx, spendInput)
+	if err != nil {
+		test.Fatalf("insert spend: %v", err)
+	}
+
+	grantOnly, err := store.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{Types: []ledger.EntryType{ledger.EntryGrant}})
+	if err != nil {
+		test.Fatalf("list entries by type: %v", err)
+	}
+	if len(grantOnly) != 1 || grantOnly[0].EntryID() != grantEntry.EntryID() {
+		test.Fatalf("expected grant entry %s, got %+v", grantEntry.EntryID().String(), grantOnly)
+	}
+
+	byReservation, err := store.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{ReservationID: &reservationID})
+	if err != nil {
+		test.Fatalf("list entries by reservation: %v", err)
+	}
+	if len(byReservation) != 1 || byReservation[0].EntryID() != holdEntry.EntryID() {
+		test.Fatalf("expected hold entry %s, got %+v", holdEntry.EntryID().String(), byReservation)
+	}
+
+	prefix, err := ledger.NewIdempotencyKey("spend")
+	if err != nil {
+		test.Fatalf("prefix: %v", err)
+	}
+	byPrefix, err := store.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{IdempotencyKeyPrefix: &prefix})
+	if err != nil {
+		test.Fatalf("list entries by prefix: %v", err)
+	}
+	if len(byPrefix) != 1 || byPrefix[0].EntryID() != spendEntry.EntryID() {
+		test.Fatalf("expected spend entry %s, got %+v", spendEntry.EntryID().String(), byPrefix)
+	}
+
+	combined, err := store.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{
+		Types:                []ledger.EntryType{ledger.EntryHold},
+		ReservationID:        &reservationID,
+		IdempotencyKeyPrefix: &prefix,
+	})
+	if err != nil {
+		test.Fatalf("list entries combined: %v", err)
+	}
+	if len(combined) != 0 {
+		test.Fatalf("expected no entries, got %+v", combined)
 	}
 }
 
@@ -174,11 +305,12 @@ func TestStoreWithTxCommitsAndRollsBack(test *testing.T) {
 	}
 
 	if err := store.WithTx(ctx, func(ctx context.Context, txStore ledger.Store) error {
-		return txStore.InsertEntry(ctx, entryInput)
+		_, err := txStore.InsertEntry(ctx, entryInput)
+		return err
 	}); err != nil {
 		test.Fatalf("with tx: %v", err)
 	}
-	entries, err := store.ListEntries(ctx, accountID, 0, 10)
+	entries, err := store.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{})
 	if err != nil {
 		test.Fatalf("list entries: %v", err)
 	}
@@ -205,7 +337,7 @@ func TestStoreWithTxCommitsAndRollsBack(test *testing.T) {
 	}
 	sentinelError := errors.New("rollback requested")
 	err = store.WithTx(ctx, func(ctx context.Context, txStore ledger.Store) error {
-		if err := txStore.InsertEntry(ctx, rollbackEntry); err != nil {
+		if _, err := txStore.InsertEntry(ctx, rollbackEntry); err != nil {
 			return err
 		}
 		return sentinelError
@@ -213,7 +345,7 @@ func TestStoreWithTxCommitsAndRollsBack(test *testing.T) {
 	if !errors.Is(err, sentinelError) {
 		test.Fatalf("expected sentinel error, got %v", err)
 	}
-	entries, err = store.ListEntries(ctx, accountID, 0, 10)
+	entries, err = store.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{})
 	if err != nil {
 		test.Fatalf("list entries after rollback: %v", err)
 	}
@@ -324,7 +456,7 @@ func TestStoreWrapsDatabaseErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("entry input: %v", err)
 	}
-	err = store.InsertEntry(ctx, entryInput)
+	_, err = store.InsertEntry(ctx, entryInput)
 	if !errors.As(err, &operationError) {
 		test.Fatalf("expected operation error, got %v", err)
 	}
@@ -384,7 +516,7 @@ func TestStoreWrapsDatabaseErrors(test *testing.T) {
 		test.Fatalf("unexpected operation error: %s.%s.%s", operationError.Operation(), operationError.Subject(), operationError.Code())
 	}
 
-	_, err = store.ListEntries(ctx, accountID, 0, 10)
+	_, err = store.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{})
 	if !errors.As(err, &operationError) {
 		test.Fatalf("expected operation error, got %v", err)
 	}
@@ -460,10 +592,10 @@ func TestStoreInsertEntryStoresExpiresAtAndReservationAndUsesNowWhenCreatedUnixU
 	if err != nil {
 		test.Fatalf("entry input: %v", err)
 	}
-	if err := store.InsertEntry(ctx, entryInput); err != nil {
+	if _, err := store.InsertEntry(ctx, entryInput); err != nil {
 		test.Fatalf("insert entry: %v", err)
 	}
-	entries, err := store.ListEntries(ctx, accountID, 0, 10)
+	entries, err := store.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{})
 	if err != nil {
 		test.Fatalf("list entries: %v", err)
 	}
@@ -705,7 +837,7 @@ func TestStoreListEntriesRejectsInvalidRows(test *testing.T) {
 	if err := db.WithContext(ctx).Create(&model).Error; err != nil {
 		test.Fatalf("create row: %v", err)
 	}
-	_, err = store.ListEntries(ctx, accountID, 0, 10)
+	_, err = store.ListEntries(ctx, accountID, 0, 10, ledger.ListEntriesFilter{})
 	var operationError ledger.OperationError
 	if !errors.As(err, &operationError) {
 		test.Fatalf("expected operation error, got %v", err)

@@ -41,7 +41,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Add store-level account listing/pagination to support backfill without direct SQL in callers.
   - Treat duplicate idempotency keys as no-op; emit a summary of accounts updated vs skipped.
   - Document the workflow and add integration tests for large account sets.
-- [ ] [LG-212] (P1) Support grant-only history and "last grant" queries in the gRPC API. Unresolved.
+- [x] [LG-212] (P1) Support grant-only history and "last grant" queries in the gRPC API. Resolved: `ListEntriesRequest.types` filter enables grant-only paging and `limit=1` last-grant lookups; `make ci` passing.
   - Callers need to display "last grant" reliably without paging through large volumes of non-grant entries (holds/spends/captures).
   - Options:
     - Add `type` filtering (or a dedicated `ListGrants` RPC) so clients can request only grant entries.
@@ -110,7 +110,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Ensure computations are consistent with `GetBalance` enforcement rules (especially once TTL/expiry is supported).
   - Add integration tests covering partial capture, full capture, release, and expiry states.
 
-- [ ] [LG-219] (P2) Improve gRPC ergonomics: return entry IDs and add ListEntries filtering. Unresolved.
+- [x] [LG-219] (P2) Improve gRPC ergonomics: return entry IDs and add ListEntries filtering. Resolved: `Empty` responses now include `entry_id` + `created_unix_utc`, and `ListEntriesRequest` supports `types`, `reservation_id`, and `idempotency_key_prefix`; store/service/server/tests updated; `make ci` passing.
   Context: mutating RPCs currently return `Empty`, forcing clients to call `ListEntries` (and sometimes page) to correlate actions to ledger entries. This is especially painful for operational tooling and for "last grant" UX.
   Deliverables:
   - Return `entry_id` + `created_unix_utc` from mutating RPCs (`Grant`, `Spend`, `Reserve`, `Capture`, `Release`) and optionally include the updated balance in the response to reduce round-trips.

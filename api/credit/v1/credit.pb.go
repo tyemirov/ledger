@@ -22,9 +22,11 @@ const (
 )
 
 type Empty struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	EntryId        string                 `protobuf:"bytes,1,opt,name=entry_id,json=entryId,proto3" json:"entry_id,omitempty"`
+	CreatedUnixUtc int64                  `protobuf:"varint,2,opt,name=created_unix_utc,json=createdUnixUtc,proto3" json:"created_unix_utc,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Empty) Reset() {
@@ -55,6 +57,20 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
 	return file_api_credit_v1_credit_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *Empty) GetEntryId() string {
+	if x != nil {
+		return x.EntryId
+	}
+	return ""
+}
+
+func (x *Empty) GetCreatedUnixUtc() int64 {
+	if x != nil {
+		return x.CreatedUnixUtc
+	}
+	return 0
 }
 
 type Amount struct {
@@ -766,14 +782,17 @@ func (x *Entry) GetCreatedUnixUtc() int64 {
 }
 
 type ListEntriesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	BeforeUnixUtc int64                  `protobuf:"varint,2,opt,name=before_unix_utc,json=beforeUnixUtc,proto3" json:"before_unix_utc,omitempty"`
-	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	LedgerId      string                 `protobuf:"bytes,4,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
-	TenantId      string                 `protobuf:"bytes,5,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	UserId               string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	BeforeUnixUtc        int64                  `protobuf:"varint,2,opt,name=before_unix_utc,json=beforeUnixUtc,proto3" json:"before_unix_utc,omitempty"`
+	Limit                int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	LedgerId             string                 `protobuf:"bytes,4,opt,name=ledger_id,json=ledgerId,proto3" json:"ledger_id,omitempty"`
+	TenantId             string                 `protobuf:"bytes,5,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Types                []string               `protobuf:"bytes,6,rep,name=types,proto3" json:"types,omitempty"`
+	ReservationId        string                 `protobuf:"bytes,7,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	IdempotencyKeyPrefix string                 `protobuf:"bytes,8,opt,name=idempotency_key_prefix,json=idempotencyKeyPrefix,proto3" json:"idempotency_key_prefix,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ListEntriesRequest) Reset() {
@@ -841,6 +860,27 @@ func (x *ListEntriesRequest) GetTenantId() string {
 	return ""
 }
 
+func (x *ListEntriesRequest) GetTypes() []string {
+	if x != nil {
+		return x.Types
+	}
+	return nil
+}
+
+func (x *ListEntriesRequest) GetReservationId() string {
+	if x != nil {
+		return x.ReservationId
+	}
+	return ""
+}
+
+func (x *ListEntriesRequest) GetIdempotencyKeyPrefix() string {
+	if x != nil {
+		return x.IdempotencyKeyPrefix
+	}
+	return ""
+}
+
 type ListEntriesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Entries       []*Entry               `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
@@ -889,8 +929,10 @@ var File_api_credit_v1_credit_proto protoreflect.FileDescriptor
 
 const file_api_credit_v1_credit_proto_rawDesc = "" +
 	"\n" +
-	"\x1aapi/credit/v1/credit.proto\x12\tcredit.v1\"\a\n" +
-	"\x05Empty\"+\n" +
+	"\x1aapi/credit/v1/credit.proto\x12\tcredit.v1\"L\n" +
+	"\x05Empty\x12\x19\n" +
+	"\bentry_id\x18\x01 \x01(\tR\aentryId\x12(\n" +
+	"\x10created_unix_utc\x18\x02 \x01(\x03R\x0ecreatedUnixUtc\"+\n" +
 	"\x06Amount\x12!\n" +
 	"\famount_cents\x18\x01 \x01(\x03R\vamountCents\"c\n" +
 	"\x0eBalanceRequest\x12\x17\n" +
@@ -949,13 +991,16 @@ const file_api_credit_v1_credit_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12-\n" +
 	"\x13expires_at_unix_utc\x18\a \x01(\x03R\x10expiresAtUnixUtc\x12#\n" +
 	"\rmetadata_json\x18\b \x01(\tR\fmetadataJson\x12(\n" +
-	"\x10created_unix_utc\x18\t \x01(\x03R\x0ecreatedUnixUtc\"\xa5\x01\n" +
+	"\x10created_unix_utc\x18\t \x01(\x03R\x0ecreatedUnixUtc\"\x98\x02\n" +
 	"\x12ListEntriesRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12&\n" +
 	"\x0fbefore_unix_utc\x18\x02 \x01(\x03R\rbeforeUnixUtc\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x1b\n" +
 	"\tledger_id\x18\x04 \x01(\tR\bledgerId\x12\x1b\n" +
-	"\ttenant_id\x18\x05 \x01(\tR\btenantId\"A\n" +
+	"\ttenant_id\x18\x05 \x01(\tR\btenantId\x12\x14\n" +
+	"\x05types\x18\x06 \x03(\tR\x05types\x12%\n" +
+	"\x0ereservation_id\x18\a \x01(\tR\rreservationId\x124\n" +
+	"\x16idempotency_key_prefix\x18\b \x01(\tR\x14idempotencyKeyPrefix\"A\n" +
 	"\x13ListEntriesResponse\x12*\n" +
 	"\aentries\x18\x01 \x03(\v2\x10.credit.v1.EntryR\aentries2\xb2\x03\n" +
 	"\rCreditService\x12C\n" +

@@ -3,6 +3,9 @@ package pgstore
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"github.com/google/uuid"
@@ -81,23 +84,6 @@ const (
 		update reservations
 		set status = $4, updated_at = now()
 		where account_id = $1 and reservation_id = $2 and status = $3
-	`
-
-	sqlListEntriesBefore = `
-		select
-			entry_id::text,
-			account_id::text,
-			type::text,
-			amount_cents,
-			coalesce(reservation_id,''),
-			idempotency_key,
-			coalesce(extract(epoch from expires_at)::bigint,0),
-			coalesce(metadata::text,'{}'),
-			extract(epoch from created_at)::bigint
-		from ledger_entries
-		where account_id = $1 and created_at < to_timestamp($2)
-		order by created_at desc
-		limit $3
 	`
 )
 
@@ -237,13 +223,17 @@ func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.Te
 	return accountID, nil
 }
 
-func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) error {
+func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) (ledger.Entry, error) {
 	reservationValue, hasReservation := entryInput.ReservationID()
 	reservationID := ""
 	if hasReservation {
 		reservationID = reservationValue.String()
 	}
 	candidateEntryID := uuid.NewString()
+	createdUnixUTC := entryInput.CreatedUnixUTC()
+	if createdUnixUTC == 0 {
+		createdUnixUTC = time.Now().UTC().Unix()
+	}
 	_, err := store.pool.Exec(ctx, sqlInsertEntry,
 		candidateEntryID,
 		entryInput.AccountID().String(),
@@ -253,15 +243,37 @@ func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInpu
 		entryInput.IdempotencyKey().String(),
 		entryInput.ExpiresAtUnixUTC(),
 		entryInput.MetadataJSON().String(),
-		entryInput.CreatedUnixUTC(),
+		createdUnixUTC,
 	)
 	if isIdempotencyConflict(err) {
-		return wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
 	}
 	if err != nil {
-		return wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
 	}
-	return nil
+	entryID, err := ledger.NewEntryID(candidateEntryID)
+	if err != nil {
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	var reservation *ledger.ReservationID
+	if hasReservation {
+		reservation = &reservationValue
+	}
+	entry, err := ledger.NewEntry(
+		entryID,
+		entryInput.AccountID(),
+		entryInput.Type(),
+		entryInput.AmountCents(),
+		reservation,
+		entryInput.IdempotencyKey(),
+		entryInput.ExpiresAtUnixUTC(),
+		entryInput.MetadataJSON(),
+		createdUnixUTC,
+	)
+	if err != nil {
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	return entry, nil
 }
 
 func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {
@@ -355,17 +367,8 @@ func (store *Store) UpdateReservationStatus(ctx context.Context, accountID ledge
 	return nil
 }
 
-func (store *Store) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int) ([]ledger.Entry, error) {
-	rows, err := store.pool.Query(ctx, sqlListEntriesBefore, accountID.String(), beforeUnixUTC, limit)
-	if err != nil {
-		return nil, wrapStoreError(errorSubjectEntry, errorCodeList, err)
-	}
-	defer rows.Close()
-	entries, err := scanEntries(rows)
-	if err != nil {
-		return nil, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
-	}
-	return entries, nil
+func (store *Store) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {
+	return listEntries(ctx, store.pool, accountID, beforeUnixUTC, limit, filter)
 }
 
 func (store *TxStore) WithTx(ctx context.Context, fn func(ctx context.Context, txStore ledger.Store) error) error {
@@ -386,13 +389,17 @@ func (store *TxStore) GetOrCreateAccountID(ctx context.Context, tenantID ledger.
 	return accountID, nil
 }
 
-func (store *TxStore) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) error {
+func (store *TxStore) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) (ledger.Entry, error) {
 	reservationValue, hasReservation := entryInput.ReservationID()
 	reservationID := ""
 	if hasReservation {
 		reservationID = reservationValue.String()
 	}
 	candidateEntryID := uuid.NewString()
+	createdUnixUTC := entryInput.CreatedUnixUTC()
+	if createdUnixUTC == 0 {
+		createdUnixUTC = time.Now().UTC().Unix()
+	}
 	_, err := store.tx.Exec(ctx, sqlInsertEntry,
 		candidateEntryID,
 		entryInput.AccountID().String(),
@@ -402,15 +409,37 @@ func (store *TxStore) InsertEntry(ctx context.Context, entryInput ledger.EntryIn
 		entryInput.IdempotencyKey().String(),
 		entryInput.ExpiresAtUnixUTC(),
 		entryInput.MetadataJSON().String(),
-		entryInput.CreatedUnixUTC(),
+		createdUnixUTC,
 	)
 	if isIdempotencyConflict(err) {
-		return wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
 	}
 	if err != nil {
-		return wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
 	}
-	return nil
+	entryID, err := ledger.NewEntryID(candidateEntryID)
+	if err != nil {
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	var reservation *ledger.ReservationID
+	if hasReservation {
+		reservation = &reservationValue
+	}
+	entry, err := ledger.NewEntry(
+		entryID,
+		entryInput.AccountID(),
+		entryInput.Type(),
+		entryInput.AmountCents(),
+		reservation,
+		entryInput.IdempotencyKey(),
+		entryInput.ExpiresAtUnixUTC(),
+		entryInput.MetadataJSON(),
+		createdUnixUTC,
+	)
+	if err != nil {
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	return entry, nil
 }
 
 func (store *TxStore) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {
@@ -504,8 +533,17 @@ func (store *TxStore) UpdateReservationStatus(ctx context.Context, accountID led
 	return nil
 }
 
-func (store *TxStore) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int) ([]ledger.Entry, error) {
-	rows, err := store.tx.Query(ctx, sqlListEntriesBefore, accountID.String(), beforeUnixUTC, limit)
+func (store *TxStore) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {
+	return listEntries(ctx, store.tx, accountID, beforeUnixUTC, limit, filter)
+}
+
+func listEntries(ctx context.Context, executor queryExecutor, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {
+	effectiveBeforeUnixUTC := beforeUnixUTC
+	if effectiveBeforeUnixUTC == 0 {
+		effectiveBeforeUnixUTC = time.Now().UTC().Add(time.Second).Unix()
+	}
+	statement, args := buildListEntriesSQL(accountID, effectiveBeforeUnixUTC, limit, filter)
+	rows, err := executor.Query(ctx, statement, args...)
 	if err != nil {
 		return nil, wrapStoreError(errorSubjectEntry, errorCodeList, err)
 	}
@@ -515,6 +553,51 @@ func (store *TxStore) ListEntries(ctx context.Context, accountID ledger.AccountI
 		return nil, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
 	}
 	return entries, nil
+}
+
+func buildListEntriesSQL(accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) (string, []any) {
+	var builder strings.Builder
+	builder.WriteString(`
+		select
+			entry_id::text,
+			account_id::text,
+			type::text,
+			amount_cents,
+			coalesce(reservation_id,''),
+			idempotency_key,
+			coalesce(extract(epoch from expires_at)::bigint,0),
+			coalesce(metadata::text,'{}'),
+			extract(epoch from created_at)::bigint
+		from ledger_entries
+		where account_id = $1 and created_at < to_timestamp($2)
+	`)
+	args := []any{accountID.String(), beforeUnixUTC}
+	nextParam := 3
+	if len(filter.Types) > 0 {
+		builder.WriteString(" and type in (")
+		for index, entryType := range filter.Types {
+			if index > 0 {
+				builder.WriteString(",")
+			}
+			builder.WriteString(fmt.Sprintf("$%d", nextParam))
+			args = append(args, entryType.String())
+			nextParam++
+		}
+		builder.WriteString(")")
+	}
+	if filter.ReservationID != nil {
+		builder.WriteString(fmt.Sprintf(" and reservation_id = $%d", nextParam))
+		args = append(args, filter.ReservationID.String())
+		nextParam++
+	}
+	if filter.IdempotencyKeyPrefix != nil {
+		builder.WriteString(fmt.Sprintf(" and idempotency_key like $%d", nextParam))
+		args = append(args, filter.IdempotencyKeyPrefix.String()+"%")
+		nextParam++
+	}
+	builder.WriteString(fmt.Sprintf(" order by created_at desc limit $%d", nextParam))
+	args = append(args, limit)
+	return builder.String(), args
 }
 
 func scanEntries(rows queryRows) ([]ledger.Entry, error) {

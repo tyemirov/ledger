@@ -64,6 +64,7 @@ func TestMapToGRPCError(test *testing.T) {
 		{name: "invalid idempotency key", input: ledger.ErrInvalidIdempotencyKey, wantCode: codes.InvalidArgument, wantMessage: errorInvalidIdempotencyKey},
 		{name: "invalid amount", input: ledger.ErrInvalidAmountCents, wantCode: codes.InvalidArgument, wantMessage: errorInvalidAmount},
 		{name: "invalid metadata", input: ledger.ErrInvalidMetadataJSON, wantCode: codes.InvalidArgument, wantMessage: errorInvalidMetadata},
+		{name: "invalid entry type", input: ledger.ErrInvalidEntryType, wantCode: codes.InvalidArgument, wantMessage: errorInvalidEntryType},
 		{name: "insufficient funds", input: ledger.ErrInsufficientFunds, wantCode: codes.FailedPrecondition, wantMessage: errorInsufficientFunds},
 		{name: "unknown reservation", input: ledger.ErrUnknownReservation, wantCode: codes.NotFound, wantMessage: errorUnknownReservation},
 		{name: "duplicate idempotency", input: ledger.ErrDuplicateIdempotencyKey, wantCode: codes.AlreadyExists, wantMessage: errorDuplicateIdempotencyKey},
@@ -115,7 +116,7 @@ func TestCreditServiceServerFlow(test *testing.T) {
 		test.Fatalf("expected zero balance, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
 	}
 
-	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
+	grantResponse, err := server.Grant(ctx, &creditv1.GrantRequest{
 		UserId:           userID,
 		TenantId:         tenantID,
 		LedgerId:         ledgerID,
@@ -123,8 +124,15 @@ func TestCreditServiceServerFlow(test *testing.T) {
 		IdempotencyKey:   "grant-1",
 		ExpiresAtUnixUtc: 0,
 		MetadataJson:     "{}",
-	}); err != nil {
+	})
+	if err != nil {
 		test.Fatalf("grant: %v", err)
+	}
+	if grantResponse.GetEntryId() == "" {
+		test.Fatalf("expected grant entry id")
+	}
+	if grantResponse.GetCreatedUnixUtc() != 1700000000 {
+		test.Fatalf("expected created unix utc 1700000000, got %d", grantResponse.GetCreatedUnixUtc())
 	}
 	balanceResponse, err = server.GetBalance(ctx, &creditv1.BalanceRequest{
 		UserId:   userID,
@@ -138,17 +146,25 @@ func TestCreditServiceServerFlow(test *testing.T) {
 		test.Fatalf("expected 1000/1000, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
 	}
 
-	if _, err := server.Spend(ctx, &creditv1.SpendRequest{
+	spendResponse, err := server.Spend(ctx, &creditv1.SpendRequest{
 		UserId:         userID,
 		TenantId:       tenantID,
 		LedgerId:       ledgerID,
 		AmountCents:    200,
 		IdempotencyKey: "spend-1",
 		MetadataJson:   "{}",
-	}); err != nil {
+	})
+	if err != nil {
 		test.Fatalf("spend: %v", err)
 	}
-	if _, err := server.Reserve(ctx, &creditv1.ReserveRequest{
+	if spendResponse.GetEntryId() == "" {
+		test.Fatalf("expected spend entry id")
+	}
+	if spendResponse.GetCreatedUnixUtc() != 1700000000 {
+		test.Fatalf("expected created unix utc 1700000000, got %d", spendResponse.GetCreatedUnixUtc())
+	}
+
+	reserveResponse, err := server.Reserve(ctx, &creditv1.ReserveRequest{
 		UserId:         userID,
 		TenantId:       tenantID,
 		LedgerId:       ledgerID,
@@ -156,8 +172,15 @@ func TestCreditServiceServerFlow(test *testing.T) {
 		ReservationId:  "order-1",
 		IdempotencyKey: "reserve-1",
 		MetadataJson:   "{}",
-	}); err != nil {
+	})
+	if err != nil {
 		test.Fatalf("reserve: %v", err)
+	}
+	if reserveResponse.GetEntryId() == "" {
+		test.Fatalf("expected reserve entry id")
+	}
+	if reserveResponse.GetCreatedUnixUtc() != 1700000000 {
+		test.Fatalf("expected created unix utc 1700000000, got %d", reserveResponse.GetCreatedUnixUtc())
 	}
 	balanceResponse, err = server.GetBalance(ctx, &creditv1.BalanceRequest{
 		UserId:   userID,
@@ -171,7 +194,7 @@ func TestCreditServiceServerFlow(test *testing.T) {
 		test.Fatalf("expected 800/500, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
 	}
 
-	if _, err := server.Capture(ctx, &creditv1.CaptureRequest{
+	captureResponse, err := server.Capture(ctx, &creditv1.CaptureRequest{
 		UserId:         userID,
 		TenantId:       tenantID,
 		LedgerId:       ledgerID,
@@ -179,8 +202,15 @@ func TestCreditServiceServerFlow(test *testing.T) {
 		IdempotencyKey: "capture-1",
 		AmountCents:    300,
 		MetadataJson:   "{}",
-	}); err != nil {
+	})
+	if err != nil {
 		test.Fatalf("capture: %v", err)
+	}
+	if captureResponse.GetEntryId() == "" {
+		test.Fatalf("expected capture debit entry id")
+	}
+	if captureResponse.GetCreatedUnixUtc() != 1700000000 {
+		test.Fatalf("expected created unix utc 1700000000, got %d", captureResponse.GetCreatedUnixUtc())
 	}
 	balanceResponse, err = server.GetBalance(ctx, &creditv1.BalanceRequest{
 		UserId:   userID,
@@ -194,7 +224,7 @@ func TestCreditServiceServerFlow(test *testing.T) {
 		test.Fatalf("expected 500/500, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
 	}
 
-	if _, err := server.Reserve(ctx, &creditv1.ReserveRequest{
+	reserveSecondResponse, err := server.Reserve(ctx, &creditv1.ReserveRequest{
 		UserId:         userID,
 		TenantId:       tenantID,
 		LedgerId:       ledgerID,
@@ -202,8 +232,12 @@ func TestCreditServiceServerFlow(test *testing.T) {
 		ReservationId:  "order-2",
 		IdempotencyKey: "reserve-2",
 		MetadataJson:   "{}",
-	}); err != nil {
+	})
+	if err != nil {
 		test.Fatalf("reserve order-2: %v", err)
+	}
+	if reserveSecondResponse.GetEntryId() == "" {
+		test.Fatalf("expected reserve-2 entry id")
 	}
 	balanceResponse, err = server.GetBalance(ctx, &creditv1.BalanceRequest{
 		UserId:   userID,
@@ -216,15 +250,22 @@ func TestCreditServiceServerFlow(test *testing.T) {
 	if balanceResponse.GetTotalCents() != 500 || balanceResponse.GetAvailableCents() != 400 {
 		test.Fatalf("expected 500/400, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
 	}
-	if _, err := server.Release(ctx, &creditv1.ReleaseRequest{
+	releaseResponse, err := server.Release(ctx, &creditv1.ReleaseRequest{
 		UserId:         userID,
 		TenantId:       tenantID,
 		LedgerId:       ledgerID,
 		ReservationId:  "order-2",
 		IdempotencyKey: "release-1",
 		MetadataJson:   "{}",
-	}); err != nil {
+	})
+	if err != nil {
 		test.Fatalf("release order-2: %v", err)
+	}
+	if releaseResponse.GetEntryId() == "" {
+		test.Fatalf("expected release entry id")
+	}
+	if releaseResponse.GetCreatedUnixUtc() != 1700000000 {
+		test.Fatalf("expected created unix utc 1700000000, got %d", releaseResponse.GetCreatedUnixUtc())
 	}
 	balanceResponse, err = server.GetBalance(ctx, &creditv1.BalanceRequest{
 		UserId:   userID,
@@ -368,6 +409,79 @@ func TestCreditServiceServerFlow(test *testing.T) {
 	}
 	if status.Convert(err).Message() != errorUnknownReservation {
 		test.Fatalf("expected %q, got %q", errorUnknownReservation, status.Convert(err).Message())
+	}
+}
+
+func TestCreditServiceServerListEntriesAppliesFilters(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService)
+
+	ctx := context.Background()
+	userID := "user-123"
+	tenantID := "default"
+	ledgerID := "default"
+
+	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    1000,
+		IdempotencyKey: "grant-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("grant: %v", err)
+	}
+	if _, err := server.Reserve(ctx, &creditv1.ReserveRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    200,
+		ReservationId:  "order-1",
+		IdempotencyKey: "reserve-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("reserve: %v", err)
+	}
+	if _, err := server.Spend(ctx, &creditv1.SpendRequest{
+		UserId:         userID,
+		TenantId:       tenantID,
+		LedgerId:       ledgerID,
+		AmountCents:    100,
+		IdempotencyKey: "spend-1",
+		MetadataJson:   "{}",
+	}); err != nil {
+		test.Fatalf("spend: %v", err)
+	}
+
+	listResponse, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
+		UserId:               userID,
+		TenantId:             tenantID,
+		LedgerId:             ledgerID,
+		BeforeUnixUtc:        0,
+		Limit:                10,
+		Types:                []string{"hold"},
+		ReservationId:        "order-1",
+		IdempotencyKeyPrefix: "reserve",
+	})
+	if err != nil {
+		test.Fatalf("list entries: %v", err)
+	}
+	if len(listResponse.GetEntries()) != 1 {
+		test.Fatalf("expected 1 entry, got %d", len(listResponse.GetEntries()))
+	}
+	entry := listResponse.GetEntries()[0]
+	if entry.GetType() != "hold" {
+		test.Fatalf("expected hold entry, got %q", entry.GetType())
+	}
+	if entry.GetReservationId() != "order-1" {
+		test.Fatalf("expected reservation order-1, got %q", entry.GetReservationId())
+	}
+	if entry.GetIdempotencyKey() != "reserve-1" {
+		test.Fatalf("expected idempotency reserve-1, got %q", entry.GetIdempotencyKey())
 	}
 }
 
@@ -771,6 +885,16 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			},
 			wantCode: codes.InvalidArgument, wantMessage: errorInvalidTenantID,
 		},
+		{
+			name: "list entries invalid entry type",
+			invoke: func() error {
+				_, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
+					UserId: "user", TenantId: "default", LedgerId: "default", BeforeUnixUtc: 0, Limit: 1, Types: []string{"not-a-type"},
+				})
+				return err
+			},
+			wantCode: codes.InvalidArgument, wantMessage: errorInvalidEntryType,
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -823,8 +947,8 @@ func (store *alwaysErrorStore) GetOrCreateAccountID(ctx context.Context, tenantI
 	return ledger.AccountID{}, store.err
 }
 
-func (store *alwaysErrorStore) InsertEntry(ctx context.Context, entry ledger.EntryInput) error {
-	return store.err
+func (store *alwaysErrorStore) InsertEntry(ctx context.Context, entry ledger.EntryInput) (ledger.Entry, error) {
+	return ledger.Entry{}, store.err
 }
 
 func (store *alwaysErrorStore) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {
@@ -847,6 +971,6 @@ func (store *alwaysErrorStore) UpdateReservationStatus(ctx context.Context, acco
 	return store.err
 }
 
-func (store *alwaysErrorStore) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int) ([]ledger.Entry, error) {
+func (store *alwaysErrorStore) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {
 	return nil, store.err
 }

@@ -4,7 +4,10 @@ package credit.v1;
 
 option go_package = "github.com/MarkoPoloResearchLab/ledger/api/credit/v1;creditv1";
 
-message Empty {}
+message Empty {
+  string entry_id = 1;
+  int64 created_unix_utc = 2;
+}
 
 message Amount {
   int64 amount_cents = 1;
@@ -87,6 +90,9 @@ message ListEntriesRequest {
   int32 limit = 3;
   string ledger_id = 4;
   string tenant_id = 5;
+  repeated string types = 6;
+  string reservation_id = 7;
+  string idempotency_key_prefix = 8;
 }
 
 message ListEntriesResponse {

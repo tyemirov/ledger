@@ -76,7 +76,7 @@ func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.Te
 	return accountID, nil
 }
 
-func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) error {
+func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) (ledger.Entry, error) {
 	var expiresAt *time.Time
 	if entryInput.ExpiresAtUnixUTC() != 0 {
 		value := time.Unix(entryInput.ExpiresAtUnixUTC(), 0).UTC()
@@ -105,12 +105,16 @@ func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInpu
 	}
 	err := store.db.WithContext(ctx).Create(&entry).Error
 	if isIdempotencyConflict(err) {
-		return wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeDuplicate, ledger.ErrDuplicateIdempotencyKey)
 	}
 	if err != nil {
-		return wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInsert, err)
 	}
-	return nil
+	persistedEntry, err := mapLedgerEntry(entry)
+	if err != nil {
+		return ledger.Entry{}, wrapStoreError(errorSubjectEntry, errorCodeInvalid, err)
+	}
+	return persistedEntry, nil
 }
 
 func (store *Store) SumTotal(ctx context.Context, accountID ledger.AccountID, atUnixUTC int64) (ledger.SignedAmountCents, error) {
@@ -212,18 +216,30 @@ func (store *Store) UpdateReservationStatus(ctx context.Context, accountID ledge
 	return nil
 }
 
-func (store *Store) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int) ([]ledger.Entry, error) {
+func (store *Store) ListEntries(ctx context.Context, accountID ledger.AccountID, beforeUnixUTC int64, limit int, filter ledger.ListEntriesFilter) ([]ledger.Entry, error) {
 	before := time.Unix(beforeUnixUTC, 0).UTC()
 	if beforeUnixUTC == 0 {
 		before = time.Now().UTC().Add(time.Second)
 	}
 
 	var rows []LedgerEntry
-	err := store.db.WithContext(ctx).
+	query := store.db.WithContext(ctx).
 		Where("account_id = ? AND created_at < ?", accountID.String(), before).
-		Order("created_at DESC").
-		Limit(limit).
-		Find(&rows).Error
+		Order("created_at DESC")
+	if len(filter.Types) > 0 {
+		typeValues := make([]string, 0, len(filter.Types))
+		for _, entryType := range filter.Types {
+			typeValues = append(typeValues, entryType.String())
+		}
+		query = query.Where("type in ?", typeValues)
+	}
+	if filter.ReservationID != nil {
+		query = query.Where("reservation_id = ?", filter.ReservationID.String())
+	}
+	if filter.IdempotencyKeyPrefix != nil {
+		query = query.Where("idempotency_key like ?", filter.IdempotencyKeyPrefix.String()+"%")
+	}
+	err := query.Limit(limit).Find(&rows).Error
 	if err != nil {
 		return nil, wrapStoreError(errorSubjectEntry, errorCodeList, err)
 	}

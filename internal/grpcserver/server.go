@@ -23,6 +23,7 @@ const (
 	errorInvalidIdempotencyKey   = "invalid_idempotency_key"
 	errorInvalidAmount           = "invalid_amount_cents"
 	errorInvalidMetadata         = "invalid_metadata_json"
+	errorInvalidEntryType        = "invalid_entry_type"
 	errorInvalidListLimit        = "invalid_list_limit"
 	errorReservationExists       = "reservation_exists"
 	errorReservationClosed       = "reservation_closed"
@@ -90,11 +91,11 @@ func (service *CreditServiceServer) Grant(ctx context.Context, request *creditv1
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	operationError := service.creditService.Grant(ctx, tenantID, userID, ledgerID, amount, idem, request.GetExpiresAtUnixUtc(), metadata)
+	entry, operationError := service.creditService.GrantEntry(ctx, tenantID, userID, ledgerID, amount, idem, request.GetExpiresAtUnixUtc(), metadata)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
-	return &creditv1.Empty{}, nil
+	return &creditv1.Empty{EntryId: entry.EntryID().String(), CreatedUnixUtc: entry.CreatedUnixUTC()}, nil
 }
 
 func (service *CreditServiceServer) Reserve(ctx context.Context, request *creditv1.ReserveRequest) (*creditv1.Empty, error) {
@@ -126,11 +127,11 @@ func (service *CreditServiceServer) Reserve(ctx context.Context, request *credit
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	operationError := service.creditService.Reserve(ctx, tenantID, userID, ledgerID, amount, reservationID, idem, metadata)
+	entry, operationError := service.creditService.ReserveEntry(ctx, tenantID, userID, ledgerID, amount, reservationID, idem, metadata)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
-	return &creditv1.Empty{}, nil
+	return &creditv1.Empty{EntryId: entry.EntryID().String(), CreatedUnixUtc: entry.CreatedUnixUTC()}, nil
 }
 
 func (service *CreditServiceServer) Capture(ctx context.Context, request *creditv1.CaptureRequest) (*creditv1.Empty, error) {
@@ -162,11 +163,11 @@ func (service *CreditServiceServer) Capture(ctx context.Context, request *credit
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	operationError := service.creditService.Capture(ctx, tenantID, userID, ledgerID, reservationID, idem, amount, metadata)
+	entry, operationError := service.creditService.CaptureDebitEntry(ctx, tenantID, userID, ledgerID, reservationID, idem, amount, metadata)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
-	return &creditv1.Empty{}, nil
+	return &creditv1.Empty{EntryId: entry.EntryID().String(), CreatedUnixUtc: entry.CreatedUnixUTC()}, nil
 }
 
 func (service *CreditServiceServer) Release(ctx context.Context, request *creditv1.ReleaseRequest) (*creditv1.Empty, error) {
@@ -194,11 +195,11 @@ func (service *CreditServiceServer) Release(ctx context.Context, request *credit
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	operationError := service.creditService.Release(ctx, tenantID, userID, ledgerID, reservationID, idem, metadata)
+	entry, operationError := service.creditService.ReleaseEntry(ctx, tenantID, userID, ledgerID, reservationID, idem, metadata)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
-	return &creditv1.Empty{}, nil
+	return &creditv1.Empty{EntryId: entry.EntryID().String(), CreatedUnixUtc: entry.CreatedUnixUTC()}, nil
 }
 
 func (service *CreditServiceServer) Spend(ctx context.Context, request *creditv1.SpendRequest) (*creditv1.Empty, error) {
@@ -226,11 +227,11 @@ func (service *CreditServiceServer) Spend(ctx context.Context, request *creditv1
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	operationError := service.creditService.Spend(ctx, tenantID, userID, ledgerID, amount, idem, metadata)
+	entry, operationError := service.creditService.SpendEntry(ctx, tenantID, userID, ledgerID, amount, idem, metadata)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
-	return &creditv1.Empty{}, nil
+	return &creditv1.Empty{EntryId: entry.EntryID().String(), CreatedUnixUtc: entry.CreatedUnixUTC()}, nil
 }
 
 func (service *CreditServiceServer) ListEntries(ctx context.Context, request *creditv1.ListEntriesRequest) (*creditv1.ListEntriesResponse, error) {
@@ -254,7 +255,38 @@ func (service *CreditServiceServer) ListEntries(ctx context.Context, request *cr
 	if before == 0 {
 		before = time.Now().UTC().Unix()
 	}
-	entries, operationError := service.creditService.ListEntries(ctx, tenantID, userID, ledgerID, before, int(limit))
+	entryTypes := make([]ledger.EntryType, 0, len(request.GetTypes()))
+	for _, entryTypeValue := range request.GetTypes() {
+		parsedEntryType, err := ledger.ParseEntryType(entryTypeValue)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errorInvalidEntryType)
+		}
+		entryTypes = append(entryTypes, parsedEntryType)
+	}
+
+	var reservationID *ledger.ReservationID
+	if request.GetReservationId() != "" {
+		parsedReservationID, err := ledger.NewReservationID(request.GetReservationId())
+		if err != nil {
+			return nil, mapToGRPCError(err)
+		}
+		reservationID = &parsedReservationID
+	}
+
+	var idempotencyKeyPrefix *ledger.IdempotencyKey
+	if request.GetIdempotencyKeyPrefix() != "" {
+		parsedIdempotencyKey, err := ledger.NewIdempotencyKey(request.GetIdempotencyKeyPrefix())
+		if err != nil {
+			return nil, mapToGRPCError(err)
+		}
+		idempotencyKeyPrefix = &parsedIdempotencyKey
+	}
+
+	entries, operationError := service.creditService.ListEntries(ctx, tenantID, userID, ledgerID, before, int(limit), ledger.ListEntriesFilter{
+		Types:                entryTypes,
+		ReservationID:        reservationID,
+		IdempotencyKeyPrefix: idempotencyKeyPrefix,
+	})
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
 	}
@@ -311,6 +343,9 @@ func mapToGRPCError(source error) error {
 	}
 	if errors.Is(source, ledger.ErrInvalidMetadataJSON) {
 		return status.Error(codes.InvalidArgument, errorInvalidMetadata)
+	}
+	if errors.Is(source, ledger.ErrInvalidEntryType) {
+		return status.Error(codes.InvalidArgument, errorInvalidEntryType)
 	}
 	if errors.Is(source, ledger.ErrInsufficientFunds) {
 		return status.Error(codes.FailedPrecondition, errorInsufficientFunds)

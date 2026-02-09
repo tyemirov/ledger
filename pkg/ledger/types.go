@@ -127,6 +127,13 @@ type Balance struct {
 	AvailableCents SignedAmountCents
 }
 
+// ListEntriesFilter narrows ListEntries queries.
+type ListEntriesFilter struct {
+	Types                []EntryType
+	ReservationID        *ReservationID
+	IdempotencyKeyPrefix *IdempotencyKey
+}
+
 // NewUserID validates and normalizes a user id.
 func NewUserID(raw string) (UserID, error) {
 	normalized, err := normalizeIdentifier(raw, ErrInvalidUserID)
@@ -547,13 +554,13 @@ func (entry Entry) CreatedUnixUTC() int64 {
 type Store interface {
 	WithTx(ctx context.Context, fn func(ctx context.Context, txStore Store) error) error
 	GetOrCreateAccountID(ctx context.Context, tenantID TenantID, userID UserID, ledgerID LedgerID) (AccountID, error)
-	InsertEntry(ctx context.Context, entry EntryInput) error
+	InsertEntry(ctx context.Context, entry EntryInput) (Entry, error)
 	SumTotal(ctx context.Context, accountID AccountID, atUnixUTC int64) (SignedAmountCents, error)
 	SumActiveHolds(ctx context.Context, accountID AccountID, atUnixUTC int64) (AmountCents, error)
 	CreateReservation(ctx context.Context, reservation Reservation) error
 	GetReservation(ctx context.Context, accountID AccountID, reservationID ReservationID) (Reservation, error)
 	UpdateReservationStatus(ctx context.Context, accountID AccountID, reservationID ReservationID, from, to ReservationStatus) error
-	ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int) ([]Entry, error)
+	ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error)
 }
 
 func normalizeIdentifier(raw string, invalidError error) (string, error) {

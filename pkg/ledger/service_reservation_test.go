@@ -283,7 +283,7 @@ func TestListEntriesDelegatesToStore(test *testing.T) {
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
 	tenantID := mustTenantID(test, defaultTenantIDValue)
 
-	out, err := service.ListEntries(context.Background(), tenantID, userID, ledgerID, 0, 5)
+	out, err := service.ListEntries(context.Background(), tenantID, userID, ledgerID, 0, 5, ListEntriesFilter{})
 	if err != nil {
 		test.Fatalf("list entries: %v", err)
 	}
@@ -391,15 +391,15 @@ func (store *stubStore) GetOrCreateAccountID(ctx context.Context, tenantID Tenan
 	return store.accountID, nil
 }
 
-func (store *stubStore) InsertEntry(ctx context.Context, entryInput EntryInput) error {
+func (store *stubStore) InsertEntry(ctx context.Context, entryInput EntryInput) (Entry, error) {
 	store.insertEntryCallCount++
 	if store.insertEntryError != nil {
 		if store.insertEntryErrorAtCall == 0 || store.insertEntryErrorAtCall == store.insertEntryCallCount {
-			return store.insertEntryError
+			return Entry{}, store.insertEntryError
 		}
 	}
 	if _, exists := store.idempotency[entryInput.IdempotencyKey()]; exists {
-		return ErrDuplicateIdempotencyKey
+		return Entry{}, ErrDuplicateIdempotencyKey
 	}
 	store.idempotency[entryInput.IdempotencyKey()] = struct{}{}
 	store.entries = append(store.entries, entryInput)
@@ -407,7 +407,29 @@ func (store *stubStore) InsertEntry(ctx context.Context, entryInput EntryInput) 
 	case EntryGrant, EntrySpend:
 		store.total = applyEntryDelta(store.total, entryInput.AmountCents())
 	}
-	return nil
+	entryID, err := NewEntryID(entryInput.IdempotencyKey().String())
+	if err != nil {
+		return Entry{}, err
+	}
+	var reservationID *ReservationID
+	if value, ok := entryInput.ReservationID(); ok {
+		reservationID = &value
+	}
+	entry, err := NewEntry(
+		entryID,
+		entryInput.AccountID(),
+		entryInput.Type(),
+		entryInput.AmountCents(),
+		reservationID,
+		entryInput.IdempotencyKey(),
+		entryInput.ExpiresAtUnixUTC(),
+		entryInput.MetadataJSON(),
+		entryInput.CreatedUnixUTC(),
+	)
+	if err != nil {
+		return Entry{}, err
+	}
+	return entry, nil
 }
 
 func (store *stubStore) SumTotal(ctx context.Context, accountID AccountID, _ int64) (SignedAmountCents, error) {
@@ -472,7 +494,7 @@ func (store *stubStore) UpdateReservationStatus(ctx context.Context, accountID A
 	return nil
 }
 
-func (store *stubStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int) ([]Entry, error) {
+func (store *stubStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error) {
 	if store.listErr != nil {
 		return nil, store.listErr
 	}
@@ -666,8 +688,8 @@ func (store *failingStore) GetOrCreateAccountID(ctx context.Context, tenantID Te
 	return store.accountID, nil
 }
 
-func (store *failingStore) InsertEntry(ctx context.Context, entry EntryInput) error {
-	return store.err
+func (store *failingStore) InsertEntry(ctx context.Context, entry EntryInput) (Entry, error) {
+	return Entry{}, store.err
 }
 
 func (store *failingStore) SumTotal(ctx context.Context, accountID AccountID, atUnixUTC int64) (SignedAmountCents, error) {
@@ -690,6 +712,6 @@ func (store *failingStore) UpdateReservationStatus(ctx context.Context, accountI
 	return nil
 }
 
-func (store *failingStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int) ([]Entry, error) {
+func (store *failingStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error) {
 	return nil, nil
 }
