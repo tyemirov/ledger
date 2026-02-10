@@ -1,5 +1,5 @@
-github.com/MarkoPoloResearchLab/ledger v0.0.0-20260206025102-b3190dc4b256 h1:iUrMpWRs9wzpQ/H28XijjqFaLnkVZsdRVUtL99BmTc8=
-github.com/MarkoPoloResearchLab/ledger v0.0.0-20260206025102-b3190dc4b256/go.mod h1:s1MpBY44zusebx3lWuuCXAMZuYCmkhEJt3Gn1LXPDJ8=
+github.com/MarkoPoloResearchLab/ledger v0.0.0-20260209232516-48aeb9872574 h1:d7mFZDT4xqz4h7uOaijeq7eTiPiNuuS6c92pPHJn+gw=
+github.com/MarkoPoloResearchLab/ledger v0.0.0-20260209232516-48aeb9872574/go.mod h1:FEC27bnZ9i8NulMr/9dNkBDASTmKU7jh3p//oavtRPE=
 github.com/bytedance/sonic v1.13.2 h1:8/H1FempDZqC4VqjptGo14QQlJx8VdZJegxs6wwfqpQ=
 github.com/bytedance/sonic v1.13.2/go.mod h1:o68xyaF9u2gvVBuGHPlUVCy+ZfmNNO5ETf1+KgkJhz4=
 github.com/bytedance/sonic/loader v0.1.1/go.mod h1:ncP89zfokxS5LZrJxl5z0UJcsk4M4yY2JpfqGeCtNLU=

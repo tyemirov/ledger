@@ -3,7 +3,7 @@ module github.com/MarkoPoloResearchLab/ledger/demo/backend
 go 1.25.4
 
 require (
-	github.com/MarkoPoloResearchLab/ledger v0.0.0-20260206025102-b3190dc4b256
+	github.com/MarkoPoloResearchLab/ledger v0.0.0-20260209232516-48aeb9872574
 	github.com/gin-contrib/cors v1.7.5
 	github.com/gin-gonic/gin v1.10.0
 	github.com/google/uuid v1.6.0

@@ -266,6 +266,17 @@ h2 {
   gap: 0.75rem;
 }
 
+.actions--row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.actions--row button {
+  flex: 1 1 auto;
+  min-width: 8.5rem;
+}
+
 .hint {
   margin: 0;
   color: var(--demo-muted);
@@ -313,6 +324,32 @@ button.ghost:disabled {
   opacity: 0.55;
   cursor: not-allowed;
   transform: none;
+}
+
+.reservation-refresh {
+  width: 100%;
+}
+
+.reservation-details {
+  border-top: 1px dashed color-mix(in srgb, var(--demo-border), transparent 12%);
+  padding-top: 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.reservation-details__value {
+  margin: 0.3rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  word-break: break-all;
+}
+
+.reservation-details__meta {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  color: var(--demo-muted);
 }
 
 .purchase {
@@ -379,6 +416,47 @@ button.ghost:disabled {
   justify-content: space-between;
   gap: 1rem;
   background: color-mix(in srgb, var(--demo-surface), transparent 10%);
+}
+
+.entry__right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.entry__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.entry__action {
+  border: 1px solid var(--demo-border);
+  background: transparent;
+  color: var(--demo-text);
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: transform 120ms ease, filter 120ms ease, opacity 120ms ease;
+}
+
+.entry__action:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.02);
+}
+
+.entry__action:active {
+  transform: translateY(0);
+  filter: brightness(0.98);
+}
+
+.entry__action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .entry__type {
