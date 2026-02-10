@@ -2,6 +2,8 @@
 
 This document explains how consumers can adopt the ledger either as a standalone gRPC service (`ledgerd`) or by embedding the Go library exposed from `pkg/ledger`.
 
+For a complete RPC-by-RPC reference (including idempotency, refunds, batch semantics, reservation TTLs, and stable error codes), see `docs/api.md`.
+
 ### 1. Running the gRPC microservice
 
 1. Build or download the `ledgerd` binary (`go build ./cmd/credit`).
@@ -16,10 +18,14 @@ SQLite databases are created automatically. For Postgres, ensure the database ex
 The server prepares the schema, listens for gRPC requests, and logs every RPC (method, duration, code, user_id when present). Deploy the gRPC port on a private interface or internal network, then front it with your gateway for authentication and rate limiting. Integration steps for any language:
 
 * Generate gRPC stubs from `api/credit/v1/credit.proto`.
-* Call the relevant RPCs (`Grant`, `Spend`, `Reserve`, `ListEntries`, etc.) using `tenant_id`, `user_id`, and `ledger_id` to identify the account in the ledger.
+* Call the relevant RPCs (`GetBalance`, `Grant`, `Spend`, `Refund`, `Reserve`, `Batch`, `ListEntries`, `GetReservation`, etc.) using `tenant_id`, `user_id`, and `ledger_id` to identify the account in the ledger.
 * Enforce authentication/authorization in your gateway; the ledger service trusts whatever `user_id` you provide.
 
 See `README.md` for Docker Compose examples that pair `ledgerd` with demo applications.
+
+#### Bootstrap grants (server-managed)
+
+The service can optionally apply bootstrap credits for new accounts without requiring callers to orchestrate a grant. Configure this via `BOOTSTRAP_GRANTS_JSON` (see `README.md`), and callers can simply call `GetBalance` on login; the server will create the account and apply the bootstrap grant exactly once when configured.
 
 ### 2. Embedding the Go library
 
@@ -39,7 +45,7 @@ func newLedgerService(db *gorm.DB, clock func() int64) (*ledger.Service, error) 
 }
 ```
 
-* `ledger.Service` defines operations (`Grant`, `Spend`, `Reserve`, `Capture`, `Release`, `Balance`, `ListEntries`).
+* `ledger.Service` defines operations (`Grant`, `Spend`, `Refund`, `Reserve`, `Capture`, `Release`, `Balance`, `Batch`, `ListEntries`, `GetReservationState`, `ListReservationStates`).
 * `ledger.Store` is the storage interface. Use `internal/store/gormstore` for GORM-backed projects or `internal/store/pgstore` for pgx pools. Custom stores can satisfy the interface to target other databases.
 * Validation happens at the edge: construct `ledger.TenantID`, `ledger.UserID`, `ledger.LedgerID`, `ledger.PositiveAmountCents`, `ledger.ReservationID`, `ledger.IdempotencyKey`, and `ledger.MetadataJSON` before invoking the service.
 * Store implementations consume `ledger.EntryInput` values and return `ledger.Entry` records; use the smart constructors (`NewEntryInput`, `NewEntry`, `NewReservation`) to enforce invariants.
@@ -60,6 +66,8 @@ metadata, err := ledger.NewMetadataJSON(request.MetadataJson)
 
 The service methods expect these domain types and will return domain errors if business rules are violated.
 
+For high-volume workflows, prefer `Service.Batch(...)` over N unary operations. For reimbursements, prefer first-class refunds via `RefundByEntryID(…)` / `RefundByOriginalIdempotencyKey(…)` and batch refund operations.
+
 ### 3. Error contracts
 
 The ledger returns sentinel errors you can match with `errors.Is`:
@@ -68,6 +76,7 @@ The ledger returns sentinel errors you can match with `errors.Is`:
 * `ErrInsufficientFunds` when a spend or reserve would overdraw the account.
 * `ErrDuplicateIdempotencyKey` when a request reuses an idempotency key.
 * `ErrReservationExists`, `ErrUnknownReservation`, `ErrReservationClosed` for reservation state issues.
+* `ErrInvalidRefundOriginal` and `ErrRefundExceedsDebit` for refund invariants.
 
 Store adapters wrap errors with `ledger.OperationError` so downstream callers can log stable codes (`operation.subject.code`).
 At the gRPC boundary, these map to standard gRPC codes (InvalidArgument, AlreadyExists, FailedPrecondition, NotFound).
