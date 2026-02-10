@@ -125,6 +125,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Implement atomic/best-effort semantics consistent with existing Batch behavior (duplicate idempotency treated as success, surfaced as `duplicate=true` in per-item results).
   - Add coverage for batch refund by entry id and by original idempotency key, including over-refund rejection and duplicate idempotency handling.
 
+- [x] [LG-224] (P2) Docs: clarify Capture/Release idempotency semantics. Resolved: added `docs/api.md` as the gRPC reference and documented that `Capture`/`Release` safe retries may return `reservation_closed` (state checked before idempotency), preventing clients from treating retries as hard failures; `make ci` passing.
 - [x] [LG-221] (P1) Document ledger API and semantics (Refund/Batch/Reservations/Idempotency). Resolved: expanded README + integration guide and added an API reference doc covering RPCs, request/response fields, idempotency/duplicate semantics, refunds, batch behavior, reservation TTL/expiry, and introspection APIs; `make ci` passing.
   - Update README usage examples to include Refund, Batch, GetReservation/ListReservations, and ListEntries filtering.
   - Document idempotency expectations and duplicate semantics (including batch `duplicate=true` vs error behavior on key collisions).
