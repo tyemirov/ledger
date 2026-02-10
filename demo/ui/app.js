@@ -29,6 +29,7 @@ const state = {
   wallet: null,
   busy: false,
   profile: null,
+  reservation: null,
 };
 
 const selectors = {
@@ -40,6 +41,17 @@ const selectors = {
   entryList: document.getElementById('entry-list'),
   entryCount: document.getElementById('entry-count'),
   purchaseForm: /** @type {HTMLFormElement|null} */ (document.getElementById('purchase-form')),
+  reservationForm: /** @type {HTMLFormElement|null} */ (document.getElementById('reservation-form')),
+  reserveButton: /** @type {HTMLButtonElement|null} */ (document.getElementById('reserve-button')),
+  captureButton: /** @type {HTMLButtonElement|null} */ (document.getElementById('capture-button')),
+  releaseButton: /** @type {HTMLButtonElement|null} */ (document.getElementById('release-button')),
+  reservationRefreshButton: /** @type {HTMLButtonElement|null} */ (document.getElementById('reservation-refresh-button')),
+  reservationStatusPill: document.getElementById('reservation-status-pill'),
+  reservationID: document.getElementById('reservation-id'),
+  reservationMeta: document.getElementById('reservation-meta'),
+  batchSpendButton: /** @type {HTMLButtonElement|null} */ (document.getElementById('batch-spend-button')),
+  batchSpendAtomicButton: /** @type {HTMLButtonElement|null} */ (document.getElementById('batch-spend-atomic-button')),
+  batchRefundButton: /** @type {HTMLButtonElement|null} */ (document.getElementById('batch-refund-button')),
   accountModal: document.getElementById('account-modal'),
   accountModalDialog: /** @type {HTMLElement|null} */ (document.querySelector('#account-modal [data-mpr-modal="dialog"]')),
   accountModalBackdrop: /** @type {HTMLElement|null} */ (document.querySelector('#account-modal [data-account-modal="backdrop"]')),
@@ -55,6 +67,7 @@ attachAuthEventHandlers();
 attachAccountMenuHandlers();
 wireUI();
 renderWallet(null);
+renderReservation(null);
 renderEntries([]);
 setBusy(false);
 setStatus('Sign in to continue.', 'info');
@@ -136,9 +149,11 @@ function handleAuthenticated(profile) {
 function resetUI() {
   state.wallet = null;
   state.profile = null;
+  state.reservation = null;
   renderAccountDetails(null);
   closeAccountModal();
   renderWallet(null);
+  renderReservation(null);
   renderEntries([]);
   setBusy(false);
   setStatus('Signed out. Sign in to continue.', 'info');
@@ -162,6 +177,61 @@ function wireUI() {
         return;
       }
       await purchaseCoins(coins);
+    });
+  }
+  if (selectors.reservationForm) {
+    selectors.reservationForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(selectors.reservationForm);
+      const holdRaw = formData.get('hold');
+      const ttlRaw = formData.get('ttl');
+      const holdCoins = typeof holdRaw === 'string' ? parseInt(holdRaw, 10) : NaN;
+      const ttlSeconds = typeof ttlRaw === 'string' ? parseInt(ttlRaw, 10) : NaN;
+      if (Number.isNaN(holdCoins) || holdCoins <= 0) {
+        setStatus('Choose a hold amount.', 'warning');
+        return;
+      }
+      if (Number.isNaN(ttlSeconds) || ttlSeconds < 0) {
+        setStatus('Choose a valid TTL.', 'warning');
+        return;
+      }
+      await reserveHold(holdCoins, ttlSeconds);
+    });
+  }
+  if (selectors.captureButton) {
+    selectors.captureButton.addEventListener('click', async (event) => {
+      event.preventDefault();
+      await captureHold();
+    });
+  }
+  if (selectors.releaseButton) {
+    selectors.releaseButton.addEventListener('click', async (event) => {
+      event.preventDefault();
+      await releaseHold();
+    });
+  }
+  if (selectors.reservationRefreshButton) {
+    selectors.reservationRefreshButton.addEventListener('click', async (event) => {
+      event.preventDefault();
+      await refreshReservation();
+    });
+  }
+  if (selectors.batchSpendButton) {
+    selectors.batchSpendButton.addEventListener('click', async (event) => {
+      event.preventDefault();
+      await batchSpend(10, SPEND_COINS, false);
+    });
+  }
+  if (selectors.batchSpendAtomicButton) {
+    selectors.batchSpendAtomicButton.addEventListener('click', async (event) => {
+      event.preventDefault();
+      await batchSpend(10, SPEND_COINS, true);
+    });
+  }
+  if (selectors.batchRefundButton) {
+    selectors.batchRefundButton.addEventListener('click', async (event) => {
+      event.preventDefault();
+      await batchRefundLastSpends(3, false);
     });
   }
 }
@@ -344,6 +414,192 @@ async function purchaseCoins(coins) {
   }
 }
 
+async function reserveHold(coins, ttlSeconds) {
+  setBusy(true);
+  try {
+    const response = await apiRequest('/api/reservations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coins, ttl_seconds: ttlSeconds, metadata: { source: 'demo' } }),
+    });
+    const wallet = response.wallet || null;
+    if (response.status === 'insufficient_funds') {
+      setStatus(`Not enough coins to reserve ${coins}.`, 'warning');
+      renderWallet(wallet);
+      renderEntries(wallet?.entries || []);
+      return;
+    }
+    renderWallet(wallet);
+    renderEntries(wallet?.entries || []);
+    renderReservation(response.reservation || null);
+    setStatus('Hold reserved.', 'success');
+  } catch (error) {
+    console.error(error);
+    setStatus('Reserve failed.', 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function captureHold() {
+  if (!state.reservation || !state.reservation.reservation_id) {
+    setStatus('No active reservation to capture.', 'warning');
+    return;
+  }
+  setBusy(true);
+  try {
+    const reservationID = state.reservation.reservation_id;
+    const response = await apiRequest(`/api/reservations/${encodeURIComponent(reservationID)}/capture`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    renderWallet(response.wallet || null);
+    renderEntries(response.wallet?.entries || []);
+    renderReservation(response.reservation || null);
+    setStatus('Hold captured.', 'success');
+  } catch (error) {
+    console.error(error);
+    setStatus('Capture failed.', 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function releaseHold() {
+  if (!state.reservation || !state.reservation.reservation_id) {
+    setStatus('No active reservation to release.', 'warning');
+    return;
+  }
+  setBusy(true);
+  try {
+    const reservationID = state.reservation.reservation_id;
+    const response = await apiRequest(`/api/reservations/${encodeURIComponent(reservationID)}/release`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    renderWallet(response.wallet || null);
+    renderEntries(response.wallet?.entries || []);
+    renderReservation(response.reservation || null);
+    setStatus('Hold released.', 'success');
+  } catch (error) {
+    console.error(error);
+    setStatus('Release failed.', 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function refreshReservation() {
+  if (!state.reservation || !state.reservation.reservation_id) {
+    setStatus('No reservation to refresh.', 'warning');
+    return;
+  }
+  setBusy(true);
+  try {
+    const reservationID = state.reservation.reservation_id;
+    const response = await apiRequest(`/api/reservations/${encodeURIComponent(reservationID)}`);
+    renderReservation(response.reservation || null);
+    setStatus('Reservation refreshed.', 'info');
+  } catch (error) {
+    console.error(error);
+    setStatus('Refresh failed.', 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function refundEntry(entry) {
+  if (!entry || !entry.entry_id || !entry.amount_cents) {
+    setStatus('Refund unavailable for this entry.', 'warning');
+    return;
+  }
+  const amountCents = Math.abs(entry.amount_cents);
+  if (!amountCents) {
+    setStatus('Refund amount is zero.', 'warning');
+    return;
+  }
+  setBusy(true);
+  try {
+    const response = await apiRequest('/api/refunds', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        original_entry_id: entry.entry_id,
+        amount_cents: amountCents,
+        metadata: { source: 'demo_refund' },
+      }),
+    });
+    renderWallet(response.wallet || null);
+    renderEntries(response.wallet?.entries || []);
+    if (response.status === 'duplicate') {
+      setStatus('Refund already applied (idempotent).', 'info');
+      return;
+    }
+    setStatus('Refund applied.', 'success');
+  } catch (error) {
+    console.error(error);
+    setStatus('Refund failed.', 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function batchSpend(count, coins, atomic) {
+  setBusy(true);
+  try {
+    const response = await apiRequest('/api/batch/spend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count, coins, atomic: Boolean(atomic) }),
+    });
+    renderWallet(response.wallet || null);
+    renderEntries(response.wallet?.entries || []);
+    const ok = response.batch?.ok ?? 0;
+    const duplicate = response.batch?.duplicate ?? 0;
+    const failed = response.batch?.failed ?? 0;
+    setStatus(`Batch spend: ok=${ok} dup=${duplicate} failed=${failed}`, failed ? 'warning' : 'success');
+  } catch (error) {
+    console.error(error);
+    setStatus('Batch spend failed.', 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function batchRefundLastSpends(count, atomic) {
+  const entries = Array.isArray(state.wallet?.entries) ? state.wallet.entries : [];
+  const spends = entries.filter((entry) => entry?.type === 'spend' && entry.amount_cents < 0 && entry.entry_id);
+  const targets = spends.slice(0, count).map((entry) => ({
+    original_entry_id: entry.entry_id,
+    amount_cents: Math.abs(entry.amount_cents),
+  }));
+  if (!targets.length) {
+    setStatus('No spend entries available to refund.', 'warning');
+    return;
+  }
+  setBusy(true);
+  try {
+    const response = await apiRequest('/api/batch/refund', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: targets, atomic: Boolean(atomic) }),
+    });
+    renderWallet(response.wallet || null);
+    renderEntries(response.wallet?.entries || []);
+    const ok = response.batch?.ok ?? 0;
+    const duplicate = response.batch?.duplicate ?? 0;
+    const failed = response.batch?.failed ?? 0;
+    setStatus(`Batch refund: ok=${ok} dup=${duplicate} failed=${failed}`, failed ? 'warning' : 'success');
+  } catch (error) {
+    console.error(error);
+    setStatus('Batch refund failed.', 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
 function setBusy(isBusy) {
   state.busy = isBusy;
   if (selectors.spendButton) {
@@ -354,6 +610,30 @@ function setBusy(isBusy) {
       element.disabled = isBusy || !state.profile;
     });
   }
+  if (selectors.reservationForm) {
+    selectors.reservationForm.querySelectorAll('button, input').forEach((element) => {
+      element.disabled = isBusy || !state.profile;
+    });
+  }
+  if (selectors.captureButton) {
+    selectors.captureButton.disabled = isBusy || !canMutateReservation();
+  }
+  if (selectors.releaseButton) {
+    selectors.releaseButton.disabled = isBusy || !canMutateReservation();
+  }
+  if (selectors.reservationRefreshButton) {
+    selectors.reservationRefreshButton.disabled = isBusy || !canRefreshReservation();
+  }
+  if (selectors.batchSpendButton) {
+    selectors.batchSpendButton.disabled = isBusy || !state.profile;
+  }
+  if (selectors.batchSpendAtomicButton) {
+    selectors.batchSpendAtomicButton.disabled = isBusy || !state.profile;
+  }
+  if (selectors.batchRefundButton) {
+    selectors.batchRefundButton.disabled = isBusy || !state.profile;
+  }
+  renderEntries(state.wallet?.entries || []);
 }
 
 function canSpend() {
@@ -361,6 +641,20 @@ function canSpend() {
     return false;
   }
   return state.wallet.balance?.available_coins >= SPEND_COINS;
+}
+
+function canMutateReservation() {
+  if (!state.profile || !state.reservation) {
+    return false;
+  }
+  return state.reservation.status === 'active' && !state.reservation.expired;
+}
+
+function canRefreshReservation() {
+  if (!state.profile || !state.reservation) {
+    return false;
+  }
+  return Boolean(state.reservation.reservation_id);
 }
 
 function renderWallet(wallet) {
@@ -383,6 +677,49 @@ function renderWallet(wallet) {
   }
 }
 
+function renderReservation(reservation) {
+  state.reservation = reservation;
+  const reservationID = reservation?.reservation_id || '';
+  if (selectors.reservationID) {
+    selectors.reservationID.textContent = reservationID || '--';
+  }
+  if (selectors.reservationMeta) {
+    if (!reservationID) {
+      selectors.reservationMeta.textContent = '--';
+    } else {
+      const status = reservation.status || 'unknown';
+      const held = reservation.held_coins ?? 0;
+      const captured = reservation.captured_coins ?? 0;
+      const ttl = reservation.expires_at_unix_utc ? new Date(reservation.expires_at_unix_utc * 1000).toLocaleString() : 'never';
+      selectors.reservationMeta.textContent = `status=${status} held=${held} captured=${captured} expires=${ttl}`;
+    }
+  }
+  if (selectors.reservationStatusPill) {
+    if (!reservationID) {
+      selectors.reservationStatusPill.textContent = 'No hold';
+      selectors.reservationStatusPill.dataset.state = 'empty';
+    } else if (reservation.expired) {
+      selectors.reservationStatusPill.textContent = 'Expired';
+      selectors.reservationStatusPill.dataset.state = 'empty';
+    } else if (reservation.status === 'active') {
+      selectors.reservationStatusPill.textContent = 'Active';
+      selectors.reservationStatusPill.dataset.state = 'ok';
+    } else {
+      selectors.reservationStatusPill.textContent = reservation.status || 'Closed';
+      selectors.reservationStatusPill.dataset.state = 'empty';
+    }
+  }
+  if (selectors.captureButton) {
+    selectors.captureButton.disabled = state.busy || !canMutateReservation();
+  }
+  if (selectors.releaseButton) {
+    selectors.releaseButton.disabled = state.busy || !canMutateReservation();
+  }
+  if (selectors.reservationRefreshButton) {
+    selectors.reservationRefreshButton.disabled = state.busy || !canRefreshReservation();
+  }
+}
+
 function renderEntries(entries) {
   if (!selectors.entryList || !selectors.entryCount) {
     return;
@@ -400,13 +737,45 @@ function renderEntries(entries) {
     const created = entry.created_unix_utc
       ? new Date(entry.created_unix_utc * 1000).toLocaleString()
       : 'recently';
-    item.innerHTML = `
-      <div class="entry__left">
-        <p class="entry__type">${type}</p>
-        <p class="entry__meta">${created}</p>
-      </div>
-      <div class="entry__amount" data-direction="${isCredit ? 'in' : 'out'}">${sign}${Math.abs(amountCoins)} coins</div>
-    `;
+    const left = document.createElement('div');
+    left.className = 'entry__left';
+    const typeNode = document.createElement('p');
+    typeNode.className = 'entry__type';
+    typeNode.textContent = type;
+    const metaNode = document.createElement('p');
+    metaNode.className = 'entry__meta';
+    metaNode.textContent = created;
+    left.append(typeNode, metaNode);
+
+    const right = document.createElement('div');
+    right.className = 'entry__right';
+    const amountNode = document.createElement('div');
+    amountNode.className = 'entry__amount';
+    amountNode.dataset.direction = isCredit ? 'in' : 'out';
+    amountNode.textContent = `${sign}${Math.abs(amountCoins)} coins`;
+    right.appendChild(amountNode);
+
+    const actions = document.createElement('div');
+    actions.className = 'entry__actions';
+    if (entry.type === 'spend' && entry.amount_cents < 0 && entry.entry_id) {
+      const refundButton = document.createElement('button');
+      refundButton.type = 'button';
+      refundButton.className = 'entry__action';
+      refundButton.textContent = 'Refund';
+      refundButton.disabled = state.busy || !state.profile;
+      refundButton.addEventListener('click', async () => {
+        if (state.busy) {
+          return;
+        }
+        await refundEntry(entry);
+      });
+      actions.appendChild(refundButton);
+    }
+    if (actions.children.length) {
+      right.appendChild(actions);
+    }
+
+    item.append(left, right);
     selectors.entryList.appendChild(item);
   });
 }

@@ -1,7 +1,7 @@
 # Ledger Service
 
 A standalone **gRPC-based virtual credits ledger** written in Go.
-Provides core operations for granting, reserving, spending, capturing, and releasing virtual currency (e.g., promotional credits, in-app balances).
+Provides core operations for granting, reserving, spending, capturing, releasing, and refunding virtual currency, plus high-volume batch mutation APIs.
 
 The service implements an **append-only ledger** with full auditability and idempotency protections.
 It is intentionally **application-agnostic** — you decide when and why credits are earned or spent, this service only enforces the accounting.
@@ -15,6 +15,10 @@ It is intentionally **application-agnostic** — you decide when and why credits
 * Idempotency keys to make operations safe to retry
 * Holds/reservations with later capture/release
 * Expiration support for promotional credits
+* First-class refunds referencing debit entries (enforces refund <= debit)
+* Batch gRPC operations for high-volume mutation (atomic or best-effort)
+* Reservation introspection APIs (GetReservation / ListReservations)
+* ListEntries filtering (types / reservation_id / idempotency_key_prefix)
 * gRPC API for integration from any language
 * Audit-friendly — no balance overwrites, all changes are recorded
 
@@ -41,7 +45,11 @@ The ledger gRPC server does not implement end-user authentication. Deploy it on 
 
 ### Library vs. service
 
-You can run the hosted service (`cmd/credit`) or embed the domain logic via `pkg/ledger`. See `docs/integration.md` for end-to-end guidance on both integration styles.
+You can run the hosted service (`cmd/credit`) or embed the domain logic via `pkg/ledger`.
+See:
+
+* `docs/integration.md` for end-to-end guidance on both integration styles.
+* `docs/api.md` for an RPC-by-RPC reference (including idempotency, refunds, batch semantics, and reservation TTLs).
 
 ---
 
@@ -90,37 +98,6 @@ Environment variables:
 | ------------------ | -------------------------------------------------------------------- | ---------------------------- |
 | `DATABASE_URL`     | `sqlite:///tmp/ledger.db`                                             | Database connection string (supports `postgres://...` or `sqlite:///path.db`) |
 | `GRPC_LISTEN_ADDR` | `:50051`                                                             | gRPC server listen address   |
-| `BOOTSTRAP_GRANTS_JSON` | empty                                                           | Optional JSON array configuring server-managed bootstrap grants per `{tenant_id, ledger_id}` |
-
-`BOOTSTRAP_GRANTS_JSON` schema:
-
-```json
-[
-  {
-    "tenant_id": "default",
-    "ledger_id": "default",
-    "amount_cents": 1000,
-    "idempotency_key_prefix": "bootstrap",
-    "metadata_json": "{\"reason\":\"account_bootstrap\"}"
-  }
-]
-```
-
-When configured, the server applies the bootstrap grant exactly once for newly created accounts (accounts with no prior ledger entries). Existing accounts are not retroactively bootstrapped; use the bootstrap backfill workflow to apply grants to pre-existing accounts.
-
-### Bootstrap backfill (existing accounts)
-
-To apply bootstrap grants to accounts that already exist (for example, accounts created before `BOOTSTRAP_GRANTS_JSON` was enabled), run:
-
-```bash
-DATABASE_URL=sqlite:///tmp/ledger.db \
-BOOTSTRAP_GRANTS_JSON='[{"tenant_id":"default","ledger_id":"default","amount_cents":1000,"idempotency_key_prefix":"bootstrap","metadata_json":"{}"}]' \
-go run ./cmd/credit bootstrap-backfill --page-size 1000
-```
-
-Notes:
-- The command iterates accounts per `{tenant_id, ledger_id}` scope and applies the deterministic bootstrap grant only when missing.
-- If the bootstrap idempotency key already exists for an account and the existing entry is not a `grant`, the command fails with a duplicate idempotency error (to avoid silently masking key collisions).
 
 ---
 
@@ -143,6 +120,8 @@ go build -o ledgerd ./cmd/credit
 ## Usage
 
 Below are example calls using [`grpcurl`](https://github.com/fullstorydev/grpcurl).
+
+Mutation RPCs return `entry_id` + `created_unix_utc` so clients can correlate requests with the persisted ledger entry without an extra `ListEntries` round-trip.
 
 ### Check balance
 
@@ -227,6 +206,76 @@ grpcurl -plaintext -d '{
 }' localhost:50051 credit.v1.CreditService/Spend
 ```
 
+### Refund a debit (spend/capture)
+
+Refunds are first-class entries linked to an original debit entry; the ledger enforces that refunds cannot exceed the original debit amount.
+
+```bash
+grpcurl -plaintext -d '{
+  "tenant_id":"default",
+  "user_id":"user123",
+  "ledger_id":"default",
+  "original_idempotency_key":"spend-1",
+  "amount_cents": 50,
+  "idempotency_key":"refund-1",
+  "metadata_json":"{\"reason\":\"reimbursement\"}"
+}' localhost:50051 credit.v1.CreditService/Refund
+```
+
+### Batch operations (high volume)
+
+Use `Batch` to execute many mutations for a single account in one request. Duplicates are surfaced per-item via `duplicate=true`.
+
+```bash
+grpcurl -plaintext -d '{
+  "account": { "tenant_id":"default", "user_id":"user123", "ledger_id":"default" },
+  "atomic": false,
+  "operations": [
+    {
+      "operation_id": "refund-1",
+      "refund": {
+        "original_idempotency_key": "spend-1",
+        "amount_cents": 50,
+        "idempotency_key": "refund-1",
+        "metadata_json": "{\"reason\":\"reimbursement\"}"
+      }
+    },
+    {
+      "operation_id": "refund-2",
+      "refund": {
+        "original_idempotency_key": "spend-1",
+        "amount_cents": 25,
+        "idempotency_key": "refund-2",
+        "metadata_json": "{\"reason\":\"reimbursement\"}"
+      }
+    }
+  ]
+}' localhost:50051 credit.v1.CreditService/Batch
+```
+
+### Get reservation state
+
+```bash
+grpcurl -plaintext -d '{
+  "tenant_id":"default",
+  "user_id":"user123",
+  "ledger_id":"default",
+  "reservation_id":"order-555"
+}' localhost:50051 credit.v1.CreditService/GetReservation
+```
+
+### List reservations
+
+```bash
+grpcurl -plaintext -d '{
+  "tenant_id":"default",
+  "user_id":"user123",
+  "ledger_id":"default",
+  "limit": 20,
+  "statuses": ["active", "captured", "released"]
+}' localhost:50051 credit.v1.CreditService/ListReservations
+```
+
 ### List ledger entries
 
 ```bash
@@ -234,6 +283,8 @@ grpcurl -plaintext -d '{
   "tenant_id":"default",
   "user_id":"user123",
   "ledger_id":"default",
+  "types": ["refund", "spend", "grant"],
+  "idempotency_key_prefix":"refund",
   "before_unix_utc": 1893456000,
   "limit": 20
 }' localhost:50051 credit.v1.CreditService/ListEntries
@@ -273,9 +324,12 @@ All demo assets (UI, Docker compose, optional backend) live under `demo/`. The l
 ## Notes
 
 * **Amounts** are stored as integer cents to avoid floating point errors.
+  - `spend` entries store debits as negative `amount_cents`; refunds/grants are positive.
 * **Idempotency keys** must be unique per account for each logical operation.
   Use UUIDs or other request-unique identifiers.
+  - If your client treats `duplicate_idempotency_key` as a no-op success, strongly namespace keys by operation to avoid collisions across entry types.
 * The service never overwrites balances — everything is computed from ledger entries.
+* For **permanent credits**, set `expires_at_unix_utc` to `0`. Use expiry only for explicitly time-limited promotions.
 
 ---
 

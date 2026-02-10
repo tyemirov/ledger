@@ -77,45 +77,6 @@ func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.Te
 	return accountID, nil
 }
 
-type accountSummaryRow struct {
-	AccountID string
-	UserID    string
-}
-
-func (store *Store) ListAccountSummaries(ctx context.Context, tenantID ledger.TenantID, ledgerID ledger.LedgerID, afterAccountID *ledger.AccountID, limit int) ([]ledger.AccountSummary, error) {
-	var rows []accountSummaryRow
-	query := store.db.WithContext(ctx).
-		Model(&Account{}).
-		Select("account_id", "user_id").
-		Where("tenant_id = ? AND ledger_id = ?", tenantID.String(), ledgerID.String()).
-		Order("account_id ASC").
-		Limit(limit)
-	if afterAccountID != nil {
-		query = query.Where("account_id > ?", afterAccountID.String())
-	}
-	if err := query.Find(&rows).Error; err != nil {
-		return nil, wrapStoreError(errorSubjectAccount, errorCodeList, err)
-	}
-
-	accounts := make([]ledger.AccountSummary, 0, len(rows))
-	for _, row := range rows {
-		accountID, err := ledger.NewAccountID(row.AccountID)
-		if err != nil {
-			return nil, wrapStoreError(errorSubjectAccount, errorCodeInvalid, err)
-		}
-		userID, err := ledger.NewUserID(row.UserID)
-		if err != nil {
-			return nil, wrapStoreError(errorSubjectAccount, errorCodeInvalid, err)
-		}
-		account, err := ledger.NewAccountSummary(accountID, tenantID, userID, ledgerID)
-		if err != nil {
-			return nil, wrapStoreError(errorSubjectAccount, errorCodeInvalid, err)
-		}
-		accounts = append(accounts, account)
-	}
-	return accounts, nil
-}
-
 func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) (ledger.Entry, error) {
 	var expiresAt *time.Time
 	if entryInput.ExpiresAtUnixUTC() != 0 {
