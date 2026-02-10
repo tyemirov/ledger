@@ -51,8 +51,13 @@ var (
 func main() {
 	cmd := newRootCommand()
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(stderrWriter, "ledgerd: %v\n", err)
-		exitFunc(1)
+		exitCode := 1
+		if _, writeErr := fmt.Fprintf(stderrWriter, "ledgerd: %v\n", err); writeErr != nil {
+			if _, fallbackErr := fmt.Fprintf(os.Stderr, "ledgerd: %v\n", err); fallbackErr != nil {
+				exitCode = 2
+			}
+		}
+		exitFunc(exitCode)
 	}
 }
 
@@ -141,7 +146,11 @@ func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Lo
 	if err != nil {
 		return fmt.Errorf("database open: %w", err)
 	}
-	defer cleanup()
+	defer func() {
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			logger.Error("database cleanup failed", zap.Error(cleanupErr))
+		}
+	}()
 
 	if err := prepareSchema(gormDB, driver); err != nil {
 		return err

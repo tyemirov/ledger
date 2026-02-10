@@ -784,6 +784,55 @@ func TestLedgerdMainExitsOnCommandError(test *testing.T) {
 	}
 }
 
+type alwaysErrorWriter struct{}
+
+func (alwaysErrorWriter) Write(_ []byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+func TestLedgerdMainExitsWithCodeTwoWhenErrorOutputFails(test *testing.T) {
+	originalArgs := os.Args
+	originalExitFunc := exitFunc
+	originalStderrWriter := stderrWriter
+	originalStderr := os.Stderr
+	test.Cleanup(func() {
+		os.Args = originalArgs
+		exitFunc = originalExitFunc
+		stderrWriter = originalStderrWriter
+		os.Stderr = originalStderr
+	})
+
+	stderrReader, stderrPipeWriter, err := os.Pipe()
+	if err != nil {
+		test.Fatalf("stderr pipe: %v", err)
+	}
+	if err := stderrReader.Close(); err != nil {
+		test.Fatalf("stderr reader close: %v", err)
+	}
+	os.Stderr = stderrPipeWriter
+	if err := stderrPipeWriter.Close(); err != nil {
+		test.Fatalf("stderr writer close: %v", err)
+	}
+
+	exitCalled := false
+	exitCode := 0
+	exitFunc = func(code int) {
+		exitCalled = true
+		exitCode = code
+	}
+	stderrWriter = alwaysErrorWriter{}
+	os.Args = []string{"ledgerd", "--unknown-flag"}
+
+	main()
+
+	if !exitCalled {
+		test.Fatalf("expected exit to be called")
+	}
+	if exitCode != 2 {
+		test.Fatalf("expected exit code 2, got %d", exitCode)
+	}
+}
+
 func readSQLiteForeignKeys(test *testing.T, db *gorm.DB) bool {
 	test.Helper()
 	var value int

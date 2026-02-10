@@ -213,6 +213,8 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
 
 - [x] [LG-414] (P2) Demo UI: footer links menu should match the mpr-ui demo site catalog ("Built by Marco Polo Research Lab"). Resolved: footer dropdown updated to the mpr-ui site catalog; Playwright assertions added; `cd demo && make ci` passing.
 
+- [x] [LG-415] (P1) Enforce production-only unused-code gates in CI. Resolved: `make ci` now runs `staticcheck`/`errcheck` without tests, checks production reachability via `deadcode` + package-deps validation, and verifies `CGO_ENABLED=0` builds; removed unreachable `internal/store/pgstore` and updated docs.
+
 
 ## Planning (500–599)
 *do not implement yet*
