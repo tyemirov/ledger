@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -31,20 +30,17 @@ import (
 )
 
 const (
-	flagDatabaseURL          = "database-url"
-	flagListenAddr           = "listen-addr"
-	flagBootstrapGrantsJSON  = "bootstrap-grants-json"
-	configKeyDatabaseURL     = "database_url"
-	configKeyListenAddr      = "listen_addr"
-	configKeyBootstrapGrants = "bootstrap_grants_json"
-	defaultDatabaseURL       = "sqlite:///tmp/ledger.db"
-	defaultGRPCListenAddr    = ":50051"
+	flagDatabaseURL       = "database-url"
+	flagListenAddr        = "listen-addr"
+	configKeyDatabaseURL  = "database_url"
+	configKeyListenAddr   = "listen_addr"
+	defaultDatabaseURL    = "sqlite:///tmp/ledger.db"
+	defaultGRPCListenAddr = ":50051"
 )
 
 type runtimeConfig struct {
-	DatabaseURL         string
-	ListenAddr          string
-	BootstrapGrantsJSON string
+	DatabaseURL string
+	ListenAddr  string
 }
 
 var (
@@ -79,9 +75,6 @@ func newRootCommand() *cobra.Command {
 
 	cmd.PersistentFlags().String(flagDatabaseURL, defaultDatabaseURL, "PostgreSQL connection string")
 	cmd.PersistentFlags().String(flagListenAddr, defaultGRPCListenAddr, "gRPC listen address")
-	cmd.PersistentFlags().String(flagBootstrapGrantsJSON, "", "Bootstrap grant rules as a JSON array")
-
-	cmd.AddCommand(newBootstrapBackfillCommand(cfg))
 
 	return cmd
 }
@@ -94,7 +87,6 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 	// These keys are compile-time constants, so BindEnv cannot fail here.
 	_ = viper.BindEnv(configKeyDatabaseURL, "DATABASE_URL")
 	_ = viper.BindEnv(configKeyListenAddr, "GRPC_LISTEN_ADDR")
-	_ = viper.BindEnv(configKeyBootstrapGrants, "BOOTSTRAP_GRANTS_JSON")
 
 	databaseFlag := lookupFlag(cmd, flagDatabaseURL)
 	if databaseFlag == nil {
@@ -108,12 +100,6 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 	}
 	_ = viper.BindPFlag(configKeyListenAddr, listenFlag)
 
-	bootstrapFlag := lookupFlag(cmd, flagBootstrapGrantsJSON)
-	if bootstrapFlag == nil {
-		return fmt.Errorf("flag for %q is nil", configKeyBootstrapGrants)
-	}
-	_ = viper.BindPFlag(configKeyBootstrapGrants, bootstrapFlag)
-
 	cfg.DatabaseURL = viper.GetString(configKeyDatabaseURL)
 	if cfg.DatabaseURL == "" {
 		cfg.DatabaseURL = defaultDatabaseURL
@@ -122,7 +108,6 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = defaultGRPCListenAddr
 	}
-	cfg.BootstrapGrantsJSON = viper.GetString(configKeyBootstrapGrants)
 	return nil
 }
 
@@ -137,55 +122,6 @@ func lookupFlag(cmd *cobra.Command, name string) *pflag.Flag {
 		return flag
 	}
 	return nil
-}
-
-type bootstrapGrantRuleConfig struct {
-	TenantID           string `json:"tenant_id"`
-	LedgerID           string `json:"ledger_id"`
-	AmountCents        int64  `json:"amount_cents"`
-	IdempotencyKeyBase string `json:"idempotency_key_prefix"`
-	MetadataJSON       string `json:"metadata_json"`
-}
-
-func parseBootstrapGrantPolicy(raw string) (ledger.BootstrapGrantPolicy, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return ledger.BootstrapGrantPolicy{}, nil
-	}
-	var rules []bootstrapGrantRuleConfig
-	if err := json.Unmarshal([]byte(trimmed), &rules); err != nil {
-		return ledger.BootstrapGrantPolicy{}, fmt.Errorf("bootstrap grants json: %w", err)
-	}
-
-	bootstrapRules := make([]ledger.BootstrapGrantRule, 0, len(rules))
-	for _, rule := range rules {
-		tenantID, err := ledger.NewTenantID(rule.TenantID)
-		if err != nil {
-			return ledger.BootstrapGrantPolicy{}, err
-		}
-		ledgerID, err := ledger.NewLedgerID(rule.LedgerID)
-		if err != nil {
-			return ledger.BootstrapGrantPolicy{}, err
-		}
-		amount, err := ledger.NewPositiveAmountCents(rule.AmountCents)
-		if err != nil {
-			return ledger.BootstrapGrantPolicy{}, err
-		}
-		idempotencyKeyBase, err := ledger.NewIdempotencyKey(rule.IdempotencyKeyBase)
-		if err != nil {
-			return ledger.BootstrapGrantPolicy{}, err
-		}
-		metadata, err := ledger.NewMetadataJSON(rule.MetadataJSON)
-		if err != nil {
-			return ledger.BootstrapGrantPolicy{}, err
-		}
-		bootstrapRule, err := ledger.NewBootstrapGrantRule(tenantID, ledgerID, amount, idempotencyKeyBase, metadata)
-		if err != nil {
-			return ledger.BootstrapGrantPolicy{}, err
-		}
-		bootstrapRules = append(bootstrapRules, bootstrapRule)
-	}
-	return ledger.NewBootstrapGrantPolicy(bootstrapRules)
 }
 
 type listenFunc func(network, address string) (net.Listener, error)
@@ -214,15 +150,10 @@ func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Lo
 	store := gormstore.New(gormDB)
 	clock := func() int64 { return time.Now().UTC().Unix() }
 	opLogger := &zapOperationLogger{logger: logger}
-	bootstrapPolicy, err := parseBootstrapGrantPolicy(cfg.BootstrapGrantsJSON)
-	if err != nil {
-		return err
-	}
 	creditService, err := ledger.NewService(
 		store,
 		clock,
 		ledger.WithOperationLogger(opLogger),
-		ledger.WithBootstrapGrantPolicy(bootstrapPolicy),
 	)
 	if err != nil {
 		return fmt.Errorf("ledger service init: %w", err)

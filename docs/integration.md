@@ -23,9 +23,9 @@ The server prepares the schema, listens for gRPC requests, and logs every RPC (m
 
 See `README.md` for Docker Compose examples that pair `ledgerd` with demo applications.
 
-#### Bootstrap grants (server-managed)
+#### Bootstrap grants (client-managed)
 
-The service can optionally apply bootstrap credits for new accounts without requiring callers to orchestrate a grant. Configure this via `BOOTSTRAP_GRANTS_JSON` (see `README.md`), and callers can simply call `GetBalance` on login; the server will create the account and apply the bootstrap grant exactly once when configured.
+Ledger is intentionally client-agnostic and does not apply any implicit "new account gets credits" policy. If your application needs bootstrap credits, implement it explicitly in the client by issuing a `Grant` with a deterministic idempotency key (for example `bootstrap:<user_id>`), appropriate metadata (for example `{"reason":"account_bootstrap"}`), and treating `duplicate_idempotency_key` as a no-op success.
 
 ### 2. Embedding the Go library
 

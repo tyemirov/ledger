@@ -6,13 +6,13 @@ import (
 	"testing"
 )
 
-func TestSpendEntryReturnsBootstrapError(test *testing.T) {
+func TestSpendEntryPropagatesAccountLookupError(test *testing.T) {
 	test.Parallel()
 	store := newStubStore(test, mustSignedAmount(test, 100))
 	sentinel := errors.New("get account failed")
 	store.getAccountError = sentinel
 
-	service := mustNewServiceWithPolicy(test, store, mustBootstrapPolicy(test, 1000))
+	service := mustNewService(test, store)
 	userID := mustUserID(test, "user-123")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
 	tenantID := mustTenantID(test, defaultTenantIDValue)
@@ -42,13 +42,13 @@ func TestSpendEntryPropagatesEntryInputValidationErrors(test *testing.T) {
 	}
 }
 
-func TestListEntriesReturnsBootstrapError(test *testing.T) {
+func TestListEntriesPropagatesAccountLookupError(test *testing.T) {
 	test.Parallel()
 	store := newStubStore(test, mustSignedAmount(test, 0))
 	sentinel := errors.New("get account failed")
 	store.getAccountError = sentinel
 
-	service := mustNewServiceWithPolicy(test, store, mustBootstrapPolicy(test, 1000))
+	service := mustNewService(test, store)
 	userID := mustUserID(test, "user-123")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
 	tenantID := mustTenantID(test, defaultTenantIDValue)
@@ -59,13 +59,13 @@ func TestListEntriesReturnsBootstrapError(test *testing.T) {
 	}
 }
 
-func TestGrantEntryReturnsBootstrapError(test *testing.T) {
+func TestGrantEntryPropagatesAccountLookupError(test *testing.T) {
 	test.Parallel()
 	store := newStubStore(test, mustSignedAmount(test, 0))
 	sentinel := errors.New("get account failed")
 	store.getAccountError = sentinel
 
-	service := mustNewServiceWithPolicy(test, store, mustBootstrapPolicy(test, 1000))
+	service := mustNewService(test, store)
 	userID := mustUserID(test, "user-123")
 	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
 	tenantID := mustTenantID(test, defaultTenantIDValue)
