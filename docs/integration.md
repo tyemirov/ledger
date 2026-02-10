@@ -2,6 +2,8 @@
 
 This document explains how consumers can adopt the ledger either as a standalone gRPC service (`ledgerd`) or by embedding the Go library exposed from `pkg/ledger`.
 
+For a complete RPC-by-RPC reference (including idempotency, refunds, batch semantics, reservation TTLs, and stable error codes), see `docs/api.md`.
+
 ### 1. Running the gRPC microservice
 
 1. Build or download the `ledgerd` binary (`go build ./cmd/credit`).

@@ -125,6 +125,8 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Implement atomic/best-effort semantics consistent with existing Batch behavior (duplicate idempotency treated as success, surfaced as `duplicate=true` in per-item results).
   - Add coverage for batch refund by entry id and by original idempotency key, including over-refund rejection and duplicate idempotency handling.
 
+- [x] [LG-224] (P2) Docs: clarify Capture/Release idempotency semantics. Resolved: added `docs/api.md` as the gRPC reference and documented that `Capture`/`Release` safe retries may return `reservation_closed` (state checked before idempotency), preventing clients from treating retries as hard failures; `make ci` passing.
+
 
 ## BugFixes (302–399)
 
