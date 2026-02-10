@@ -48,22 +48,6 @@ const (
 		returning account_id
 	`
 
-	sqlListAccountSummaries = `
-		select account_id::text, user_id::text
-		from accounts
-		where tenant_id = $1 and ledger_id = $2
-		order by account_id asc
-		limit $3
-	`
-
-	sqlListAccountSummariesAfter = `
-		select account_id::text, user_id::text
-		from accounts
-		where tenant_id = $1 and ledger_id = $2 and account_id > $3::uuid
-		order by account_id asc
-		limit $4
-	`
-
 	sqlInsertEntry = `
 		insert into ledger_entries(
 			entry_id, account_id, type, amount_cents, reservation_id, refund_of_entry_id, idempotency_key, expires_at, metadata, created_at
@@ -298,46 +282,6 @@ func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.Te
 		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeInvalid, err)
 	}
 	return accountID, nil
-}
-
-func (store *Store) ListAccountSummaries(ctx context.Context, tenantID ledger.TenantID, ledgerID ledger.LedgerID, afterAccountID *ledger.AccountID, limit int) ([]ledger.AccountSummary, error) {
-	sql := sqlListAccountSummaries
-	arguments := []any{tenantID.String(), ledgerID.String(), limit}
-	if afterAccountID != nil {
-		sql = sqlListAccountSummariesAfter
-		arguments = []any{tenantID.String(), ledgerID.String(), afterAccountID.String(), limit}
-	}
-	rows, err := store.pool.Query(ctx, sql, arguments...)
-	if err != nil {
-		return nil, wrapStoreError(errorSubjectAccount, errorCodeList, err)
-	}
-	defer rows.Close()
-
-	accounts := make([]ledger.AccountSummary, 0)
-	for rows.Next() {
-		var accountIDValue string
-		var userIDValue string
-		if err := rows.Scan(&accountIDValue, &userIDValue); err != nil {
-			return nil, wrapStoreError(errorSubjectAccount, errorCodeList, err)
-		}
-		accountID, err := ledger.NewAccountID(accountIDValue)
-		if err != nil {
-			return nil, wrapStoreError(errorSubjectAccount, errorCodeInvalid, err)
-		}
-		userID, err := ledger.NewUserID(userIDValue)
-		if err != nil {
-			return nil, wrapStoreError(errorSubjectAccount, errorCodeInvalid, err)
-		}
-		account, err := ledger.NewAccountSummary(accountID, tenantID, userID, ledgerID)
-		if err != nil {
-			return nil, wrapStoreError(errorSubjectAccount, errorCodeInvalid, err)
-		}
-		accounts = append(accounts, account)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, wrapStoreError(errorSubjectAccount, errorCodeList, err)
-	}
-	return accounts, nil
 }
 
 func (store *Store) InsertEntry(ctx context.Context, entryInput ledger.EntryInput) (ledger.Entry, error) {

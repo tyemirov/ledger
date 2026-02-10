@@ -131,6 +131,18 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Document refunds referencing spend/capture debits and the enforced invariant that refunds cannot exceed the original debit.
   - Add a single coherent API reference doc (`docs/api.md`) and link it from README/integration docs.
 
+- [ ] [LG-222] (P1) Remove server-managed bootstrap grants/backfill to keep ledger client-agnostic
+  Summary: ledger must remain a generic, client-agnostic transactional service. Server-managed bootstrap grants (and the bootstrap-backfill admin command) embed client policy into the ledger ("new account gets X cents"), making the ledger non-neutral and causing hidden, state-mutating side effects on read-like flows (e.g. `GetBalance` can write).
+  Desired end state:
+  - Ledger provides only explicit, transactional primitives (`Grant`, `Spend`, `Reserve/Capture/Release`, `Refund`, `Batch`, introspection).
+  - Client apps implement "bootstrap credits" by issuing an explicit `Grant` with a deterministic idempotency key and metadata.
+  Deliverables:
+  - Remove `BOOTSTRAP_GRANTS_JSON` configuration and `--bootstrap-grants-json` flag.
+  - Remove `ledgerd bootstrap-backfill` command (and any bootstrap-only store plumbing if it becomes unused).
+  - Remove `BootstrapGrantPolicy` and `WithBootstrapGrantPolicy`, plus all "apply bootstrap on access" logic from `pkg/ledger.Service`.
+  - Update docs (`README.md`, `docs/integration.md`, `docs/api.md`, `.env.ledger`) to remove bootstrap references and document client-side bootstrap via `Grant` + idempotency.
+  - Tooling: `timeout -k 350s -s SIGKILL 350s make ci` passes (coverage gate included).
+
 
 ## BugFixes (302–399)
 
