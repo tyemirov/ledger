@@ -97,11 +97,15 @@ Volumes `ledger_postgres_data` and `tauth_data` persist ledger entries plus refr
 
 Once authenticated:
 
-1. The UI automatically grants 20 coins (POST `/api/bootstrap`).
-2. Click **Spend 5 coins** three times – the first four transactions should succeed until the balance reaches 5 coins.
-3. Click the button again to observe the **insufficient funds** state (HTTP 409 converted to a banner message).
-4. Use **Buy coins** (5 or 10) to top up and watch the ledger list update.
-5. Continue spending until the **zero balance** banner appears, confirming the third requirement from LG-100.
+1. The UI bootstraps the wallet (POST `/api/bootstrap`) via a deterministic, idempotency-safe `Grant` (client-managed bootstrap).
+2. Click **Spend 5 coins** until the **insufficient funds** state appears (POST `/api/transactions` -> `Spend`).
+3. Use **Buy coins** (5 or 10) to top up (POST `/api/purchases` -> `Grant`).
+4. Reservations: create a hold (POST `/api/reservations` -> `Reserve` + `GetReservation`), then:
+   - **Capture** (POST `/api/reservations/:id/capture` -> `Capture` + `GetReservation`)
+   - **Release** (POST `/api/reservations/:id/release` -> `Release` + `GetReservation`)
+   - **Refresh** the reservations list (GET `/api/reservations` -> `ListReservations`)
+5. Refunds: use the per-entry **Refund** action on a debit entry (POST `/api/refunds` -> `Refund`) and confirm a refund entry appears with `refund_of_entry_id` set.
+6. Batch: run a batch spend/refund (POST `/api/batch/spend` / `/api/batch/refund` -> `Batch`) and toggle **Atomic** to compare all-or-nothing vs best-effort behavior under insufficient funds.
 
 Monitor logs for:
 

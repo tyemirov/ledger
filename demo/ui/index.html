@@ -104,6 +104,77 @@
             <p class="hint">Minimum 5 coins; increments of 5 only.</p>
           </form>
         </article>
+        <article class="card">
+          <header class="card__header">
+            <div>
+              <p class="eyebrow">Reservations</p>
+              <h2>Hold funds</h2>
+            </div>
+            <div class="pill pill--muted" id="reservation-status-pill">--</div>
+          </header>
+          <form id="reservation-form" class="reservation">
+            <div class="options" aria-label="Hold amount">
+              <label>
+                <input type="radio" name="hold" value="5" checked />
+                <span>Hold 5</span>
+              </label>
+              <label>
+                <input type="radio" name="hold" value="10" />
+                <span>Hold 10</span>
+              </label>
+              <label>
+                <input type="radio" name="hold" value="20" />
+                <span>Hold 20</span>
+              </label>
+            </div>
+            <div class="options" aria-label="Hold TTL">
+              <label>
+                <input type="radio" name="ttl" value="0" checked />
+                <span>No TTL</span>
+              </label>
+              <label>
+                <input type="radio" name="ttl" value="30" />
+                <span>TTL 30s</span>
+              </label>
+              <label>
+                <input type="radio" name="ttl" value="120" />
+                <span>TTL 2m</span>
+              </label>
+            </div>
+            <div class="actions actions--row">
+              <button type="submit" class="cta" id="reserve-button">Reserve</button>
+              <button type="button" class="ghost" id="capture-button">Capture</button>
+              <button type="button" class="ghost" id="release-button">Release</button>
+            </div>
+            <button type="button" class="ghost reservation-refresh" id="reservation-refresh-button">
+              Refresh reservation
+            </button>
+            <p class="hint">
+              Reserve creates a hold; capture finalizes by spending; release cancels the hold.
+            </p>
+          </form>
+          <div class="reservation-details" aria-live="polite">
+            <p class="label">Current reservation</p>
+            <p class="reservation-details__value" id="reservation-id">--</p>
+            <p class="reservation-details__meta" id="reservation-meta">--</p>
+          </div>
+        </article>
+        <article class="card">
+          <header class="card__header">
+            <div>
+              <p class="eyebrow">Batch</p>
+              <h2>High-volume ops</h2>
+            </div>
+          </header>
+          <div class="actions">
+            <button class="ghost" id="batch-spend-button">Batch spend (x10)</button>
+            <button class="ghost" id="batch-spend-atomic-button">Batch spend atomic (x10)</button>
+            <button class="ghost" id="batch-refund-button">Batch refund last 3 spends</button>
+            <p class="hint">
+              Batch executes multiple mutations in a single gRPC call (best-effort or atomic).
+            </p>
+          </div>
+        </article>
       </section>
 
       <section class="history">
