@@ -46,7 +46,7 @@ func newLedgerService(db *gorm.DB, clock func() int64) (*ledger.Service, error) 
 ```
 
 * `ledger.Service` defines operations (`Grant`, `Spend`, `Refund`, `Reserve`, `Capture`, `Release`, `Balance`, `Batch`, `ListEntries`, `GetReservationState`, `ListReservationStates`).
-* `ledger.Store` is the storage interface. Use `internal/store/gormstore` for GORM-backed projects or `internal/store/pgstore` for pgx pools. Custom stores can satisfy the interface to target other databases.
+* `ledger.Store` is the storage interface. Use `internal/store/gormstore` for GORM-backed projects. Custom stores can satisfy the interface to target other databases.
 * Validation happens at the edge: construct `ledger.TenantID`, `ledger.UserID`, `ledger.LedgerID`, `ledger.PositiveAmountCents`, `ledger.ReservationID`, `ledger.IdempotencyKey`, and `ledger.MetadataJSON` before invoking the service.
 * Store implementations consume `ledger.EntryInput` values and return `ledger.Entry` records; use the smart constructors (`NewEntryInput`, `NewEntry`, `NewReservation`) to enforce invariants.
 
@@ -86,7 +86,7 @@ At the gRPC boundary, these map to standard gRPC codes (InvalidArgument, Already
 | Scenario                              | Recommended path                        |
 |--------------------------------------|-----------------------------------------|
 | Multiple services / polyglot clients | Deploy `ledgerd` and call it via gRPC.  |
-| Single Go service needs credits      | Embed `pkg/ledger` + `gormstore`/`pgstore`. |
+| Single Go service needs credits      | Embed `pkg/ledger` + `gormstore`. |
 | Need both                            | Host `ledgerd` for general use; embed the library in Go components that need tighter coupling. |
 
 Both approaches share the same domain code, ensuring identical business rules regardless of deployment style.

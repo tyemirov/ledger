@@ -35,7 +35,7 @@ It is intentionally **application-agnostic** — you decide when and why credits
 ```
 
 * `pkg/ledger` – core domain logic (ledger) reusable as a Go module
-* `internal/store/pgstore` – PostgreSQL implementation of `credit.Store`
+* `internal/store/gormstore` – database-backed implementation of `ledger.Store` (SQLite/PostgreSQL via GORM)
 * `internal/grpcserver` – gRPC API bindings
 * `api/credit/v1` – protobuf definitions
 
