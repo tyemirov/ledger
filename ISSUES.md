@@ -125,6 +125,7 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Implement atomic/best-effort semantics consistent with existing Batch behavior (duplicate idempotency treated as success, surfaced as `duplicate=true` in per-item results).
   - Add coverage for batch refund by entry id and by original idempotency key, including over-refund rejection and duplicate idempotency handling.
 
+- [x] [LG-224] (P2) Docs: clarify Capture/Release idempotency semantics. Resolved: added `docs/api.md` as the gRPC reference and documented that `Capture`/`Release` safe retries may return `reservation_closed` (state checked before idempotency), preventing clients from treating retries as hard failures; `make ci` passing.
 - [x] [LG-221] (P1) Document ledger API and semantics (Refund/Batch/Reservations/Idempotency). Resolved: expanded README + integration guide and added an API reference doc covering RPCs, request/response fields, idempotency/duplicate semantics, refunds, batch behavior, reservation TTL/expiry, and introspection APIs; `make ci` passing.
   - Update README usage examples to include Refund, Batch, GetReservation/ListReservations, and ListEntries filtering.
   - Document idempotency expectations and duplicate semantics (including batch `duplicate=true` vs error behavior on key collisions).
@@ -143,6 +144,21 @@ Each issue is formatted as `- [ ] [LG-<number>]`. When resolved it becomes -` [x
   - Update docs (`README.md`, `docs/integration.md`, `docs/api.md`, `.env.ledger`) to remove bootstrap references and document client-side bootstrap via `Grant` + idempotency.
   - Tooling: `timeout -k 350s -s SIGKILL 350s make ci` passes (coverage gate included).
   Resolved 2026-02-10: removed `BOOTSTRAP_GRANTS_JSON` + bootstrap grant policy/backfill tooling so ledger mutations are always explicit RPCs; updated docs/env templates and deleted bootstrap-only store plumbing; `make ci` passing.
+
+- [x] [LG-223] (P2) Demo stack: showcase Refund/Batch/Reservations capabilities end-to-end
+  Summary: the demo stack currently exercises only `Grant` + `Spend` against `ledgerd`. Expand the demo backend + UI to showcase the newer ledger capabilities (refunds, batch RPC, and reservation flows) so adopters can validate semantics quickly without reading proto docs.
+  Deliverables:
+  - Demo backend (`demo/backend`): add HTTP endpoints that drive ledger RPCs for:
+    - Reservation flow: `Reserve`, `Capture`, `Release`, and introspection via `GetReservation` / `ListReservations`.
+    - Refund flow: unary `Refund` (idempotent full refund for a selected spend/capture debit).
+    - Batch flow: demonstrate `Batch` with `Spend` and `Refund` operations (atomic vs best-effort).
+  - Demo UI (`demo/ui`):
+    - Add controls to create/capture/release holds and display reservation state.
+    - Add refund actions for debit entries (refund-by-entry-id) and a batch spend/refund action.
+    - Keep bootstrap credits client-managed (explicit `Grant` with deterministic idempotency; duplicates treated as success).
+  - Docs: update `demo/README.md` scenario checklist to include the new demo actions and the ledger RPCs they exercise.
+  - Validation: `timeout -k 350s -s SIGKILL 350s make ci` and `timeout -k 350s -s SIGKILL 350s (cd demo && make ci)` pass.
+  Resolved 2026-02-10: demo backend now exposes reservation/refund/batch endpoints; demo UI includes hold capture/release, per-entry refunds, and batch spend/refund controls; `demo/README.md` updated; tooling passing.
 
 
 ## BugFixes (302–399)

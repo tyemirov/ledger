@@ -2,7 +2,7 @@
 
 This document is the canonical reference for the Ledger gRPC surface (`credit.v1.CreditService`) and its behavioral contracts (idempotency, refunds, batch semantics, reservation TTLs, and introspection APIs).
 
-For “how to run the service” or “how to embed the Go library”, see `docs/integration.md`.
+For "how to run the service" or "how to embed the Go library", see `docs/integration.md`.
 
 ## Account Model
 
@@ -55,13 +55,15 @@ All mutating operations accept an `idempotency_key`. The ledger enforces uniquen
 
 gRPC behavior:
 
-- Unary mutations (`Grant`, `Spend`, `Reserve`, `Capture`, `Release`, `Refund`) return a gRPC error with code `AlreadyExists` and message `duplicate_idempotency_key` when the key already exists.
+- Unary mutations (`Grant`, `Spend`, `Reserve`, `Refund`) return a gRPC error with code `AlreadyExists` and message `duplicate_idempotency_key` when the key already exists.
+- Reservation finalization (`Capture`, `Release`) validates reservation state first and returns `FailedPrecondition` / `reservation_closed` once the reservation is no longer `active` (captured, released, or expired). This can also happen on safe retries after a successful call.
 - Batch mutations (`Batch`) surface duplicates per-item via `BatchOperationResult.duplicate=true` (and `ok=true`).
 
 Client guidance:
 
 - Treat duplicates as success only when you are certain you are retrying the same logical operation.
 - Strongly namespace idempotency keys by operation (for example `grant:<...>`, `spend:<...>`, `refund:<...>`) to avoid accidental collisions.
+- For `Capture` / `Release`, treat `reservation_closed` as a terminal state and use `GetReservation` to disambiguate a safe retry from a competing finalization.
 
 ## RPCs
 
@@ -117,7 +119,9 @@ Effects (single transaction):
 - Appends a `reverse_hold` entry.
 - Appends a `spend` debit entry (negative amount) and returns it.
 
-Expired reservations are rejected (`FailedPrecondition` / `reservation_closed`).
+Expired or already-finalized reservations are rejected (`FailedPrecondition` / `reservation_closed`).
+
+Idempotency note: retries after a successful capture may return `reservation_closed` (rather than `duplicate_idempotency_key`) because reservation state is validated before idempotency conflicts are evaluated. Use `GetReservation` to confirm the final state.
 
 Response:
 
@@ -126,6 +130,8 @@ Response:
 ### Release
 
 Finalizes an `active` reservation as `released` and appends a `reverse_hold` entry.
+
+Idempotency note: retries after a successful release may return `reservation_closed` (rather than `duplicate_idempotency_key`) because reservation state is validated before idempotency conflicts are evaluated. Use `GetReservation` to confirm the final state.
 
 Response:
 
@@ -138,7 +144,7 @@ Appends a `refund` entry that references a prior debit entry.
 Original reference:
 
 - `original_entry_id` (exact debit entry id), or
-- `original_idempotency_key` (the debit’s idempotency key)
+- `original_idempotency_key` (the debit's idempotency key)
 
 Constraints:
 
@@ -168,7 +174,7 @@ Result fields:
 - `duplicate=true`: idempotent no-op success; `ok=true`, and `entry_id` may be empty.
 - `ok=false`: failed; `error_code` + `error_message` present.
 
-Refund operations are supported via `BatchRefundOp` and follow the same “refund cannot exceed debit” invariant as the unary `Refund` RPC.
+Refund operations are supported via `BatchRefundOp` and follow the same "refund cannot exceed debit" invariant as the unary `Refund` RPC.
 
 ### ListEntries
 

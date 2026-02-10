@@ -72,6 +72,22 @@ func (stub *stubLedgerClient) Release(context.Context, *creditv1.ReleaseRequest,
 	return nil, errUnimplemented
 }
 
+func (stub *stubLedgerClient) Refund(context.Context, *creditv1.RefundRequest, ...grpc.CallOption) (*creditv1.RefundResponse, error) {
+	return nil, errUnimplemented
+}
+
+func (stub *stubLedgerClient) Batch(context.Context, *creditv1.BatchRequest, ...grpc.CallOption) (*creditv1.BatchResponse, error) {
+	return nil, errUnimplemented
+}
+
+func (stub *stubLedgerClient) GetReservation(context.Context, *creditv1.GetReservationRequest, ...grpc.CallOption) (*creditv1.GetReservationResponse, error) {
+	return nil, errUnimplemented
+}
+
+func (stub *stubLedgerClient) ListReservations(context.Context, *creditv1.ListReservationsRequest, ...grpc.CallOption) (*creditv1.ListReservationsResponse, error) {
+	return nil, errUnimplemented
+}
+
 var errTestAssertion = errors.New("assertion_error")
 
 func TestHandlePurchaseInvalidCoins(t *testing.T) {
