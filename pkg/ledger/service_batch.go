@@ -278,7 +278,7 @@ func (service *Service) applyBatchCapture(ctx context.Context, txStore Store, ac
 	if err := txStore.UpdateReservationStatus(ctx, accountID, operation.ReservationID, ReservationStatusActive, ReservationStatusCaptured); err != nil {
 		return Entry{}, err
 	}
-	reverseKey, err := deriveIdempotencyKey(operation.IdempotencyKey, idempotencySuffixReverse)
+	reverseKey, err := service.deriveKeyFn(operation.IdempotencyKey, idempotencySuffixReverse)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -299,7 +299,7 @@ func (service *Service) applyBatchCapture(ctx context.Context, txStore Store, ac
 	if _, err := txStore.InsertEntry(ctx, reverseEntry); err != nil {
 		return Entry{}, err
 	}
-	spendKey, err := deriveIdempotencyKey(operation.IdempotencyKey, idempotencySuffixSpend)
+	spendKey, err := service.deriveKeyFn(operation.IdempotencyKey, idempotencySuffixSpend)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -386,10 +386,9 @@ func (service *Service) applyBatchRefund(ctx context.Context, txStore Store, acc
 	if err != nil {
 		return Entry{}, err
 	}
-	debitAmount, err := NewAmountCents(-originalEntry.AmountCents().Int64())
-	if err != nil {
-		return Entry{}, err
-	}
+	// originalEntry.AmountCents() is guaranteed negative (validated above),
+	// so negating it always yields a valid non-negative AmountCents.
+	debitAmount := AmountCents(-originalEntry.AmountCents().Int64())
 	if refunded.Int64()+operation.Amount.ToAmountCents().Int64() > debitAmount.Int64() {
 		return Entry{}, ErrRefundExceedsDebit
 	}

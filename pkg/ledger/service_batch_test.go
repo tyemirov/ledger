@@ -1323,3 +1323,45 @@ func (store *duplicateInsertRefundStore) ListReservations(ctx context.Context, a
 func (store *duplicateInsertRefundStore) ListEntries(ctx context.Context, accountID AccountID, beforeUnixUTC int64, limit int, filter ListEntriesFilter) ([]Entry, error) {
 	panic("ListEntries not used")
 }
+
+func TestBatchUnknownOperation(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	operations := []BatchOperation{{OperationID: "op-1"}}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if results[0].Error == nil || results[0].Error.Error() != "unknown_batch_operation" {
+		test.Fatalf("expected unknown_batch_operation, got %v", results[0].Error)
+	}
+}
+
+func TestBatchRefundMissingOriginal(test *testing.T) {
+	test.Parallel()
+	store := newStubStore(test, mustSignedAmount(test, 0))
+	service := mustNewService(test, store)
+	userID := mustUserID(test, "user-123")
+	ledgerID := mustLedgerID(test, defaultLedgerIDValue)
+	tenantID := mustTenantID(test, defaultTenantIDValue)
+
+	operations := []BatchOperation{{
+		OperationID: "op-1",
+		Refund: &BatchRefundOperation{
+			Amount:         mustPositiveAmount(test, 100),
+			IdempotencyKey: mustIdempotencyKey(test, "idem"),
+		},
+	}}
+	results, err := service.Batch(context.Background(), tenantID, userID, ledgerID, operations, false)
+	if err != nil {
+		test.Fatalf("batch: %v", err)
+	}
+	if results[0].Error == nil || results[0].Error.Error() != "missing_refund_original" {
+		test.Fatalf("expected missing_refund_original, got %v", results[0].Error)
+	}
+}

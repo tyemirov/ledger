@@ -5,5 +5,7 @@ service:
 tenants:
   - id: "default"
     name: "Default Tenant"
+    secret_key: "${DEFAULT_TENANT_SECRET:-default-secret}"
   - id: "demo"
     name: "Demo Tenant"
+    secret_key: "${DEMO_TENANT_SECRET:-demo-secret}"

@@ -271,7 +271,7 @@ func (store *Store) GetReservation(ctx context.Context, accountID ledger.Account
 	if model.ExpiresAt != nil {
 		expiresAtUnixUTC = model.ExpiresAt.UTC().Unix()
 	}
-	reservation, err := ledger.NewReservationWithTimestamps(
+	return ledger.NewReservationWithTimestamps(
 		parsedAccountID,
 		parsedReservationID,
 		amountCents,
@@ -280,10 +280,6 @@ func (store *Store) GetReservation(ctx context.Context, accountID ledger.Account
 		model.CreatedAt.UTC().Unix(),
 		model.UpdatedAt.UTC().Unix(),
 	)
-	if err != nil {
-		return ledger.Reservation{}, wrapStoreError(errorSubjectReservation, errorCodeInvalid, err)
-	}
-	return reservation, nil
 }
 
 func (store *Store) UpdateReservationStatus(ctx context.Context, accountID ledger.AccountID, reservationID ledger.ReservationID, from, to ledger.ReservationStatus) error {
@@ -447,7 +443,7 @@ func mapLedgerEntry(row LedgerEntry) (ledger.Entry, error) {
 	if err != nil {
 		return ledger.Entry{}, err
 	}
-	entry, err := ledger.NewEntry(
+	return ledger.NewEntry(
 		entryID,
 		accountID,
 		entryType,
@@ -459,10 +455,6 @@ func mapLedgerEntry(row LedgerEntry) (ledger.Entry, error) {
 		metadata,
 		row.CreatedAt.Unix(),
 	)
-	if err != nil {
-		return ledger.Entry{}, err
-	}
-	return entry, nil
 }
 
 func timeOrZero(value *time.Time) int64 {

@@ -5,11 +5,15 @@ import (
 	"fmt"
 )
 
+// DeriveKeyFunc derives a new idempotency key from a base key and suffix.
+type DeriveKeyFunc func(baseKey IdempotencyKey, suffix string) (IdempotencyKey, error)
+
 // Service contains the domain logic over a Store.
 type Service struct {
-	store  Store
-	nowFn  func() int64
-	logger OperationLogger
+	store       Store
+	nowFn       func() int64
+	logger      OperationLogger
+	deriveKeyFn DeriveKeyFunc
 }
 
 // NewService wires a Service.
@@ -20,7 +24,7 @@ func NewService(store Store, now func() int64, options ...ServiceOption) (*Servi
 	if now == nil {
 		return nil, fmt.Errorf("%w: clock dependency is nil", ErrInvalidServiceConfig)
 	}
-	service := &Service{store: store, nowFn: now}
+	service := &Service{store: store, nowFn: now, deriveKeyFn: deriveIdempotencyKey}
 	for _, option := range options {
 		if option != nil {
 			option(service)
@@ -199,7 +203,7 @@ func (service *Service) CaptureDebitEntry(ctx context.Context, tenantID TenantID
 		if err := transactionStore.UpdateReservationStatus(ctx, accountID, reservationID, ReservationStatusActive, ReservationStatusCaptured); err != nil {
 			return err
 		}
-		reverseKey, err := deriveIdempotencyKey(idempotencyKey, idempotencySuffixReverse)
+		reverseKey, err := service.deriveKeyFn(idempotencyKey, idempotencySuffixReverse)
 		if err != nil {
 			return err
 		}
@@ -220,7 +224,7 @@ func (service *Service) CaptureDebitEntry(ctx context.Context, tenantID TenantID
 		if _, err := transactionStore.InsertEntry(ctx, reverseEntry); err != nil {
 			return err
 		}
-		spendKey, err := deriveIdempotencyKey(idempotencyKey, idempotencySuffixSpend)
+		spendKey, err := service.deriveKeyFn(idempotencyKey, idempotencySuffixSpend)
 		if err != nil {
 			return err
 		}

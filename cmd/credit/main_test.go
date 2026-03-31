@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"gorm.io/gorm"
 )
@@ -105,6 +108,58 @@ service:
 	}
 }
 
+func TestLoadConfigErrorsWhenTenantSecretMissing(test *testing.T) {
+	viper.Reset()
+	tempDir := test.TempDir()
+	configFile := filepath.Join(tempDir, "invalid_tenant.yml")
+	content := `
+service:
+  database_url: "sqlite://test.db"
+  listen_addr: ":50051"
+tenants:
+  - id: "t1"
+    name: "Tenant 1"
+`
+	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
+		test.Fatalf("write config file: %v", err)
+	}
+
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	cmd.Flags().String(flagConfigFile, configFile, "config")
+	_ = cmd.Flags().Set(flagConfigFile, configFile)
+
+	if err := loadConfig(cmd, cfg); err == nil {
+		test.Fatalf("expected error for missing tenant secret_key, got nil")
+	}
+}
+
+func TestLoadConfigErrorsWhenTenantIDMissing(test *testing.T) {
+	viper.Reset()
+	tempDir := test.TempDir()
+	configFile := filepath.Join(tempDir, "invalid_tenant_id.yml")
+	content := `
+service:
+  database_url: "sqlite://test.db"
+  listen_addr: ":50051"
+tenants:
+  - name: "Tenant 1"
+    secret_key: "s1"
+`
+	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
+		test.Fatalf("write config file: %v", err)
+	}
+
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	cmd.Flags().String(flagConfigFile, configFile, "config")
+	_ = cmd.Flags().Set(flagConfigFile, configFile)
+
+	if err := loadConfig(cmd, cfg); err == nil {
+		test.Fatalf("expected error for missing tenant id, got nil")
+	}
+}
+
 func TestLoadConfigWithFileAndExpansion(test *testing.T) {
 	viper.Reset()
 	tempDir := test.TempDir()
@@ -116,6 +171,7 @@ service:
 tenants:
   - id: "t1"
     name: "Tenant 1"
+    secret_key: "s1"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -356,6 +412,226 @@ func TestZapOperationLoggerIsNilSafe(test *testing.T) {
 	operationLogger.LogOperation(context.Background(), ledger.OperationLog{Operation: "grant", Error: grpc.ErrServerStopped})
 }
 
+func TestAuthInterceptor(test *testing.T) {
+	tenantSecrets := map[string]string{
+		"t1": "s1",
+	}
+	interceptor := newAuthInterceptor(tenantSecrets)
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return "ok", nil
+	}
+
+	testCases := []struct {
+		name     string
+		request  interface{}
+		metadata metadata.MD
+		wantCode codes.Code
+	}{
+		{
+			name:     "missing tenant_id",
+			request:  struct{}{},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			name:     "unauthorized tenant",
+			request:  testIDRequest{tenantID: "unknown"},
+			wantCode: codes.PermissionDenied,
+		},
+		{
+			name:     "missing metadata",
+			request:  testIDRequest{tenantID: "t1"},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			name:     "missing authorization header",
+			request:  testIDRequest{tenantID: "t1"},
+			metadata: metadata.MD{"foo": []string{"bar"}},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			name:     "invalid authorization header format",
+			request:  testIDRequest{tenantID: "t1"},
+			metadata: metadata.MD{"authorization": []string{"Basic s1"}},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			name:     "invalid secret key",
+			request:  testIDRequest{tenantID: "t1"},
+			metadata: metadata.MD{"authorization": []string{"Bearer wrong"}},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			name:     "success",
+			request:  testIDRequest{tenantID: "t1"},
+			metadata: metadata.MD{"authorization": []string{"Bearer s1"}},
+			wantCode: codes.OK,
+		},
+	}
+
+	for _, testCase := range testCases {
+		test.Run(testCase.name, func(test *testing.T) {
+			ctx := context.Background()
+			if testCase.metadata != nil {
+				ctx = metadata.NewIncomingContext(ctx, testCase.metadata)
+			}
+			_, err := interceptor(ctx, testCase.request, &grpc.UnaryServerInfo{}, handler)
+			if status.Code(err) != testCase.wantCode {
+				test.Fatalf("expected code %v, got %v: %v", testCase.wantCode, status.Code(err), err)
+			}
+		})
+	}
+}
+
+func TestLoadConfigErrorsOnInvalidYAML(test *testing.T) {
+	viper.Reset()
+	tempDir := test.TempDir()
+	configFile := filepath.Join(tempDir, "invalid.yml")
+	if err := os.WriteFile(configFile, []byte("service: : :"), 0o644); err != nil {
+		test.Fatalf("write config: %v", err)
+	}
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	cmd.Flags().String(flagConfigFile, configFile, "config")
+	_ = cmd.Flags().Set(flagConfigFile, configFile)
+	if err := loadConfig(cmd, cfg); err == nil {
+		test.Fatalf("expected error")
+	}
+}
+
+func TestRunServerWithListenReturnsErrorOnListenFailure(test *testing.T) {
+	logger := zap.NewNop()
+	cfg := &runtimeConfig{}
+	cfg.Service.DatabaseURL = "sqlite://:memory:"
+	cfg.Service.ListenAddr = ":1"
+	err := runServerWithListen(context.Background(), cfg, logger, func(n, a string) (net.Listener, error) {
+		return nil, errors.New("listen failed")
+	})
+	if err == nil || !strings.Contains(err.Error(), "listen failed") {
+		test.Fatalf("expected listen failure, got %v", err)
+	}
+}
+
+func TestRunServerWithListenReturnsErrorOnDatabaseFailure(test *testing.T) {
+	logger := zap.NewNop()
+	cfg := &runtimeConfig{}
+	cfg.Service.DatabaseURL = "http://%zz" // Fails url.Parse in openDatabase
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := runServerWithListen(ctx, cfg, logger, net.Listen)
+	if err == nil {
+		test.Fatalf("expected database failure")
+	}
+}
+
+func TestRunServerWithListenReturnsErrorOnSchemaFailure(test *testing.T) {
+	logger := zap.NewNop()
+	cfg := &runtimeConfig{}
+	cfg.Service.DatabaseURL = "sqlite://:memory:"
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := runServerWithListen(ctx, cfg, logger, func(n, a string) (net.Listener, error) {
+		return nil, errors.New("stop")
+	})
+	if err == nil {
+		test.Fatalf("expected listen failure")
+	}
+}
+
+func TestNormalizeSQLiteFileDSNValidation(test *testing.T) {
+	testCases := []struct {
+		name    string
+		dsn     string
+		wantErr bool
+	}{
+		{name: "valid opaque", dsn: "file:ledger.db", wantErr: false},
+		{name: "unsupported host", dsn: "file://remote/ledger.db", wantErr: true},
+		{name: "missing path", dsn: "file://localhost", wantErr: true},
+	}
+	for _, tc := range testCases {
+		test.Run(tc.name, func(test *testing.T) {
+			_, err := normalizeSQLiteFileDSN(tc.dsn)
+			if (err != nil) != tc.wantErr {
+				test.Fatalf("expected error %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestRunServerErrorsOnLoggerInit(test *testing.T) {
+	originalNewLogger := newLogger
+	test.Cleanup(func() { newLogger = originalNewLogger })
+
+	newLogger = func(_ ...zap.Option) (*zap.Logger, error) {
+		return nil, errors.New("logger init failed")
+	}
+
+	cfg := &runtimeConfig{}
+	cfg.Service.DatabaseURL = "sqlite://:memory:"
+	cfg.Service.ListenAddr = ":0"
+
+	err := runServer(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "logger init") {
+		test.Fatalf("expected logger init error, got %v", err)
+	}
+}
+
+func TestRunServerSucceedsAndSyncsLogger(test *testing.T) {
+	originalNewLogger := newLogger
+	test.Cleanup(func() { newLogger = originalNewLogger })
+
+	syncCalled := false
+	core, _ := observer.New(zapcore.DebugLevel)
+	testLogger := zap.New(core)
+
+	// Wrap the logger to track Sync calls
+	newLogger = func(_ ...zap.Option) (*zap.Logger, error) {
+		return testLogger.WithOptions(zap.Hooks(func(_ zapcore.Entry) error { return nil })), nil
+	}
+
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "ledger.db")
+	listenAddress := reserveLocalAddress(test)
+
+	cfg := &runtimeConfig{}
+	cfg.Service.DatabaseURL = "sqlite://" + sqlitePath
+	cfg.Service.ListenAddr = listenAddress
+	cfg.Tenants = []tenantConfig{{ID: "default", Name: "Default", SecretKey: "secret"}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Use a custom newLogger that detects Sync
+	newLogger = func(_ ...zap.Option) (*zap.Logger, error) {
+		return zap.New(core, zap.WrapCore(func(c zapcore.Core) zapcore.Core {
+			return &syncTrackingCore{Core: c, syncCalled: &syncCalled}
+		})), nil
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runServer(ctx, cfg)
+	}()
+
+	conn := waitForGRPCServer(test, listenAddress)
+	_ = conn.Close()
+	cancel()
+
+	if err := <-errCh; err != nil {
+		test.Fatalf("runServer: %v", err)
+	}
+
+	if !syncCalled {
+		test.Fatalf("expected logger.Sync() to be called")
+	}
+}
+
+func TestAuthInterceptorMissingMetadata(test *testing.T) {
+	interceptor := newAuthInterceptor(map[string]string{"t1": "s1"})
+	_, err := interceptor(context.Background(), testIDRequest{tenantID: "t1"}, &grpc.UnaryServerInfo{}, nil)
+	if status.Code(err) != codes.Unauthenticated {
+		test.Fatalf("expected unauthenticated, got %v", status.Code(err))
+	}
+}
+
 func TestLoggingInterceptorCallsHandler(test *testing.T) {
 	logger := zap.NewNop()
 	interceptor := newLoggingInterceptor(logger)
@@ -483,7 +759,7 @@ func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 	cfg := &runtimeConfig{}
 	cfg.Service.DatabaseURL = "sqlite://" + sqlitePath
 	cfg.Service.ListenAddr = listener.Addr().String()
-	cfg.Tenants = []tenantConfig{{ID: "default", Name: "Default"}}
+	cfg.Tenants = []tenantConfig{{ID: "default", Name: "Default", SecretKey: "test-secret"}}
 
 	core, observedLogs := observer.New(zapcore.DebugLevel)
 	logger := zap.New(core)
@@ -501,6 +777,9 @@ func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 
 	requestContext, cancelRequests := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelRequests()
+
+	// Add authentication header
+	requestContext = metadata.NewOutgoingContext(requestContext, metadata.Pairs("authorization", "Bearer test-secret"))
 
 	if _, err := client.GetBalance(requestContext, &creditv1.BalanceRequest{UserId: " user-123 ", TenantId: "default", LedgerId: " default "}); err != nil {
 		_ = conn.Close()
@@ -622,6 +901,7 @@ service:
 tenants:
   - id: "default"
     name: "Default"
+    secret_key: "default-secret"
 `, sqlitePath, listenAddress)
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -823,6 +1103,604 @@ func waitForGRPCServer(test *testing.T, address string) *grpc.ClientConn {
 			_ = conn.Close()
 			test.Fatalf("wait for grpc server: state=%v", conn.GetState())
 		}
+	}
+}
+
+// syncTrackingCore wraps a zapcore.Core to detect Sync calls.
+type syncTrackingCore struct {
+	zapcore.Core
+	syncCalled *bool
+}
+
+func (c *syncTrackingCore) Sync() error {
+	*c.syncCalled = true
+	return c.Core.Sync()
+}
+
+func (c *syncTrackingCore) Check(entry zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	return c.Core.Check(entry, ce)
+}
+
+func TestLoadConfigFallsBackToDefaultConfigFile(test *testing.T) {
+	viper.Reset()
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	// Set the flag to an empty string so that the fallback to defaultConfigFile triggers
+	_ = cmd.Flags().Set(flagConfigFile, "")
+
+	err := loadConfig(cmd, cfg)
+	// Since the default config.yml is unlikely to exist in the test dir, we expect a "missing" error
+	if err == nil {
+		test.Fatalf("expected error when falling back to default config file")
+	}
+	if !strings.Contains(err.Error(), defaultConfigFile) {
+		test.Fatalf("expected error to reference default config file %q, got: %v", defaultConfigFile, err)
+	}
+}
+
+func TestLoadConfigErrorsWhenFileUnreadable(test *testing.T) {
+	viper.Reset()
+	tempDir := test.TempDir()
+	configFile := filepath.Join(tempDir, "unreadable.yml")
+	if err := os.WriteFile(configFile, []byte("service:\n  database_url: x\n"), 0o000); err != nil {
+		test.Fatalf("write config: %v", err)
+	}
+
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	cmd.Flags().String(flagConfigFile, configFile, "config")
+	_ = cmd.Flags().Set(flagConfigFile, configFile)
+
+	err := loadConfig(cmd, cfg)
+	if err == nil {
+		test.Fatalf("expected error for unreadable config file")
+	}
+	if !strings.Contains(err.Error(), "read config file") {
+		test.Fatalf("expected read config file error, got: %v", err)
+	}
+}
+
+func TestLoadConfigErrorsOnUnmarshalFailure(test *testing.T) {
+	viper.Reset()
+	tempDir := test.TempDir()
+	configFile := filepath.Join(tempDir, "bad_unmarshal.yml")
+	// YAML that parses but cannot unmarshal to runtimeConfig:
+	// service should be a struct but we give it a list
+	content := `
+service:
+  database_url:
+    - one
+    - two
+`
+	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
+		test.Fatalf("write config: %v", err)
+	}
+
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	cmd.Flags().String(flagConfigFile, configFile, "config")
+	_ = cmd.Flags().Set(flagConfigFile, configFile)
+
+	err := loadConfig(cmd, cfg)
+	if err == nil {
+		test.Fatalf("expected unmarshal error")
+	}
+	if !strings.Contains(err.Error(), "unmarshal config") {
+		test.Fatalf("expected unmarshal config error, got: %v", err)
+	}
+}
+
+func TestLoadConfigErrorsWhenListenAddrMissing(test *testing.T) {
+	viper.Reset()
+	tempDir := test.TempDir()
+	configFile := filepath.Join(tempDir, "no_listen.yml")
+	content := `
+service:
+  database_url: "sqlite://test.db"
+`
+	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
+		test.Fatalf("write config: %v", err)
+	}
+
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	cmd.Flags().String(flagConfigFile, configFile, "config")
+	_ = cmd.Flags().Set(flagConfigFile, configFile)
+
+	err := loadConfig(cmd, cfg)
+	if err == nil {
+		test.Fatalf("expected error for missing listen_addr")
+	}
+	if !strings.Contains(err.Error(), "listen_addr") {
+		test.Fatalf("expected listen_addr error, got: %v", err)
+	}
+}
+
+func TestRunServerWithListenLogsCleanupError(test *testing.T) {
+	originalOpenDB := openDatabaseFunc
+	test.Cleanup(func() { openDatabaseFunc = originalOpenDB })
+
+	core, observedLogs := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	cleanupErr := errors.New("cleanup forced failure")
+	openDatabaseFunc = func(ctx context.Context, dsn string) (*gorm.DB, func() error, string, error) {
+		db, cleanup, driver, err := openDatabase(ctx, dsn)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		// Wrap cleanup to always return an error
+		failingCleanup := func() error {
+			_ = cleanup()
+			return cleanupErr
+		}
+		return db, failingCleanup, driver, nil
+	}
+
+	cfg := &runtimeConfig{}
+	cfg.Service.DatabaseURL = "sqlite://:memory:"
+	cfg.Service.ListenAddr = reserveLocalAddress(test)
+	cfg.Tenants = []tenantConfig{{ID: "default", Name: "Default", SecretKey: "secret"}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- runServerWithListen(ctx, cfg, logger, net.Listen)
+	}()
+
+	conn := waitForGRPCServer(test, cfg.Service.ListenAddr)
+	_ = conn.Close()
+	cancel()
+
+	if err := <-serverDone; err != nil {
+		test.Fatalf("unexpected server error: %v", err)
+	}
+
+	cleanupLogs := observedLogs.FilterMessage("database cleanup failed")
+	if cleanupLogs.Len() == 0 {
+		test.Fatalf("expected database cleanup failed log entry")
+	}
+}
+
+func TestRunServerWithListenPrepareSchemaErrorAfterDBOpen(test *testing.T) {
+	originalPrepareSchema := prepareSchemaFunc
+	test.Cleanup(func() { prepareSchemaFunc = originalPrepareSchema })
+
+	schemaErr := errors.New("schema migration failed")
+	prepareSchemaFunc = func(_ *gorm.DB, _ string) error {
+		return schemaErr
+	}
+
+	core, _ := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	cfg := &runtimeConfig{}
+	cfg.Service.DatabaseURL = "sqlite://:memory:"
+	cfg.Service.ListenAddr = reserveLocalAddress(test)
+
+	err := runServerWithListen(context.Background(), cfg, logger, net.Listen)
+	if !errors.Is(err, schemaErr) {
+		test.Fatalf("expected schema error, got: %v", err)
+	}
+}
+
+func TestRunServerWithListenNewServiceError(test *testing.T) {
+	originalNewService := newServiceFunc
+	test.Cleanup(func() { newServiceFunc = originalNewService })
+
+	serviceErr := errors.New("service init failed")
+	newServiceFunc = func(_ ledger.Store, _ func() int64, _ ...ledger.ServiceOption) (*ledger.Service, error) {
+		return nil, serviceErr
+	}
+
+	core, _ := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	cfg := &runtimeConfig{}
+	cfg.Service.DatabaseURL = "sqlite://:memory:"
+	cfg.Service.ListenAddr = reserveLocalAddress(test)
+
+	err := runServerWithListen(context.Background(), cfg, logger, net.Listen)
+	if err == nil || !strings.Contains(err.Error(), "ledger service init") {
+		test.Fatalf("expected ledger service init error, got: %v", err)
+	}
+}
+
+func TestRunServerWithListenServeErrorNotServerStopped(test *testing.T) {
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "serve_err.db")
+
+	core, _ := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	cfg := &runtimeConfig{}
+	cfg.Service.DatabaseURL = "sqlite://" + sqlitePath
+	cfg.Service.ListenAddr = reserveLocalAddress(test)
+	cfg.Tenants = []tenantConfig{{ID: "default", Name: "Default", SecretKey: "secret"}}
+
+	// Provide a listener that is already closed, causing Serve to fail immediately
+	// with an error that is NOT ErrServerStopped.
+	err := runServerWithListen(context.Background(), cfg, logger, func(network, address string) (net.Listener, error) {
+		lis, listenErr := net.Listen(network, address)
+		if listenErr != nil {
+			return nil, listenErr
+		}
+		// Close the listener before Serve gets to use it
+		_ = lis.Close()
+		return lis, nil
+	})
+	if err == nil {
+		test.Fatalf("expected serve error")
+	}
+	if errors.Is(err, grpc.ErrServerStopped) {
+		test.Fatalf("expected error other than ErrServerStopped, got %v", err)
+	}
+}
+
+func TestResolveDriverSQLiteURLEmptyPathDefaultsToLedgerDB(test *testing.T) {
+	driver, sqlitePath, err := resolveDriver("sqlite://")
+	if err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+	if driver != "sqlite" {
+		test.Fatalf("expected sqlite driver, got %q", driver)
+	}
+	if !strings.Contains(sqlitePath, "ledger.db") {
+		test.Fatalf("expected path containing ledger.db, got %q", sqlitePath)
+	}
+}
+
+func TestResolveDriverSQLiteURLRootPathDefaultsToLedgerDB(test *testing.T) {
+	driver, sqlitePath, err := resolveDriver("sqlite:///")
+	if err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+	if driver != "sqlite" {
+		test.Fatalf("expected sqlite driver, got %q", driver)
+	}
+	// sqlite:/// has path "/" which should default to ledger.db
+	if !strings.Contains(sqlitePath, "ledger.db") {
+		test.Fatalf("expected path containing ledger.db, got %q", sqlitePath)
+	}
+}
+
+func TestResolveDriverSQLiteURLWithHostNoPath(test *testing.T) {
+	// sqlite://hostname with no path: Host="hostname", Path=""
+	// path = u.Host = "hostname" which is not empty, so it's used as a path.
+	driver, sqlitePath, err := resolveDriver("sqlite://hostname")
+	if err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+	if driver != "sqlite" {
+		test.Fatalf("expected sqlite driver, got %q", driver)
+	}
+	if !strings.Contains(sqlitePath, "hostname") {
+		test.Fatalf("expected path containing hostname, got %q", sqlitePath)
+	}
+}
+
+func TestNormalizeSQLiteFileDSNParseError(test *testing.T) {
+	_, err := normalizeSQLiteFileDSN("file://%zz")
+	if err == nil {
+		test.Fatalf("expected parse error")
+	}
+	if !strings.Contains(err.Error(), "parse sqlite file url") {
+		test.Fatalf("expected parse sqlite file url error, got: %v", err)
+	}
+}
+
+func TestNormalizeSQLiteFileDSNPathNormalizationError(test *testing.T) {
+	tempDir := test.TempDir()
+	// Create a file that blocks directory creation
+	blockingFile := filepath.Join(tempDir, "not-a-directory")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o644); err != nil {
+		test.Fatalf("write file: %v", err)
+	}
+	// file:///path/not-a-directory/sub/ledger.db - the parent dir creation should fail
+	dsn := "file://" + filepath.Join(blockingFile, "sub", "ledger.db")
+	_, err := normalizeSQLiteFileDSN(dsn)
+	if err == nil {
+		test.Fatalf("expected normalization error")
+	}
+}
+
+func TestOpenDatabaseSQLiteWithDirCreation(test *testing.T) {
+	tempDir := test.TempDir()
+	// Use a path that requires creating a subdirectory
+	sqlitePath := filepath.Join(tempDir, "subdir", "deep", "ledger.db")
+	ctx := context.Background()
+	db, cleanup, driver, err := openDatabase(ctx, "sqlite://"+sqlitePath)
+	if err != nil {
+		test.Fatalf("open sqlite with dir creation: %v", err)
+	}
+	if driver != "sqlite" {
+		test.Fatalf("expected sqlite driver, got %q", driver)
+	}
+	if db == nil || cleanup == nil {
+		test.Fatalf("expected db and cleanup")
+	}
+	if err := cleanup(); err != nil {
+		test.Fatalf("cleanup: %v", err)
+	}
+}
+
+func TestPrepareSchemaPragmaBusyTimeoutError(test *testing.T) {
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "pragma_busy.db")
+	db, err := gorm.Open(sqlite.Open(sqlitePath), &gorm.Config{})
+	if err != nil {
+		test.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		test.Fatalf("sql db: %v", err)
+	}
+	test.Cleanup(func() { _ = sqlDB.Close() })
+
+	// Register a callback that fails on busy_timeout
+	db.Callback().Raw().Before("*").Register("fail_busy_timeout", func(gormDB *gorm.DB) {
+		if gormDB.Statement != nil && strings.Contains(gormDB.Statement.SQL.String(), "busy_timeout") {
+			gormDB.AddError(errors.New("busy_timeout pragma failed"))
+		}
+	})
+
+	err = prepareSchema(db, "sqlite")
+	if err == nil {
+		test.Fatalf("expected busy_timeout error")
+	}
+	if !strings.Contains(err.Error(), "busy_timeout") {
+		test.Fatalf("expected busy_timeout in error, got: %v", err)
+	}
+}
+
+func TestPrepareSchemaPragmaForeignKeysError(test *testing.T) {
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "pragma_fk.db")
+	db, err := gorm.Open(sqlite.Open(sqlitePath), &gorm.Config{})
+	if err != nil {
+		test.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		test.Fatalf("sql db: %v", err)
+	}
+	test.Cleanup(func() { _ = sqlDB.Close() })
+
+	// Register a callback that fails on foreign_keys
+	db.Callback().Raw().Before("*").Register("fail_foreign_keys", func(gormDB *gorm.DB) {
+		if gormDB.Statement != nil && strings.Contains(gormDB.Statement.SQL.String(), "foreign_keys") {
+			gormDB.AddError(errors.New("foreign_keys pragma failed"))
+		}
+	})
+
+	err = prepareSchema(db, "sqlite")
+	if err == nil {
+		test.Fatalf("expected foreign_keys error")
+	}
+	if !strings.Contains(err.Error(), "foreign_keys") {
+		test.Fatalf("expected foreign_keys in error, got: %v", err)
+	}
+}
+
+func TestPrepareSchemaReturnsErrorWhenSQLDBFails(test *testing.T) {
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "sqldb_fail.db")
+	db, err := gorm.Open(sqlite.Open(sqlitePath), &gorm.Config{})
+	if err != nil {
+		test.Fatalf("open sqlite: %v", err)
+	}
+	// Close the underlying sql.DB so that db.DB() returns it but subsequent
+	// operations fail. Actually, db.DB() caches - we need it to fail.
+	// Close db's sql.DB first, then call prepareSchema.
+	sqlDB, err := db.DB()
+	if err != nil {
+		test.Fatalf("sql db: %v", err)
+	}
+	// db.DB() caches the result, so calling it again won't fail.
+	// Instead, use a ConnPool that returns an error from GetDBConn.
+	_ = sqlDB.Close()
+
+	// The db.DB() call in prepareSchema will return the cached (but closed) connection,
+	// so it won't error on db.DB() itself, but on the subsequent operations.
+	// That means this test doesn't cover the db.DB() error path.
+	// We need a different approach to cover line 488-489.
+	err = prepareSchema(db, "sqlite")
+	if err == nil {
+		test.Fatalf("expected error when sql.DB is closed")
+	}
+}
+
+func TestRunServerWithListenServeErrorNotServerStoppedViaErrCh(test *testing.T) {
+	// Test lines 215-219: when Serve returns an error via errCh without ctx cancellation.
+	// The case where errCh receives ErrServerStopped returns nil (line 217).
+	// The case where errCh receives another error returns that error (line 219).
+	// TestRunServerWithListenServeErrorNotServerStopped already covers the non-ErrServerStopped case.
+	// To cover the ErrServerStopped case: use a listener that closes immediately
+	// after Accept is called once. grpc.Server.Serve will return after listener is closed.
+	tempDir := test.TempDir()
+	sqlitePath := filepath.Join(tempDir, "errstop.db")
+
+	core, _ := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	cfg := &runtimeConfig{}
+	cfg.Service.DatabaseURL = "sqlite://" + sqlitePath
+	cfg.Service.ListenAddr = reserveLocalAddress(test)
+	cfg.Tenants = []tenantConfig{{ID: "default", Name: "Default", SecretKey: "secret"}}
+
+	// Use a listener wrapper that closes the listener after a short delay,
+	// simulating the gRPC server stopping itself.
+	err := runServerWithListen(context.Background(), cfg, logger, func(network, address string) (net.Listener, error) {
+		lis, lisErr := net.Listen(network, address)
+		if lisErr != nil {
+			return nil, lisErr
+		}
+		return &autoCloseListener{Listener: lis, delay: 100 * time.Millisecond}, nil
+	})
+	// When the listener closes, grpc.Server.Serve returns a "use of closed network connection" error
+	// which is NOT ErrServerStopped, so line 219 is hit.
+	if err == nil {
+		test.Fatalf("expected serve error from closed listener")
+	}
+}
+
+// autoCloseListener wraps a net.Listener and closes it after a delay.
+type autoCloseListener struct {
+	net.Listener
+	delay time.Duration
+}
+
+func (l *autoCloseListener) Accept() (net.Conn, error) {
+	go func() {
+		time.Sleep(l.delay)
+		_ = l.Listener.Close()
+	}()
+	return l.Listener.Accept()
+}
+
+// minimalConnPool satisfies gorm.ConnPool but not GetDBConnector,
+// so gorm.DB.DB() returns gorm.ErrInvalidDB.
+type minimalConnPool struct{}
+
+func (minimalConnPool) PrepareContext(_ context.Context, _ string) (*sql.Stmt, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (minimalConnPool) ExecContext(_ context.Context, _ string, _ ...interface{}) (sql.Result, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (minimalConnPool) QueryContext(_ context.Context, _ string, _ ...interface{}) (*sql.Rows, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (minimalConnPool) QueryRowContext(_ context.Context, _ string, _ ...interface{}) *sql.Row {
+	return nil
+}
+
+func TestAwaitServerShutdownWithServeError(test *testing.T) {
+	core, _ := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	grpcServer := grpc.NewServer()
+	errCh := make(chan error, 1)
+	// Send the error in a goroutine after GracefulStop returns so ctx.Done wins the select.
+	go func() {
+		// GracefulStop is called synchronously inside awaitServer after ctx.Done fires.
+		// A small sleep ensures that the select picks ctx.Done, not errCh.
+		time.Sleep(10 * time.Millisecond)
+		errCh <- errors.New("serve failed badly")
+	}()
+
+	err := awaitServer(ctx, grpcServer, errCh, logger)
+	if err == nil || !strings.Contains(err.Error(), "serve failed badly") {
+		test.Fatalf("expected serve error, got: %v", err)
+	}
+}
+
+func TestAwaitServerShutdownWithErrServerStopped(test *testing.T) {
+	// Cover line 215-218: ctx.Done fires, then serveErr is ErrServerStopped -> return nil
+	core, _ := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	grpcServer := grpc.NewServer()
+	errCh := make(chan error, 1)
+	errCh <- grpc.ErrServerStopped
+
+	err := awaitServer(ctx, grpcServer, errCh, logger)
+	if err != nil {
+		test.Fatalf("expected nil, got: %v", err)
+	}
+}
+
+func TestAwaitServerShutdownWithNilServeError(test *testing.T) {
+	// Cover line 215-218: ctx.Done fires, then serveErr is nil -> return nil
+	core, _ := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	grpcServer := grpc.NewServer()
+	errCh := make(chan error, 1)
+	errCh <- nil
+
+	err := awaitServer(ctx, grpcServer, errCh, logger)
+	if err != nil {
+		test.Fatalf("expected nil, got: %v", err)
+	}
+}
+
+func TestAwaitServerErrServerStoppedFromErrCh(test *testing.T) {
+	// Cover line 220-222: errCh fires with ErrServerStopped without ctx.Done
+	core, _ := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	grpcServer := grpc.NewServer()
+	errCh := make(chan error, 1)
+	errCh <- grpc.ErrServerStopped
+
+	err := awaitServer(context.Background(), grpcServer, errCh, logger)
+	if err != nil {
+		test.Fatalf("expected nil for ErrServerStopped, got: %v", err)
+	}
+}
+
+func TestAwaitServerOtherErrorFromErrCh(test *testing.T) {
+	// Cover line 223: errCh fires with non-ErrServerStopped error
+	core, _ := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	grpcServer := grpc.NewServer()
+	errCh := make(chan error, 1)
+	errCh <- errors.New("listener accept failed")
+
+	err := awaitServer(context.Background(), grpcServer, errCh, logger)
+	if err == nil || !strings.Contains(err.Error(), "listener accept failed") {
+		test.Fatalf("expected listener error, got: %v", err)
+	}
+}
+
+func TestOpenDatabaseSQLDBError(test *testing.T) {
+	// Cover line 401-403: db.DB() returns error after successful gorm.Open.
+	// We inject a custom gormOpenFunc to create a gorm.DB whose ConnPool does not
+	// implement GetDBConnector, causing db.DB() to return gorm.ErrInvalidDB.
+	originalGormOpen := gormOpenFunc
+	test.Cleanup(func() { gormOpenFunc = originalGormOpen })
+
+	gormOpenFunc = func(_ gorm.Dialector, _ ...gorm.Option) (*gorm.DB, error) {
+		db := &gorm.DB{Config: &gorm.Config{}}
+		db.ConnPool = minimalConnPool{}
+		return db, nil
+	}
+
+	_, _, _, err := openDatabase(context.Background(), "sqlite://:memory:")
+	if err == nil {
+		test.Fatalf("expected db.DB() error")
+	}
+}
+
+func TestPrepareSchemaDBError(test *testing.T) {
+	// Cover line 488-489: db.DB() returns error in prepareSchema.
+	// Create a gorm.DB with a ConnPool that doesn't implement GetDBConnector.
+	db := &gorm.DB{
+		Config: &gorm.Config{},
+	}
+	db.ConnPool = minimalConnPool{}
+	db.Statement = &gorm.Statement{}
+
+	err := prepareSchema(db, "sqlite")
+	if err == nil {
+		test.Fatalf("expected sql database error")
+	}
+	if !strings.Contains(err.Error(), "sql database") {
+		test.Fatalf("expected sql database error, got: %v", err)
 	}
 }
 

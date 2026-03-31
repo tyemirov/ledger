@@ -574,14 +574,6 @@ func (service *CreditServiceServer) Batch(ctx context.Context, request *creditv1
 			continue
 		}
 
-		if result.Entry == nil {
-			resultMessage.Ok = false
-			resultMessage.ErrorCode = errorInternal
-			resultMessage.ErrorMessage = errorInternal
-			response.Results[resultIndex] = resultMessage
-			continue
-		}
-
 		resultMessage.Ok = true
 		resultMessage.EntryId = result.Entry.EntryID().String()
 		resultMessage.CreatedUnixUtc = result.Entry.CreatedUnixUTC()

@@ -19,10 +19,11 @@ import (
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"github.com/glebarez/sqlite"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -35,8 +36,9 @@ const (
 )
 
 type tenantConfig struct {
-	ID   string `mapstructure:"id"`
-	Name string `mapstructure:"name"`
+	ID        string `mapstructure:"id"`
+	Name      string `mapstructure:"name"`
+	SecretKey string `mapstructure:"secret_key"`
 }
 
 type runtimeConfig struct {
@@ -48,8 +50,13 @@ type runtimeConfig struct {
 }
 
 var (
-	exitFunc               = os.Exit
-	stderrWriter io.Writer = os.Stderr
+	exitFunc                                                   = os.Exit
+	stderrWriter      io.Writer                                = os.Stderr
+	newLogger         func(...zap.Option) (*zap.Logger, error) = zap.NewProduction
+	openDatabaseFunc                                           = openDatabase
+	prepareSchemaFunc                                          = prepareSchema
+	newServiceFunc                                             = ledger.NewService
+	gormOpenFunc                                               = gorm.Open
 )
 
 func main() {
@@ -124,26 +131,22 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 		return fmt.Errorf("service.listen_addr is required in %q", configFile)
 	}
 
-	return nil
-}
+	for _, tenant := range cfg.Tenants {
+		if strings.TrimSpace(tenant.ID) == "" {
+			return fmt.Errorf("tenant id is required in %q", configFile)
+		}
+		if strings.TrimSpace(tenant.SecretKey) == "" {
+			return fmt.Errorf("tenant %q secret_key is required in %q", tenant.ID, configFile)
+		}
+	}
 
-func lookupFlag(cmd *cobra.Command, name string) *pflag.Flag {
-	if flag := cmd.Flags().Lookup(name); flag != nil {
-		return flag
-	}
-	if flag := cmd.PersistentFlags().Lookup(name); flag != nil {
-		return flag
-	}
-	if flag := cmd.InheritedFlags().Lookup(name); flag != nil {
-		return flag
-	}
 	return nil
 }
 
 type listenFunc func(network, address string) (net.Listener, error)
 
 func runServer(ctx context.Context, cfg *runtimeConfig) error {
-	logger, err := zap.NewProduction()
+	logger, err := newLogger()
 	if err != nil {
 		return fmt.Errorf("logger init: %w", err)
 	}
@@ -153,7 +156,7 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 }
 
 func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Logger, listen listenFunc) error {
-	gormDB, cleanup, driver, err := openDatabase(ctx, cfg.Service.DatabaseURL)
+	gormDB, cleanup, driver, err := openDatabaseFunc(ctx, cfg.Service.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("database open: %w", err)
 	}
@@ -163,14 +166,14 @@ func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Lo
 		}
 	}()
 
-	if err := prepareSchema(gormDB, driver); err != nil {
+	if err := prepareSchemaFunc(gormDB, driver); err != nil {
 		return err
 	}
 
 	store := gormstore.New(gormDB)
 	clock := func() int64 { return time.Now().UTC().Unix() }
 	opLogger := &zapOperationLogger{logger: logger}
-	creditService, err := ledger.NewService(
+	creditService, err := newServiceFunc(
 		store,
 		clock,
 		ledger.WithOperationLogger(opLogger),
@@ -184,14 +187,19 @@ func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Lo
 		return fmt.Errorf("listen: %w", err)
 	}
 
-	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(newLoggingInterceptor(logger)),
-	)
-
+	tenantSecrets := make(map[string]string, len(cfg.Tenants))
 	tenantIDs := make([]string, 0, len(cfg.Tenants))
 	for _, tenant := range cfg.Tenants {
+		tenantSecrets[tenant.ID] = tenant.SecretKey
 		tenantIDs = append(tenantIDs, tenant.ID)
 	}
+
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			newLoggingInterceptor(logger),
+			newAuthInterceptor(tenantSecrets),
+		),
+	)
 
 	creditv1.RegisterCreditServiceServer(grpcServer, grpcserver.NewCreditServiceServer(creditService, tenantIDs))
 
@@ -201,6 +209,18 @@ func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Lo
 		errCh <- grpcServer.Serve(lis)
 	}()
 
+	return awaitServer(ctx, grpcServer, errCh, logger)
+}
+
+type userIDGetter interface {
+	GetUserId() string
+}
+
+type ledgerIDGetter interface {
+	GetLedgerId() string
+}
+
+func awaitServer(ctx context.Context, grpcServer *grpc.Server, errCh <-chan error, logger *zap.Logger) error {
 	select {
 	case <-ctx.Done():
 		logger.Info("shutdown requested")
@@ -215,14 +235,6 @@ func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Lo
 		}
 		return serveErr
 	}
-}
-
-type userIDGetter interface {
-	GetUserId() string
-}
-
-type ledgerIDGetter interface {
-	GetLedgerId() string
 }
 
 type tenantIDGetter interface {
@@ -254,6 +266,43 @@ func extractTenantID(request interface{}) string {
 	}
 	tenantID := strings.TrimSpace(getter.GetTenantId())
 	return tenantID
+}
+
+func newAuthInterceptor(tenantSecrets map[string]string) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, request interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		tenantID := extractTenantID(request)
+		if tenantID == "" {
+			return nil, status.Error(codes.Unauthenticated, "missing tenant_id")
+		}
+
+		expectedSecret, ok := tenantSecrets[tenantID]
+		if !ok {
+			return nil, status.Errorf(codes.PermissionDenied, "tenant %q is not authorized", tenantID)
+		}
+
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return nil, status.Error(codes.Unauthenticated, "missing metadata")
+		}
+
+		authHeader := md.Get("authorization")
+		if len(authHeader) == 0 {
+			return nil, status.Error(codes.Unauthenticated, "missing authorization header")
+		}
+
+		const bearerPrefix = "Bearer "
+		token := authHeader[0]
+		if !strings.HasPrefix(token, bearerPrefix) {
+			return nil, status.Error(codes.Unauthenticated, "invalid authorization header format")
+		}
+
+		providedSecret := strings.TrimPrefix(token, bearerPrefix)
+		if providedSecret != expectedSecret {
+			return nil, status.Error(codes.Unauthenticated, "invalid secret key")
+		}
+
+		return handler(ctx, request)
+	}
 }
 
 func newLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
@@ -349,9 +398,9 @@ func openDatabase(ctx context.Context, dsn string) (*gorm.DB, func() error, stri
 	}
 	switch driver {
 	case "postgres":
-		db, err = gorm.Open(postgres.Open(dsn), cfg)
+		db, err = gormOpenFunc(postgres.Open(dsn), cfg)
 	case "sqlite":
-		db, err = gorm.Open(sqlite.Open(sqlitePath), cfg)
+		db, err = gormOpenFunc(sqlite.Open(sqlitePath), cfg)
 	default:
 		return nil, nil, "", fmt.Errorf("unsupported database scheme %q", driver)
 	}

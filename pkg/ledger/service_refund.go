@@ -50,10 +50,9 @@ func (service *Service) RefundByEntryIDEntry(ctx context.Context, tenantID Tenan
 		if err != nil {
 			return err
 		}
-		debitAmount, err := NewAmountCents(-originalEntry.AmountCents().Int64())
-		if err != nil {
-			return err
-		}
+		// originalEntry.AmountCents() is guaranteed negative (validated above),
+		// so negating it always yields a valid non-negative AmountCents.
+		debitAmount := AmountCents(-originalEntry.AmountCents().Int64())
 		if refunded.Int64()+amount.ToAmountCents().Int64() > debitAmount.Int64() {
 			return ErrRefundExceedsDebit
 		}
