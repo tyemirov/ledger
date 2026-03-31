@@ -30,17 +30,21 @@ import (
 )
 
 const (
-	flagDatabaseURL       = "database-url"
-	flagListenAddr        = "listen-addr"
-	configKeyDatabaseURL  = "database_url"
-	configKeyListenAddr   = "listen_addr"
-	defaultDatabaseURL    = "sqlite:///tmp/ledger.db"
-	defaultGRPCListenAddr = ":50051"
+	flagConfigFile    = "config"
+	defaultConfigFile = "config.yml"
 )
 
+type tenantConfig struct {
+	ID   string `mapstructure:"id"`
+	Name string `mapstructure:"name"`
+}
+
 type runtimeConfig struct {
-	DatabaseURL string
-	ListenAddr  string
+	Service struct {
+		DatabaseURL string `mapstructure:"database_url"`
+		ListenAddr  string `mapstructure:"listen_addr"`
+	} `mapstructure:"service"`
+	Tenants []tenantConfig `mapstructure:"tenants"`
 }
 
 var (
@@ -78,41 +82,48 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().String(flagDatabaseURL, defaultDatabaseURL, "PostgreSQL connection string")
-	cmd.PersistentFlags().String(flagListenAddr, defaultGRPCListenAddr, "gRPC listen address")
+	cmd.PersistentFlags().String(flagConfigFile, defaultConfigFile, "Path to mandatory configuration file")
 
 	return cmd
 }
 
 func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
-	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-	viper.AutomaticEnv()
+	v := viper.New()
 
-	// viper.BindEnv errors only when the key is missing (len(input)==0).
-	// These keys are compile-time constants, so BindEnv cannot fail here.
-	_ = viper.BindEnv(configKeyDatabaseURL, "DATABASE_URL")
-	_ = viper.BindEnv(configKeyListenAddr, "GRPC_LISTEN_ADDR")
+	configFile, _ := cmd.Flags().GetString(flagConfigFile)
+	if configFile == "" {
+		configFile = defaultConfigFile
+	}
 
-	databaseFlag := lookupFlag(cmd, flagDatabaseURL)
-	if databaseFlag == nil {
-		return fmt.Errorf("flag for %q is nil", configKeyDatabaseURL)
+	if _, err := os.Stat(configFile); err != nil {
+		return fmt.Errorf("configuration file %q is mandatory but missing: %w", configFile, err)
 	}
-	_ = viper.BindPFlag(configKeyDatabaseURL, databaseFlag)
 
-	listenFlag := lookupFlag(cmd, flagListenAddr)
-	if listenFlag == nil {
-		return fmt.Errorf("flag for %q is nil", configKeyListenAddr)
+	content, err := os.ReadFile(configFile)
+	if err != nil {
+		return fmt.Errorf("read config file: %w", err)
 	}
-	_ = viper.BindPFlag(configKeyListenAddr, listenFlag)
 
-	cfg.DatabaseURL = viper.GetString(configKeyDatabaseURL)
-	if cfg.DatabaseURL == "" {
-		cfg.DatabaseURL = defaultDatabaseURL
+	// Expand environment variables within the YAML content
+	expanded := os.ExpandEnv(string(content))
+
+	v.SetConfigType("yaml")
+	if err := v.ReadConfig(strings.NewReader(expanded)); err != nil {
+		return fmt.Errorf("parse config file: %w", err)
 	}
-	cfg.ListenAddr = viper.GetString(configKeyListenAddr)
-	if cfg.ListenAddr == "" {
-		cfg.ListenAddr = defaultGRPCListenAddr
+
+	if err := v.Unmarshal(cfg); err != nil {
+		return fmt.Errorf("unmarshal config: %w", err)
 	}
+
+	// Strict validation: DatabaseURL and ListenAddr must be provided in the config
+	if strings.TrimSpace(cfg.Service.DatabaseURL) == "" {
+		return fmt.Errorf("service.database_url is required in %q", configFile)
+	}
+	if strings.TrimSpace(cfg.Service.ListenAddr) == "" {
+		return fmt.Errorf("service.listen_addr is required in %q", configFile)
+	}
+
 	return nil
 }
 
@@ -142,7 +153,7 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 }
 
 func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Logger, listen listenFunc) error {
-	gormDB, cleanup, driver, err := openDatabase(ctx, cfg.DatabaseURL)
+	gormDB, cleanup, driver, err := openDatabase(ctx, cfg.Service.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("database open: %w", err)
 	}
@@ -168,7 +179,7 @@ func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Lo
 		return fmt.Errorf("ledger service init: %w", err)
 	}
 
-	lis, err := listen("tcp", cfg.ListenAddr)
+	lis, err := listen("tcp", cfg.Service.ListenAddr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
@@ -176,11 +187,17 @@ func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Lo
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(newLoggingInterceptor(logger)),
 	)
-	creditv1.RegisterCreditServiceServer(grpcServer, grpcserver.NewCreditServiceServer(creditService))
+
+	tenantIDs := make([]string, 0, len(cfg.Tenants))
+	for _, tenant := range cfg.Tenants {
+		tenantIDs = append(tenantIDs, tenant.ID)
+	}
+
+	creditv1.RegisterCreditServiceServer(grpcServer, grpcserver.NewCreditServiceServer(creditService, tenantIDs))
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("gRPC server starting", zap.String("listen_addr", cfg.ListenAddr))
+		logger.Info("gRPC server starting", zap.String("listen_addr", cfg.Service.ListenAddr))
 		errCh <- grpcServer.Serve(lis)
 	}()
 

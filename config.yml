@@ -1,0 +1,9 @@
+service:
+  database_url: "${DATABASE_URL:-sqlite:///tmp/ledger.db}"
+  listen_addr: "${GRPC_LISTEN_ADDR:-:50051}"
+
+tenants:
+  - id: "default"
+    name: "Default Tenant"
+  - id: "demo"
+    name: "Demo Tenant"

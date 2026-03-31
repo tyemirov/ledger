@@ -137,13 +137,34 @@ func TestMapToBatchErrorCode(test *testing.T) {
 	}
 }
 
+func TestCreditServiceServerTenantValidation(test *testing.T) {
+	test.Parallel()
+	creditService, err := newSQLiteLedgerService(test)
+	if err != nil {
+		test.Fatalf("new ledger service: %v", err)
+	}
+	server := NewCreditServiceServer(creditService, []string{"authorized-tenant"})
+
+	ctx := context.Background()
+
+	_, err = server.GetBalance(ctx, &creditv1.BalanceRequest{
+		UserId:   "user",
+		TenantId: "unauthorized",
+		LedgerId: "default",
+	})
+
+	if status.Code(err) != codes.PermissionDenied {
+		test.Fatalf("expected PermissionDenied for unauthorized tenant, got %v", status.Code(err))
+	}
+}
+
 func TestCreditServiceServerFlow(test *testing.T) {
 	test.Parallel()
 	creditService, err := newSQLiteLedgerService(test)
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -464,7 +485,7 @@ func TestCreditServiceServerReservationIntrospection(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -654,7 +675,7 @@ func TestCreditServiceServerReservationIntrospectionValidationErrors(test *testi
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 	ctx := context.Background()
 
 	testCases := []struct {
@@ -696,14 +717,14 @@ func TestCreditServiceServerReservationIntrospectionValidationErrors(test *testi
 			invoke: func() error {
 				_, err := server.GetReservation(ctx, &creditv1.GetReservationRequest{
 					UserId:        "user-123",
-					TenantId:      " ",
+					TenantId:      "unauthorized",
 					LedgerId:      "default",
 					ReservationId: "order-1",
 				})
 				return err
 			},
-			wantCode:    codes.InvalidArgument,
-			wantMessage: errorInvalidTenantID,
+			wantCode:    codes.PermissionDenied,
+			wantMessage: "tenant \"unauthorized\" is not authorized",
 		},
 		{
 			name: "get reservation invalid reservation id",
@@ -750,13 +771,13 @@ func TestCreditServiceServerReservationIntrospectionValidationErrors(test *testi
 			invoke: func() error {
 				_, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
 					UserId:   "user-123",
-					TenantId: " ",
+					TenantId: "unauthorized",
 					LedgerId: "default",
 				})
 				return err
 			},
-			wantCode:    codes.InvalidArgument,
-			wantMessage: errorInvalidTenantID,
+			wantCode:    codes.PermissionDenied,
+			wantMessage: "tenant \"unauthorized\" is not authorized",
 		},
 		{
 			name: "list reservations invalid limit",
@@ -809,7 +830,7 @@ func TestCreditServiceServerGetReservationUnknownReservation(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	_, err = server.GetReservation(context.Background(), &creditv1.GetReservationRequest{
 		UserId:        "user-123",
@@ -831,7 +852,7 @@ func TestCreditServiceServerRefundSpendFlow(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -916,7 +937,7 @@ func TestCreditServiceServerRefundByOriginalIdempotencyKeyFlow(test *testing.T) 
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -982,7 +1003,7 @@ func TestCreditServiceServerRefundValidationInvalidOriginalEntryID(test *testing
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
 		UserId:         "user",
@@ -1007,7 +1028,7 @@ func TestCreditServiceServerRefundValidationInvalidOriginalIdempotencyKey(test *
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
 		UserId:         "user",
@@ -1032,7 +1053,7 @@ func TestCreditServiceServerRefundUnknownEntryRejected(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
 		UserId:         "user",
@@ -1057,7 +1078,7 @@ func TestCreditServiceServerRefundRejectsNonDebitOriginal(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -1099,7 +1120,7 @@ func TestCreditServiceServerRefundCaptureDebitFlow(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -1171,7 +1192,7 @@ func TestCreditServiceServerRefundOverRefundRejected(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -1234,7 +1255,7 @@ func TestCreditServiceServerRefundDuplicateIdempotencyNoop(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -1312,7 +1333,7 @@ func TestCreditServiceServerRefundValidationMissingOriginal(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
 		UserId:         "user",
@@ -1336,7 +1357,7 @@ func TestCreditServiceServerRefundValidationErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 	ctx := context.Background()
 
 	testCases := []struct {
@@ -1384,7 +1405,7 @@ func TestCreditServiceServerRefundValidationErrors(test *testing.T) {
 			invoke: func() error {
 				_, err := server.Refund(ctx, &creditv1.RefundRequest{
 					UserId:         "user",
-					TenantId:       "",
+					TenantId:       "unauthorized",
 					LedgerId:       "default",
 					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
 					AmountCents:    1,
@@ -1393,8 +1414,8 @@ func TestCreditServiceServerRefundValidationErrors(test *testing.T) {
 				})
 				return err
 			},
-			wantCode:    codes.InvalidArgument,
-			wantMessage: errorInvalidTenantID,
+			wantCode:    codes.PermissionDenied,
+			wantMessage: "tenant \"unauthorized\" is not authorized",
 		},
 		{
 			name: "invalid amount",
@@ -1469,7 +1490,7 @@ func TestCreditServiceServerBatchValidationErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 	ctx := context.Background()
 
 	_, err = server.Batch(ctx, &creditv1.BatchRequest{})
@@ -1520,17 +1541,18 @@ func TestCreditServiceServerBatchAccountContextValidation(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 	ctx := context.Background()
 
 	testCases := []struct {
 		name        string
 		account     *creditv1.AccountContext
+		wantCode    codes.Code
 		wantMessage string
 	}{
-		{name: "invalid user id", account: &creditv1.AccountContext{UserId: "", TenantId: "default", LedgerId: "default"}, wantMessage: errorInvalidUserID},
-		{name: "invalid ledger id", account: &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: ""}, wantMessage: errorInvalidLedgerID},
-		{name: "invalid tenant id", account: &creditv1.AccountContext{UserId: "user", TenantId: "", LedgerId: "default"}, wantMessage: errorInvalidTenantID},
+		{name: "invalid user id", account: &creditv1.AccountContext{UserId: "", TenantId: "default", LedgerId: "default"}, wantCode: codes.InvalidArgument, wantMessage: errorInvalidUserID},
+		{name: "invalid ledger id", account: &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: ""}, wantCode: codes.InvalidArgument, wantMessage: errorInvalidLedgerID},
+		{name: "invalid tenant id", account: &creditv1.AccountContext{UserId: "user", TenantId: "unauthorized", LedgerId: "default"}, wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized"},
 	}
 	for _, testCase := range testCases {
 		testCase := testCase
@@ -1540,8 +1562,8 @@ func TestCreditServiceServerBatchAccountContextValidation(test *testing.T) {
 				Account:    testCase.account,
 				Operations: []*creditv1.BatchOperation{{OperationId: "grant-1", Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{AmountCents: 1, IdempotencyKey: "grant-1", MetadataJson: "{}"}}}},
 			})
-			if status.Code(err) != codes.InvalidArgument {
-				test.Fatalf("expected invalid argument, got %v", status.Code(err))
+			if status.Code(err) != testCase.wantCode {
+				test.Fatalf("expected %v, got %v", testCase.wantCode, status.Code(err))
 			}
 			if status.Convert(err).Message() != testCase.wantMessage {
 				test.Fatalf("expected %q, got %q", testCase.wantMessage, status.Convert(err).Message())
@@ -1556,7 +1578,7 @@ func TestCreditServiceServerBatchOperationValidationErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 	ctx := context.Background()
 	account := &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"}
 
@@ -1686,7 +1708,7 @@ func TestCreditServiceServerBatchMapsServiceErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("service init: %v", err)
 	}
-	server := NewCreditServiceServer(service)
+	server := NewCreditServiceServer(service, []string{"default"})
 	_, err = server.Batch(context.Background(), &creditv1.BatchRequest{
 		Account: &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"},
 		Operations: []*creditv1.BatchOperation{
@@ -1707,7 +1729,7 @@ func TestCreditServiceServerBatchSupportsReserveCaptureAndRelease(test *testing.
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -1791,7 +1813,7 @@ func TestCreditServiceServerBatchSupportsRefundByOriginalIdempotencyKey(test *te
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -1857,7 +1879,7 @@ func TestCreditServiceServerBatchSupportsRefundByOriginalEntryID(test *testing.T
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -1930,7 +1952,7 @@ func TestCreditServiceServerBatchRefundRejectsIdempotencyKeyConflictWithNonRefun
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -2003,7 +2025,7 @@ func TestCreditServiceServerBatchRefundOverRefundRejected(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -2025,7 +2047,7 @@ func TestCreditServiceServerBatchRefundOverRefundRejected(test *testing.T) {
 			{
 				OperationId: "spend-1",
 				Operation: &creditv1.BatchOperation_Spend{Spend: &creditv1.BatchSpendOp{
-					AmountCents:    100,
+					AmountCents:    200,
 					IdempotencyKey: "spend-1",
 					MetadataJson:   "{}",
 				}},
@@ -2043,7 +2065,7 @@ func TestCreditServiceServerBatchRefundOverRefundRejected(test *testing.T) {
 				OperationId: "refund-2",
 				Operation: &creditv1.BatchOperation_Refund{Refund: &creditv1.BatchRefundOp{
 					Original:       &creditv1.BatchRefundOp_OriginalIdempotencyKey{OriginalIdempotencyKey: "spend-1"},
-					AmountCents:    30,
+					AmountCents:    130,
 					IdempotencyKey: "refund-2",
 					MetadataJson:   "{}",
 				}},
@@ -2068,8 +2090,8 @@ func TestCreditServiceServerBatchRefundOverRefundRejected(test *testing.T) {
 	if err != nil {
 		test.Fatalf("get balance: %v", err)
 	}
-	if balanceResponse.GetTotalCents() != 980 || balanceResponse.GetAvailableCents() != 980 {
-		test.Fatalf("expected 980/980, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
+	if balanceResponse.GetTotalCents() != 880 || balanceResponse.GetAvailableCents() != 880 {
+		test.Fatalf("expected 880/880, got total=%d available=%d", balanceResponse.GetTotalCents(), balanceResponse.GetAvailableCents())
 	}
 }
 
@@ -2079,7 +2101,7 @@ func TestCreditServiceServerListEntriesAppliesFilters(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -2152,7 +2174,7 @@ func TestCreditServiceServerBatchBestEffortReturnsPerItemResults(test *testing.T
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -2260,7 +2282,7 @@ func TestCreditServiceServerBatchTreatsDuplicateIdempotencyAsSuccess(test *testi
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -2339,7 +2361,7 @@ func TestCreditServiceServerBatchAtomicRollsBackAllMutations(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -2410,7 +2432,7 @@ func TestCreditServiceServerBatchSupportsLargeBatches(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 
 	ctx := context.Background()
 	userID := "user-123"
@@ -2506,7 +2528,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService)
+	server := NewCreditServiceServer(creditService, []string{"default"})
 	ctx := context.Background()
 
 	testCases := []struct {
@@ -2534,10 +2556,10 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 		{
 			name: "get balance invalid tenant id",
 			invoke: func() error {
-				_, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: "user", TenantId: "", LedgerId: "default"})
+				_, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: "user", TenantId: "unauthorized", LedgerId: "default"})
 				return err
 			},
-			wantCode: codes.InvalidArgument, wantMessage: errorInvalidTenantID,
+			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
 		},
 		{
 			name: "grant invalid idempotency key",
@@ -2633,11 +2655,11 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "grant invalid tenant id",
 			invoke: func() error {
 				_, err := server.Grant(ctx, &creditv1.GrantRequest{
-					UserId: "user", TenantId: "", LedgerId: "default", AmountCents: 100, IdempotencyKey: "grant-1", MetadataJson: "{}",
+					UserId: "user", TenantId: "unauthorized", LedgerId: "default", AmountCents: 100, IdempotencyKey: "grant-1", MetadataJson: "{}",
 				})
 				return err
 			},
-			wantCode: codes.InvalidArgument, wantMessage: errorInvalidTenantID,
+			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
 		},
 		{
 			name: "reserve invalid user id",
@@ -2663,11 +2685,11 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "reserve invalid tenant id",
 			invoke: func() error {
 				_, err := server.Reserve(ctx, &creditv1.ReserveRequest{
-					UserId: "user", TenantId: "", LedgerId: "default", AmountCents: 100, ReservationId: "order-1", IdempotencyKey: "reserve-1", MetadataJson: "{}",
+					UserId: "user", TenantId: "unauthorized", LedgerId: "default", AmountCents: 100, ReservationId: "order-1", IdempotencyKey: "reserve-1", MetadataJson: "{}",
 				})
 				return err
 			},
-			wantCode: codes.InvalidArgument, wantMessage: errorInvalidTenantID,
+			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
 		},
 		{
 			name: "reserve invalid amount",
@@ -2723,11 +2745,11 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "capture invalid tenant id",
 			invoke: func() error {
 				_, err := server.Capture(ctx, &creditv1.CaptureRequest{
-					UserId: "user", TenantId: "", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 100, MetadataJson: "{}",
+					UserId: "user", TenantId: "unauthorized", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 100, MetadataJson: "{}",
 				})
 				return err
 			},
-			wantCode: codes.InvalidArgument, wantMessage: errorInvalidTenantID,
+			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
 		},
 		{
 			name: "capture invalid amount",
@@ -2773,11 +2795,11 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "release invalid tenant id",
 			invoke: func() error {
 				_, err := server.Release(ctx, &creditv1.ReleaseRequest{
-					UserId: "user", TenantId: "", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "release-1", MetadataJson: "{}",
+					UserId: "user", TenantId: "unauthorized", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "release-1", MetadataJson: "{}",
 				})
 				return err
 			},
-			wantCode: codes.InvalidArgument, wantMessage: errorInvalidTenantID,
+			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
 		},
 		{
 			name: "release invalid reservation id",
@@ -2823,11 +2845,11 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "spend invalid tenant id",
 			invoke: func() error {
 				_, err := server.Spend(ctx, &creditv1.SpendRequest{
-					UserId: "user", TenantId: "", LedgerId: "default", AmountCents: 100, IdempotencyKey: "spend-1", MetadataJson: "{}",
+					UserId: "user", TenantId: "unauthorized", LedgerId: "default", AmountCents: 100, IdempotencyKey: "spend-1", MetadataJson: "{}",
 				})
 				return err
 			},
-			wantCode: codes.InvalidArgument, wantMessage: errorInvalidTenantID,
+			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
 		},
 		{
 			name: "spend invalid idempotency key",
@@ -2873,11 +2895,11 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "list entries invalid tenant id",
 			invoke: func() error {
 				_, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
-					UserId: "user", TenantId: "", LedgerId: "default", BeforeUnixUtc: 0, Limit: 1,
+					UserId: "user", TenantId: "unauthorized", LedgerId: "default", BeforeUnixUtc: 0, Limit: 1,
 				})
 				return err
 			},
-			wantCode: codes.InvalidArgument, wantMessage: errorInvalidTenantID,
+			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
 		},
 		{
 			name: "list entries invalid entry type",
@@ -2937,7 +2959,7 @@ func TestGetBalanceMapsServiceErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("service init: %v", err)
 	}
-	server := NewCreditServiceServer(service)
+	server := NewCreditServiceServer(service, []string{"default"})
 	_, err = server.GetBalance(context.Background(), &creditv1.BalanceRequest{
 		UserId: "user", TenantId: "default", LedgerId: "default",
 	})

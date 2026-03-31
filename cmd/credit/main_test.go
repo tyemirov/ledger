@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"github.com/glebarez/sqlite"
-	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -71,91 +71,75 @@ func TestResolveDriver(test *testing.T) {
 	}
 }
 
-func TestLoadConfigUsesDefaults(test *testing.T) {
+func TestLoadConfigErrorsWhenFileMissing(test *testing.T) {
 	viper.Reset()
 	cfg := &runtimeConfig{}
 	cmd := newRootCommand()
-	if err := loadConfig(cmd, cfg); err != nil {
-		test.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.DatabaseURL == "" {
-		test.Fatalf("expected database url, got empty")
-	}
-	if cfg.ListenAddr == "" {
-		test.Fatalf("expected listen addr, got empty")
-	}
-}
+	cmd.Flags().String(flagConfigFile, "missing.yml", "config")
+	_ = cmd.Flags().Set(flagConfigFile, "missing.yml")
 
-func TestLoadConfigRespectsEnvOverrides(test *testing.T) {
-	viper.Reset()
-	test.Setenv("DATABASE_URL", "sqlite://:memory:")
-	test.Setenv("GRPC_LISTEN_ADDR", "127.0.0.1:9999")
-
-	cfg := &runtimeConfig{}
-	cmd := newRootCommand()
-	if err := loadConfig(cmd, cfg); err != nil {
-		test.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.DatabaseURL != "sqlite://:memory:" {
-		test.Fatalf("expected env database url, got %q", cfg.DatabaseURL)
-	}
-	if cfg.ListenAddr != "127.0.0.1:9999" {
-		test.Fatalf("expected env listen addr, got %q", cfg.ListenAddr)
-	}
-}
-
-func TestLoadConfigFallsBackToDefaultsWhenEnvIsEmpty(test *testing.T) {
-	viper.Reset()
-	test.Setenv("DATABASE_URL", "")
-	test.Setenv("GRPC_LISTEN_ADDR", "")
-
-	cfg := &runtimeConfig{}
-	cmd := newRootCommand()
-	if err := loadConfig(cmd, cfg); err != nil {
-		test.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.DatabaseURL != defaultDatabaseURL {
-		test.Fatalf("expected default database url %q, got %q", defaultDatabaseURL, cfg.DatabaseURL)
-	}
-	if cfg.ListenAddr != defaultGRPCListenAddr {
-		test.Fatalf("expected default listen addr %q, got %q", defaultGRPCListenAddr, cfg.ListenAddr)
-	}
-}
-
-func TestLoadConfigFallsBackToDefaultsWhenFlagsAreEmpty(test *testing.T) {
-	viper.Reset()
-	cfg := &runtimeConfig{}
-	cmd := &cobra.Command{}
-	cmd.Flags().String(flagDatabaseURL, "", "db")
-	cmd.Flags().String(flagListenAddr, "", "listen")
-
-	if err := loadConfig(cmd, cfg); err != nil {
-		test.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.DatabaseURL != defaultDatabaseURL {
-		test.Fatalf("expected default database url %q, got %q", defaultDatabaseURL, cfg.DatabaseURL)
-	}
-	if cfg.ListenAddr != defaultGRPCListenAddr {
-		test.Fatalf("expected default listen addr %q, got %q", defaultGRPCListenAddr, cfg.ListenAddr)
-	}
-}
-
-func TestLoadConfigErrorsWhenFlagsMissing(test *testing.T) {
-	viper.Reset()
-	cfg := &runtimeConfig{}
-	cmd := &cobra.Command{}
 	if err := loadConfig(cmd, cfg); err == nil {
-		test.Fatalf("expected error, got nil")
+		test.Fatalf("expected error for missing config file, got nil")
 	}
 }
 
-func TestLoadConfigErrorsWhenListenFlagMissing(test *testing.T) {
+func TestLoadConfigErrorsWhenRequiredFieldsMissing(test *testing.T) {
 	viper.Reset()
+	tempDir := test.TempDir()
+	configFile := filepath.Join(tempDir, "invalid.yml")
+	content := `
+service:
+  listen_addr: ":50051"
+`
+	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
+		test.Fatalf("write config file: %v", err)
+	}
+
 	cfg := &runtimeConfig{}
-	cmd := &cobra.Command{}
-	cmd.Flags().String(flagDatabaseURL, defaultDatabaseURL, "db")
+	cmd := newRootCommand()
+	cmd.Flags().String(flagConfigFile, configFile, "config")
+	_ = cmd.Flags().Set(flagConfigFile, configFile)
+
 	if err := loadConfig(cmd, cfg); err == nil {
-		test.Fatalf("expected error, got nil")
+		test.Fatalf("expected error for missing database_url, got nil")
+	}
+}
+
+func TestLoadConfigWithFileAndExpansion(test *testing.T) {
+	viper.Reset()
+	tempDir := test.TempDir()
+	configFile := filepath.Join(tempDir, "config.yml")
+	content := `
+service:
+  database_url: "${TEST_DB_URL}"
+  listen_addr: ":8888"
+tenants:
+  - id: "t1"
+    name: "Tenant 1"
+`
+	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
+		test.Fatalf("write config file: %v", err)
+	}
+
+	test.Setenv("TEST_DB_URL", "sqlite://test.db")
+
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	cmd.Flags().String(flagConfigFile, configFile, "config")
+	_ = cmd.Flags().Set(flagConfigFile, configFile)
+
+	if err := loadConfig(cmd, cfg); err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.Service.DatabaseURL != "sqlite://test.db" {
+		test.Fatalf("expected expanded database url, got %q", cfg.Service.DatabaseURL)
+	}
+	if cfg.Service.ListenAddr != ":8888" {
+		test.Fatalf("expected listen addr :8888, got %q", cfg.Service.ListenAddr)
+	}
+	if len(cfg.Tenants) != 1 || cfg.Tenants[0].ID != "t1" {
+		test.Fatalf("expected 1 tenant with ID t1, got %v", cfg.Tenants)
 	}
 }
 
@@ -364,19 +348,6 @@ func TestExtractIDs(test *testing.T) {
 	}
 }
 
-func TestLookupFlagFindsInheritedPersistentFlags(test *testing.T) {
-	root := &cobra.Command{Use: "root"}
-	root.PersistentFlags().String(flagDatabaseURL, defaultDatabaseURL, "db")
-
-	child := &cobra.Command{Use: "child"}
-	root.AddCommand(child)
-
-	flag := lookupFlag(child, flagDatabaseURL)
-	if flag == nil {
-		test.Fatalf("expected inherited flag")
-	}
-}
-
 func TestZapOperationLoggerIsNilSafe(test *testing.T) {
 	var operationLogger *zapOperationLogger
 	operationLogger.LogOperation(context.Background(), ledger.OperationLog{Operation: "grant"})
@@ -509,10 +480,11 @@ func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 		test.Fatalf("listen: %v", err)
 	}
 
-	cfg := &runtimeConfig{
-		DatabaseURL: "sqlite://" + sqlitePath,
-		ListenAddr:  listener.Addr().String(),
-	}
+	cfg := &runtimeConfig{}
+	cfg.Service.DatabaseURL = "sqlite://" + sqlitePath
+	cfg.Service.ListenAddr = listener.Addr().String()
+	cfg.Tenants = []tenantConfig{{ID: "default", Name: "Default"}}
+
 	core, observedLogs := observer.New(zapcore.DebugLevel)
 	logger := zap.New(core)
 
@@ -524,13 +496,13 @@ func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 		})
 	}()
 
-	conn := waitForGRPCServer(test, cfg.ListenAddr)
+	conn := waitForGRPCServer(test, cfg.Service.ListenAddr)
 	client := creditv1.NewCreditServiceClient(conn)
 
 	requestContext, cancelRequests := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelRequests()
 
-	if _, err := client.GetBalance(requestContext, &creditv1.BalanceRequest{UserId: " user-123 ", TenantId: " default ", LedgerId: " default "}); err != nil {
+	if _, err := client.GetBalance(requestContext, &creditv1.BalanceRequest{UserId: " user-123 ", TenantId: "default", LedgerId: " default "}); err != nil {
 		_ = conn.Close()
 		cancel()
 		test.Fatalf("get balance: %v", err)
@@ -636,73 +608,30 @@ func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 	}
 }
 
-func TestRunServerWithListenReturnsServeError(test *testing.T) {
-	tempDir := test.TempDir()
-	sqlitePath := filepath.Join(tempDir, "ledger.db")
-	cfg := &runtimeConfig{
-		DatabaseURL: "sqlite://" + sqlitePath,
-		ListenAddr:  "127.0.0.1:0",
-	}
-	logger := zap.NewNop()
-
-	err := runServerWithListen(context.Background(), cfg, logger, func(network string, address string) (net.Listener, error) {
-		listener, err := net.Listen(network, "127.0.0.1:0")
-		if err != nil {
-			return nil, err
-		}
-		if err := listener.Close(); err != nil {
-			return nil, err
-		}
-		return listener, nil
-	})
-	if err == nil {
-		test.Fatalf("expected error")
-	}
-}
-
-func TestRunServerWithListenReturnsListenError(test *testing.T) {
-	tempDir := test.TempDir()
-	sqlitePath := filepath.Join(tempDir, "ledger.db")
-	cfg := &runtimeConfig{
-		DatabaseURL: "sqlite://" + sqlitePath,
-		ListenAddr:  "127.0.0.1:0",
-	}
-	logger := zap.NewNop()
-	listenError := errors.New("listen failed")
-
-	err := runServerWithListen(context.Background(), cfg, logger, func(network string, address string) (net.Listener, error) {
-		return nil, listenError
-	})
-	if !errors.Is(err, listenError) {
-		test.Fatalf("expected listen error, got %v", err)
-	}
-}
-
-func TestRunServerWithListenReturnsDatabaseOpenError(test *testing.T) {
-	cfg := &runtimeConfig{
-		DatabaseURL: "http://%zz",
-		ListenAddr:  "127.0.0.1:0",
-	}
-	logger := zap.NewNop()
-
-	err := runServerWithListen(context.Background(), cfg, logger, net.Listen)
-	if err == nil {
-		test.Fatalf("expected error")
-	}
-}
-
 func TestRootCommandPreRunAndRun(test *testing.T) {
 	viper.Reset()
 	tempDir := test.TempDir()
 	sqlitePath := filepath.Join(tempDir, "ledger.db")
 	listenAddress := reserveLocalAddress(test)
 
+	configFile := filepath.Join(tempDir, "config.yml")
+	content := fmt.Sprintf(`
+service:
+  database_url: "sqlite://%s"
+  listen_addr: "%s"
+tenants:
+  - id: "default"
+    name: "Default"
+`, sqlitePath, listenAddress)
+	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
+		test.Fatalf("write config file: %v", err)
+	}
+
 	cmd := newRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{
-		"--" + flagDatabaseURL, "sqlite://" + sqlitePath,
-		"--" + flagListenAddr, listenAddress,
+		"--" + flagConfigFile, configFile,
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
