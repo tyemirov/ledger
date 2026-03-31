@@ -1,13 +1,16 @@
 # syntax=docker/dockerfile:1
-FROM golang:1.25 AS build
+FROM --platform=$BUILDPLATFORM golang:1.25 AS build
 
-ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+ARG TARGETOS
+ARG TARGETARCH
+
+ENV CGO_ENABLED=0
 
 WORKDIR /app
 COPY backend/go.mod backend/go.sum ./backend/
 RUN cd backend && go mod download
 COPY backend ./backend
-RUN cd backend && go build -o /out/demo ./cmd/demo
+RUN cd backend && GOOS="${TARGETOS:-$(go env GOOS)}" GOARCH="${TARGETARCH:-$(go env GOARCH)}" go build -o /out/demo ./cmd/demo
 
 FROM alpine:3.20
 
