@@ -4,6 +4,30 @@
 
 - No unreleased items yet.
 
+
+## [v1.0.1] - 2026-03-31
+
+### Features ✨
+- Added mandatory per-tenant bearer token authentication for gRPC requests.
+- Introduced tenant secret key configuration and validation.
+- Updated demo backend to support and require ledger secret key for authentication.
+
+### Improvements ⚙️
+- Enhanced README with detailed authentication and tenant secret key usage instructions.
+- Improved environment variable documentation including tenant tokens.
+- Updated all example grpcurl commands to include authorization headers.
+- Strengthened config validation for the ledger secret key.
+
+### Bug Fixes 🐛
+- _No changes._
+
+### Testing 🧪
+- _No changes._
+
+### Docs 📚
+- Added sections on authentication, tenant secret keys, and improved API usage examples.
+- Documented environment variables for tenant secret keys and usage in demo project.
+- Updated integration and API documentation to reflect secure service-to-service communication.
 ## [v1.0.0] - 2026-03-31
 
 ### Features ✨
