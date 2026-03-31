@@ -26,6 +26,18 @@ import (
 
 var errUnimplemented = errors.New("unimplemented")
 
+type ledgerBearerAuth struct {
+	token string
+}
+
+func (a ledgerBearerAuth) GetRequestMetadata(ctx context.Context, uri ...string) (map[string]string, error) {
+	return map[string]string{"authorization": "Bearer " + a.token}, nil
+}
+
+func (a ledgerBearerAuth) RequireTransportSecurity() bool {
+	return false
+}
+
 // Run boots the HTTP façade using the supplied configuration.
 func Run(ctx context.Context, cfg Config) error {
 	logger, err := zap.NewProduction()
@@ -40,6 +52,7 @@ func Run(ctx context.Context, cfg Config) error {
 	} else {
 		dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")))
 	}
+	dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(ledgerBearerAuth{token: cfg.LedgerSecretKey}))
 	conn, err := grpc.NewClient(cfg.LedgerAddress, dialOptions...)
 	if err != nil {
 		return fmt.Errorf("connect ledger: %w", err)

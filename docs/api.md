@@ -14,6 +14,27 @@ Every mutation and query is scoped to an **account** identified by:
 
 Idempotency keys are enforced **per account**.
 
+## Authentication
+
+Every gRPC request must include the `authorization` metadata header:
+
+```
+authorization: Bearer <tenant_secret_key>
+```
+
+The server extracts `tenant_id` from the request body, looks up the corresponding `secret_key` in the tenant configuration (`config.yml`), and validates the Bearer token.
+
+| Failure reason          | gRPC code          | Message                            |
+| ----------------------- | ------------------ | ---------------------------------- |
+| Missing `tenant_id`     | `Unauthenticated`  | `missing tenant_id`               |
+| Unknown tenant          | `PermissionDenied` | `tenant "<id>" is not authorized` |
+| Missing metadata        | `Unauthenticated`  | `missing metadata`                |
+| Missing `authorization` | `Unauthenticated`  | `missing authorization header`    |
+| Wrong format            | `Unauthenticated`  | `invalid authorization header format` |
+| Wrong secret            | `Unauthenticated`  | `invalid secret key`              |
+
+Tenant secrets are configured per tenant in `config.yml` and support environment variable expansion (e.g., `${MY_SECRET:-fallback}`).
+
 ## Data Model
 
 ### Entries (append-only)

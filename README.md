@@ -39,9 +39,17 @@ It is intentionally **application-agnostic** — you decide when and why credits
 * `internal/grpcserver` – gRPC API bindings
 * `api/credit/v1` – protobuf definitions
 
-### Network exposure and auth
+### Authentication
 
-The ledger gRPC server does not implement end-user authentication. Deploy it on a private interface (loopback/cluster-internal) and front it with an HTTP gateway that performs session validation and enforces request rules. In Compose/Kubernetes, point the gateway at `ledger:50051`/`localhost:50051` on the internal network and expose only the gateway externally. Add mTLS or a JWT-validating interceptor at the gRPC layer only if future topologies require crossing trust boundaries.
+Every gRPC request must include an `authorization` metadata header carrying the per-tenant Bearer token:
+
+```
+authorization: Bearer <tenant_secret_key>
+```
+
+The server extracts `tenant_id` from the request body, looks up the matching `secret_key` in `config.yml`, and verifies the token. Requests that fail authentication receive a gRPC `Unauthenticated` code; requests for an unknown tenant receive `PermissionDenied`.
+
+Deploy the gRPC port on a private interface or cluster-internal network and front it with an HTTP gateway for end-user session validation. The per-tenant secret key authenticates **service-to-service** traffic between your gateway and the ledger.
 
 ### Library vs. service
 
@@ -92,12 +100,32 @@ protoc \\
 
 ## Configuration
 
+The service reads `config.yml` (override with `--config <path>`). Environment variables in the YAML are expanded at startup.
+
+```yaml
+service:
+  database_url: "${DATABASE_URL:-sqlite:///tmp/ledger.db}"
+  listen_addr: "${GRPC_LISTEN_ADDR:-:50051}"
+
+tenants:
+  - id: "default"
+    name: "Default Tenant"
+    secret_key: "${DEFAULT_TENANT_SECRET:-default-secret}"
+  - id: "demo"
+    name: "Demo Tenant"
+    secret_key: "${DEMO_TENANT_SECRET:-demo-secret}"
+```
+
+Each tenant requires a non-empty `id` and `secret_key`. Clients must send the matching secret as a Bearer token in the `authorization` gRPC metadata header (see [Authentication](#authentication)).
+
 Environment variables:
 
-| Variable           | Default                                                              | Description                  |
-| ------------------ | -------------------------------------------------------------------- | ---------------------------- |
-| `DATABASE_URL`     | `sqlite:///tmp/ledger.db`                                             | Database connection string (supports `postgres://...` or `sqlite:///path.db`) |
-| `GRPC_LISTEN_ADDR` | `:50051`                                                             | gRPC server listen address   |
+| Variable                | Default                   | Description                                                    |
+| ----------------------- | ------------------------- | -------------------------------------------------------------- |
+| `DATABASE_URL`          | `sqlite:///tmp/ledger.db` | Database connection string (`postgres://...` or `sqlite:///…`) |
+| `GRPC_LISTEN_ADDR`      | `:50051`                  | gRPC server listen address                                     |
+| `DEFAULT_TENANT_SECRET` | `default-secret`          | Bearer token for the `default` tenant                          |
+| `DEMO_TENANT_SECRET`    | `demo-secret`             | Bearer token for the `demo` tenant                             |
 
 ---
 
@@ -106,13 +134,14 @@ Environment variables:
 ```bash
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/credit?sslmode=disable \
 GRPC_LISTEN_ADDR=:50051 \
+DEFAULT_TENANT_SECRET=my-secret \
 go run ./cmd/credit
 ```
 To build a standalone binary named `ledgerd`:
 
 ```bash
 go build -o ledgerd ./cmd/credit
-./ledgerd
+DEFAULT_TENANT_SECRET=my-secret ./ledgerd
 ```
 
 ---
@@ -126,7 +155,10 @@ Mutation RPCs return `entry_id` + `created_unix_utc` so clients can correlate re
 ### Check balance
 
 ```bash
-grpcurl -plaintext -d '{"tenant_id":"default","user_id":"user123","ledger_id":"default"}' localhost:50051 credit.v1.CreditService/GetBalance
+grpcurl -plaintext \
+  -H 'authorization: Bearer default-secret' \
+  -d '{"tenant_id":"default","user_id":"user123","ledger_id":"default"}' \
+  localhost:50051 credit.v1.CreditService/GetBalance
 ```
 
 Response:
@@ -141,69 +173,79 @@ Response:
 ### Grant credit
 
 ```bash
-grpcurl -plaintext -d '{
-  "tenant_id":"default",
-  "user_id":"user123",
-  "ledger_id":"default",
-  "amount_cents": 1000,
-  "idempotency_key":"grant-1",
-  "expires_at_unix_utc":0,
-  "metadata_json":"{\"reason\":\"signup_bonus\"}"
-}' localhost:50051 credit.v1.CreditService/Grant
+grpcurl -plaintext \
+  -H 'authorization: Bearer default-secret' \
+  -d '{
+    "tenant_id":"default",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "amount_cents": 1000,
+    "idempotency_key":"grant-1",
+    "expires_at_unix_utc":0,
+    "metadata_json":"{\"reason\":\"signup_bonus\"}"
+  }' localhost:50051 credit.v1.CreditService/Grant
 ```
 
 ### Reserve credit
 
 ```bash
-grpcurl -plaintext -d '{
-  "tenant_id":"default",
-  "user_id":"user123",
-  "ledger_id":"default",
-  "amount_cents": 500,
-  "reservation_id":"order-555",
-  "idempotency_key":"reserve-1",
-  "metadata_json":"{\"order_id\":555}"
-}' localhost:50051 credit.v1.CreditService/Reserve
+grpcurl -plaintext \
+  -H 'authorization: Bearer default-secret' \
+  -d '{
+    "tenant_id":"default",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "amount_cents": 500,
+    "reservation_id":"order-555",
+    "idempotency_key":"reserve-1",
+    "metadata_json":"{\"order_id\":555}"
+  }' localhost:50051 credit.v1.CreditService/Reserve
 ```
 
 ### Capture reservation
 
 ```bash
-grpcurl -plaintext -d '{
-  "tenant_id":"default",
-  "user_id":"user123",
-  "ledger_id":"default",
-  "reservation_id":"order-555",
-  "idempotency_key":"capture-1",
-  "amount_cents":500,
-  "metadata_json":"{\"order_id\":555}"
-}' localhost:50051 credit.v1.CreditService/Capture
+grpcurl -plaintext \
+  -H 'authorization: Bearer default-secret' \
+  -d '{
+    "tenant_id":"default",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "reservation_id":"order-555",
+    "idempotency_key":"capture-1",
+    "amount_cents":500,
+    "metadata_json":"{\"order_id\":555}"
+  }' localhost:50051 credit.v1.CreditService/Capture
 ```
 
 ### Release reservation
 
 ```bash
-grpcurl -plaintext -d '{
-  "tenant_id":"default",
-  "user_id":"user123",
-  "ledger_id":"default",
-  "reservation_id":"order-555",
-  "idempotency_key":"release-1",
-  "metadata_json":"{\"order_id\":555}"
-}' localhost:50051 credit.v1.CreditService/Release
+grpcurl -plaintext \
+  -H 'authorization: Bearer default-secret' \
+  -d '{
+    "tenant_id":"default",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "reservation_id":"order-555",
+    "idempotency_key":"release-1",
+    "metadata_json":"{\"order_id\":555}"
+  }' localhost:50051 credit.v1.CreditService/Release
 ```
 
 ### Spend without reservation
 
 ```bash
-grpcurl -plaintext -d '{
-  "tenant_id":"default",
-  "user_id":"user123",
-  "ledger_id":"default",
-  "amount_cents": 200,
-  "idempotency_key":"spend-1",
-  "metadata_json":"{\"action\":\"purchase\"}"
-}' localhost:50051 credit.v1.CreditService/Spend
+grpcurl -plaintext \
+  -H 'authorization: Bearer default-secret' \
+  -d '{
+    "tenant_id":"default",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "amount_cents": 200,
+    "idempotency_key":"spend-1",
+    "metadata_json":"{\"action\":\"purchase\"}"
+  }' localhost:50051 credit.v1.CreditService/Spend
 ```
 
 ### Refund a debit (spend/capture)
@@ -211,15 +253,17 @@ grpcurl -plaintext -d '{
 Refunds are first-class entries linked to an original debit entry; the ledger enforces that refunds cannot exceed the original debit amount.
 
 ```bash
-grpcurl -plaintext -d '{
-  "tenant_id":"default",
-  "user_id":"user123",
-  "ledger_id":"default",
-  "original_idempotency_key":"spend-1",
-  "amount_cents": 50,
-  "idempotency_key":"refund-1",
-  "metadata_json":"{\"reason\":\"reimbursement\"}"
-}' localhost:50051 credit.v1.CreditService/Refund
+grpcurl -plaintext \
+  -H 'authorization: Bearer default-secret' \
+  -d '{
+    "tenant_id":"default",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "original_idempotency_key":"spend-1",
+    "amount_cents": 50,
+    "idempotency_key":"refund-1",
+    "metadata_json":"{\"reason\":\"reimbursement\"}"
+  }' localhost:50051 credit.v1.CreditService/Refund
 ```
 
 ### Batch operations (high volume)
@@ -227,67 +271,75 @@ grpcurl -plaintext -d '{
 Use `Batch` to execute many mutations for a single account in one request. Duplicates are surfaced per-item via `duplicate=true`.
 
 ```bash
-grpcurl -plaintext -d '{
-  "account": { "tenant_id":"default", "user_id":"user123", "ledger_id":"default" },
-  "atomic": false,
-  "operations": [
-    {
-      "operation_id": "refund-1",
-      "refund": {
-        "original_idempotency_key": "spend-1",
-        "amount_cents": 50,
-        "idempotency_key": "refund-1",
-        "metadata_json": "{\"reason\":\"reimbursement\"}"
+grpcurl -plaintext \
+  -H 'authorization: Bearer default-secret' \
+  -d '{
+    "account": { "tenant_id":"default", "user_id":"user123", "ledger_id":"default" },
+    "atomic": false,
+    "operations": [
+      {
+        "operation_id": "refund-1",
+        "refund": {
+          "original_idempotency_key": "spend-1",
+          "amount_cents": 50,
+          "idempotency_key": "refund-1",
+          "metadata_json": "{\"reason\":\"reimbursement\"}"
+        }
+      },
+      {
+        "operation_id": "refund-2",
+        "refund": {
+          "original_idempotency_key": "spend-1",
+          "amount_cents": 25,
+          "idempotency_key": "refund-2",
+          "metadata_json": "{\"reason\":\"reimbursement\"}"
+        }
       }
-    },
-    {
-      "operation_id": "refund-2",
-      "refund": {
-        "original_idempotency_key": "spend-1",
-        "amount_cents": 25,
-        "idempotency_key": "refund-2",
-        "metadata_json": "{\"reason\":\"reimbursement\"}"
-      }
-    }
-  ]
-}' localhost:50051 credit.v1.CreditService/Batch
+    ]
+  }' localhost:50051 credit.v1.CreditService/Batch
 ```
 
 ### Get reservation state
 
 ```bash
-grpcurl -plaintext -d '{
-  "tenant_id":"default",
-  "user_id":"user123",
-  "ledger_id":"default",
-  "reservation_id":"order-555"
-}' localhost:50051 credit.v1.CreditService/GetReservation
+grpcurl -plaintext \
+  -H 'authorization: Bearer default-secret' \
+  -d '{
+    "tenant_id":"default",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "reservation_id":"order-555"
+  }' localhost:50051 credit.v1.CreditService/GetReservation
 ```
 
 ### List reservations
 
 ```bash
-grpcurl -plaintext -d '{
-  "tenant_id":"default",
-  "user_id":"user123",
-  "ledger_id":"default",
-  "limit": 20,
-  "statuses": ["active", "captured", "released"]
-}' localhost:50051 credit.v1.CreditService/ListReservations
+grpcurl -plaintext \
+  -H 'authorization: Bearer default-secret' \
+  -d '{
+    "tenant_id":"default",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "limit": 20,
+    "statuses": ["active", "captured", "released"]
+  }' localhost:50051 credit.v1.CreditService/ListReservations
 ```
 
 ### List ledger entries
 
 ```bash
-grpcurl -plaintext -d '{
-  "tenant_id":"default",
-  "user_id":"user123",
-  "ledger_id":"default",
-  "types": ["refund", "spend", "grant"],
-  "idempotency_key_prefix":"refund",
-  "before_unix_utc": 1893456000,
-  "limit": 20
-}' localhost:50051 credit.v1.CreditService/ListEntries
+grpcurl -plaintext \
+  -H 'authorization: Bearer default-secret' \
+  -d '{
+    "tenant_id":"default",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "types": ["refund", "spend", "grant"],
+    "idempotency_key_prefix":"refund",
+    "before_unix_utc": 1893456000,
+    "limit": 20
+  }' localhost:50051 credit.v1.CreditService/ListEntries
 ```
 
 ---
@@ -299,7 +351,7 @@ Use the provided `Makefile` targets for local tooling:
 ```bash
 make fmt   # verifies gofmt formatting
 make lint  # runs go vet, staticcheck, and ineffassign
-make test  # executes go test with >=95% coverage enforcement for internal packages
+make test  # executes go test with 100% coverage enforcement
 make ci    # runs fmt + lint + test
 ```
 

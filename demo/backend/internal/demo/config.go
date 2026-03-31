@@ -21,6 +21,7 @@ type Config struct {
 	LedgerAddress     string
 	LedgerInsecure    bool
 	LedgerTimeout     time.Duration
+	LedgerSecretKey   string
 	DefaultTenantID   string
 	DefaultLedgerID   string
 	AllowedOrigins    []string
@@ -40,6 +41,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.LedgerTimeout <= 0 {
 		return fmt.Errorf("ledger timeout must be greater than zero")
+	}
+	if strings.TrimSpace(cfg.LedgerSecretKey) == "" {
+		return fmt.Errorf("ledger secret key is required")
 	}
 	if strings.TrimSpace(cfg.DefaultTenantID) == "" {
 		return fmt.Errorf("default tenant id is required")

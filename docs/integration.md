@@ -15,11 +15,19 @@ DATABASE_URL=sqlite:///tmp/ledger.db GRPC_LISTEN_ADDR=:50051 ./ledgerd
 
 SQLite databases are created automatically. For Postgres, ensure the database exists and the configured user has permission to create tables and indexes. The service applies its schema automatically via GORM on startup.
 
-The server prepares the schema, listens for gRPC requests, and logs every RPC (method, duration, code, user_id when present). Deploy the gRPC port on a private interface or internal network, then front it with your gateway for authentication and rate limiting. Integration steps for any language:
+The server prepares the schema, listens for gRPC requests, and logs every RPC (method, duration, code, user_id when present). Deploy the gRPC port on a private interface or internal network, then front it with your HTTP gateway for end-user session validation. Integration steps for any language:
 
 * Generate gRPC stubs from `api/credit/v1/credit.proto`.
+* **Authenticate every request** by setting the `authorization` gRPC metadata header to `Bearer <tenant_secret_key>`. The secret must match the `secret_key` configured for the tenant in `config.yml`. Requests without a valid token receive gRPC `Unauthenticated`; requests for an unknown tenant receive `PermissionDenied`.
 * Call the relevant RPCs (`GetBalance`, `Grant`, `Spend`, `Refund`, `Reserve`, `Batch`, `ListEntries`, `GetReservation`, etc.) using `tenant_id`, `user_id`, and `ledger_id` to identify the account in the ledger.
-* Enforce authentication/authorization in your gateway; the ledger service trusts whatever `user_id` you provide.
+
+Example (Go):
+
+```go
+md := metadata.Pairs("authorization", "Bearer "+tenantSecret)
+ctx := metadata.NewOutgoingContext(ctx, md)
+resp, err := client.GetBalance(ctx, &creditv1.BalanceRequest{...})
+```
 
 See `README.md` for Docker Compose examples that pair `ledgerd` with demo applications.
 
