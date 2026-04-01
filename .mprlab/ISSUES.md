@@ -170,7 +170,7 @@ Each issue is formatted as `- [ ] [<section-letter><number>]` (`F`, `I`, `B`, `M
   - `cmd/credit` resolveDriver currently returns `file` as an unsupported database scheme when the DSN is `file://...`.
   - Ensure file-based SQLite DSNs like `file:///tmp/ledger.db` and `file::memory:?cache=shared` are treated as sqlite and continue to work.
 
-- [x] [B305] (P1) Align issue external IDs with the ISSUES.ED parser. Resolved: migrated legacy `LG-###` entries in `.mprlab/ISSUES.md` to section-coded external IDs and normalized section headings so the issue document parses cleanly again.
+- [x] [B305] (P1) Align issue external IDs with the ISSUES.ED parser. Resolved: migrated legacy `LG-###` entries in `.mprlab/ISSUES.md` to section-coded external IDs and normalized section headings, then removed remaining repo-local legacy `LG-*` doc labels that no longer map to the current tracker scheme.
 
 ## Maintenance
 
