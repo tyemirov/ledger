@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -50,13 +51,14 @@ type runtimeConfig struct {
 }
 
 var (
-	exitFunc                                                   = os.Exit
-	stderrWriter      io.Writer                                = os.Stderr
-	newLogger         func(...zap.Option) (*zap.Logger, error) = zap.NewProduction
-	openDatabaseFunc                                           = openDatabase
-	prepareSchemaFunc                                          = prepareSchema
-	newServiceFunc                                             = ledger.NewService
-	gormOpenFunc                                               = gorm.Open
+	exitFunc                                                       = os.Exit
+	stderrWriter          io.Writer                                = os.Stderr
+	newLogger             func(...zap.Option) (*zap.Logger, error) = zap.NewProduction
+	openDatabaseFunc                                               = openDatabase
+	prepareSchemaFunc                                              = prepareSchema
+	newServiceFunc                                                 = ledger.NewService
+	gormOpenFunc                                                   = gorm.Open
+	configVariablePattern                                          = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}`)
 )
 
 func main() {
@@ -111,8 +113,7 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 		return fmt.Errorf("read config file: %w", err)
 	}
 
-	// Expand environment variables within the YAML content
-	expanded := os.ExpandEnv(string(content))
+	expanded := expandConfigVariables(string(content))
 
 	v.SetConfigType("yaml")
 	if err := v.ReadConfig(strings.NewReader(expanded)); err != nil {
@@ -141,6 +142,23 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 	}
 
 	return nil
+}
+
+func expandConfigVariables(content string) string {
+	return configVariablePattern.ReplaceAllStringFunc(content, func(match string) string {
+		parts := configVariablePattern.FindStringSubmatch(match)
+		value, isSet := os.LookupEnv(parts[1])
+		if parts[2] != "" {
+			if !isSet || value == "" {
+				return parts[3]
+			}
+			return value
+		}
+		if !isSet {
+			return ""
+		}
+		return value
+	})
 }
 
 type listenFunc func(network, address string) (net.Listener, error)

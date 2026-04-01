@@ -126,7 +126,7 @@ Components:
 ## Deliverables for Implementing LG-101
 - `backend/cmd/demo` binary + supporting `backend/internal/demo/...` packages.
 - Static UI assets under `demo/ui/` with `mpr-ui` components + JS glue.
-- `demo/docker-compose.yml` (or instructions for running binaries manually) plus `.env.demoapi.example` capturing required env vars.
+- `demo/docker-compose.yml` (or instructions for running binaries manually) plus `demo/configs/.env.demoapi.example` capturing required env vars.
 - Documentation snippet (README section or `docs/demo.md`) that references this plan, lists ports, and explains how to run the demo.
 - Integration tests verifying ledger balances for the three required scenarios.
 

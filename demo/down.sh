@@ -1,1 +1,4 @@
-docker compose --env-file ../.env.postgres down --remove-orphans
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec docker compose down --remove-orphans "$@"

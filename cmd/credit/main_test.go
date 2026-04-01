@@ -199,6 +199,106 @@ tenants:
 	}
 }
 
+func TestLoadConfigWithDefaultExpansion(test *testing.T) {
+	viper.Reset()
+	tempDir := test.TempDir()
+	configFile := filepath.Join(tempDir, "config.yml")
+	content := `
+service:
+  database_url: "${TEST_DB_URL:-sqlite://default.db}"
+  listen_addr: "${TEST_LISTEN_ADDR:-:9999}"
+tenants:
+  - id: "t1"
+    name: "Tenant 1"
+    secret_key: "${TEST_TENANT_SECRET:-default-secret}"
+`
+	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
+		test.Fatalf("write config file: %v", err)
+	}
+
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	cmd.Flags().String(flagConfigFile, configFile, "config")
+	_ = cmd.Flags().Set(flagConfigFile, configFile)
+
+	if err := loadConfig(cmd, cfg); err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.Service.DatabaseURL != "sqlite://default.db" {
+		test.Fatalf("expected default database url, got %q", cfg.Service.DatabaseURL)
+	}
+	if cfg.Service.ListenAddr != ":9999" {
+		test.Fatalf("expected default listen addr, got %q", cfg.Service.ListenAddr)
+	}
+	if len(cfg.Tenants) != 1 || cfg.Tenants[0].SecretKey != "default-secret" {
+		test.Fatalf("expected default tenant secret, got %v", cfg.Tenants)
+	}
+}
+
+func TestLoadConfigDefaultExpansionUsesEnvironmentOverride(test *testing.T) {
+	viper.Reset()
+	tempDir := test.TempDir()
+	configFile := filepath.Join(tempDir, "config.yml")
+	content := `
+service:
+  database_url: "${TEST_DB_URL:-sqlite://default.db}"
+  listen_addr: "${TEST_LISTEN_ADDR:-:9999}"
+tenants:
+  - id: "t1"
+    name: "Tenant 1"
+    secret_key: "${TEST_TENANT_SECRET:-default-secret}"
+`
+	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
+		test.Fatalf("write config file: %v", err)
+	}
+
+	test.Setenv("TEST_DB_URL", "sqlite://override.db")
+	test.Setenv("TEST_LISTEN_ADDR", ":7777")
+	test.Setenv("TEST_TENANT_SECRET", "override-secret")
+
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	cmd.Flags().String(flagConfigFile, configFile, "config")
+	_ = cmd.Flags().Set(flagConfigFile, configFile)
+
+	if err := loadConfig(cmd, cfg); err != nil {
+		test.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.Service.DatabaseURL != "sqlite://override.db" {
+		test.Fatalf("expected overridden database url, got %q", cfg.Service.DatabaseURL)
+	}
+	if cfg.Service.ListenAddr != ":7777" {
+		test.Fatalf("expected overridden listen addr, got %q", cfg.Service.ListenAddr)
+	}
+	if len(cfg.Tenants) != 1 || cfg.Tenants[0].SecretKey != "override-secret" {
+		test.Fatalf("expected overridden tenant secret, got %v", cfg.Tenants)
+	}
+}
+
+func TestExpandConfigVariablesReturnsEmptyStringForUnsetVariableWithoutDefault(test *testing.T) {
+	const environmentName = "LEDGER_TEST_EXPAND_CONFIG_UNSET"
+
+	originalValue, wasSet := os.LookupEnv(environmentName)
+	if err := os.Unsetenv(environmentName); err != nil {
+		test.Fatalf("unset env: %v", err)
+	}
+	defer func() {
+		if !wasSet {
+			return
+		}
+		if err := os.Setenv(environmentName, originalValue); err != nil {
+			test.Fatalf("restore env: %v", err)
+		}
+	}()
+
+	input := fmt.Sprintf("prefix-${%s}-suffix", environmentName)
+	if got := expandConfigVariables(input); got != "prefix--suffix" {
+		test.Fatalf("expected empty expansion for unset variable, got %q", got)
+	}
+}
+
 func TestNormalizeSQLitePath(test *testing.T) {
 	tempDir := test.TempDir()
 	absolutePath := filepath.Join(tempDir, "ledger.db")

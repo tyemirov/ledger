@@ -1,116 +1,92 @@
 # Demo Stack Guide
 
-This document describes how to run the end-to-end wallet scenario that combines `ledgerd`, TAuth, the demo API, and the static UI. A more detailed plan lives under `demo/docs/lg-100-demo-plan.md` if you need the background notes.
+This demo is self-contained under `demo/`. Runtime config lives in `demo/configs/`, the UI is served through `ghttp`, and the stack can be started in one of two frontend modes:
+
+- `localhost`: plain HTTP on `http://localhost:8000`
+- `computercat`: HTTPS on `https://localhost:4443` or the computercat host name, using host TLS files
 
 ## Components
 
-1. **ledgerd** (`cmd/credit`) – append-only ledger exposed via gRPC on `:50051`.
-2. **TAuth** (`tools/TAuth`) – Google Sign-In + JWT session issuer (proxied through ghttp in the Compose workflow).
-3. **demo backend** (`backend/cmd/demo`) – HTTP façade that validates TAuth sessions and performs ledger RPCs.
-4. **ghttp** (`ghcr.io/tyemirov/ghttp`) – HTTPS entrypoint for `demo/ui` on `:4443` with proxy routes for `/api` and TAuth endpoints.
+1. `ledgerd` on `:50051`
+2. `tauth` on `:8081`
+3. `demoapi` on `:9090`
+4. `ghttp` as the UI entrypoint, with `/api`, `/auth`, `/me`, and `/tauth.js` proxied through the same origin
+
+## Config Layout
+
+- `demo/configs/config.yml`: ledger service config
+- `demo/configs/.env.ledger`: ledger runtime env
+- `demo/configs/tauth.config.yaml`: TAuth config
+- `demo/configs/.env.tauth`: TAuth runtime env
+- `demo/configs/.env.demoapi`: demo backend env
+
+The shipped demo uses the `demo` tenant and the `demo` ledger ID end to end.
 
 ## Google OAuth Client ID
 
-Before running the stack with your own Google OAuth Web client, sync the ID across the UI and TAuth by running:
+To replace the Google OAuth Web client ID:
 
 ```bash
 cd demo
 make configure-google-client-id GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
 ```
 
-The helper updates `demo/config.js`, all UI fallbacks, and both `.env.tauth` files so the `<mpr-header>` and the TAuth server agree on the same ID. Restart TAuth and reload the UI after changing the value.
+That updates `demo/config.js`, the UI fallbacks, `demo/configs/tauth.config.yaml`, and the TAuth env files in `demo/configs/`.
 
-## Manual Run (Go toolchain)
+## Start The Demo
 
-1. **ledgerd**
-   ```bash
-   DATABASE_URL=sqlite:///tmp/demo-ledger.db GRPC_LISTEN_ADDR=:50051 go run ./cmd/credit
-   ```
-2. **TAuth** (run from `tools/TAuth` and reuse its README instructions)
-   ```bash
-   cd tools/TAuth
-   APP_LISTEN_ADDR=:8081 \
-   APP_GOOGLE_WEB_CLIENT_ID="your-client-id.apps.googleusercontent.com" \
-   APP_JWT_SIGNING_KEY="secret" \
-   APP_COOKIE_DOMAIN=localhost \
-   APP_ENABLE_CORS=true \
-   APP_CORS_ALLOWED_ORIGINS=https://localhost:4443 \
-   APP_DEV_INSECURE_HTTP=true \
-   APP_DATABASE_URL=sqlite:///data/tauth.db \
-   go run ./cmd/server
-   ```
-3. **demo backend** (signing key, issuer, cookie name, and timeout must match TAuth)
-   ```bash
-   cd backend
-   DEMOAPI_LISTEN_ADDR=:9090 \
-   DEMOAPI_LEDGER_ADDR=localhost:50051 \
-   DEMOAPI_LEDGER_INSECURE=true \
-   DEMOAPI_LEDGER_TIMEOUT=3s \
-   DEMOAPI_DEFAULT_TENANT_ID=default \
-   DEMOAPI_DEFAULT_LEDGER_ID=default \
-   DEMOAPI_ALLOWED_ORIGINS=https://localhost:4443 \
-   DEMOAPI_JWT_SIGNING_KEY="secret" \
-   DEMOAPI_JWT_ISSUER=tauth \
-   DEMOAPI_JWT_COOKIE_NAME=app_session \
-   DEMOAPI_TAUTH_BASE_URL=http://localhost:8081 \
-   go run ./cmd/demo
-   ```
-4. **Static UI** (requires `ghttp` binary or Docker image)
-   ```bash
-   ghttp 4443 \
-     --directory demo/ui \
-     --tls-cert demo/certs/computercat-cert.pem \
-     --tls-key demo/certs/computercat-key.pem \
-     --proxy /api=http://localhost:9090 \
-     --proxy /auth=http://localhost:8081 \
-     --proxy /me=http://localhost:8081 \
-     --proxy /tauth.js=http://localhost:8081
-   ```
-5. Open `https://localhost:4443` and sign in via the header button. The UI will automatically bootstrap the wallet and call `/api/transactions` and `/api/purchases` as you interact with the buttons.
+From `demo/`:
 
-## Docker Compose Workflow
+```bash
+./up.sh localhost
+```
 
-The repository ships `demo/docker-compose.yml` plus env templates so you can run the entire stack with one command. The compose stack provisions Postgres for `ledgerd`, and `ledgerd` applies its schema automatically via GORM on startup.
+or:
 
-1. From the `demo/` directory, ensure the env files exist (copy templates if needed):
-   ```bash
-   cd demo
-   cp -n .env.demoapi.example .env.demoapi
-   cp -n .env.tauth.example .env.tauth
-   cd -
-   ```
-   Keep `DEMOAPI_JWT_SIGNING_KEY` aligned with the `jwt_signing_key` in `demo/tauth.config.yaml`. If you need to change the Google OAuth Web Client ID, run:
-   ```bash
-   cd demo
-   make configure-google-client-id GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
-   ```
-2. Start the stack (`ledgerd` binds to host port `50051` to follow the standard gRPC port; adjust `demo/docker-compose.yml` if your machine needs a different port). Docker Compose builds `ledgerd` from the repository `Dockerfile` (so Postgres schema changes land with the branch) and builds the demo backend from the local `demo/backend` sources:
-   ```bash
-   docker compose up --build
-   ```
-3. Visit `https://localhost:4443` (ghttp), `http://localhost:9090/api/wallet` (demo backend), and `http://localhost:8081` (TAuth) to confirm connectivity. The UI reads configuration from `/config.js` (served by ghttp), so edits to `demo/config.js` are picked up automatically on reload.
-4. Stop everything with `docker compose down`.
+```bash
+./up.sh computercat
+```
 
-Volumes `ledger_postgres_data` and `tauth_data` persist ledger entries plus refresh tokens. Remove them with `docker volume rm ledger_ledger_postgres_data ledger_tauth_data` if you need a fresh state.
+`localhost` is the default if you omit the argument.
 
-## Scenario Checklist
+Direct Compose equivalents:
 
-Once authenticated:
+```bash
+docker compose --profile localhost up --build
+docker compose --profile computercat up --build
+```
 
-1. The UI bootstraps the wallet (POST `/api/bootstrap`) via a deterministic, idempotency-safe `Grant` (client-managed bootstrap).
-2. Click **Spend 5 coins** until the **insufficient funds** state appears (POST `/api/transactions` -> `Spend`).
-3. Use **Buy coins** (5 or 10) to top up (POST `/api/purchases` -> `Grant`).
-4. Reservations: create a hold (POST `/api/reservations` -> `Reserve` + `GetReservation`), then:
-   - **Capture** (POST `/api/reservations/:id/capture` -> `Capture` + `GetReservation`)
-   - **Release** (POST `/api/reservations/:id/release` -> `Release` + `GetReservation`)
-   - **Refresh** the reservations list (GET `/api/reservations` -> `ListReservations`)
-5. Refunds: use the per-entry **Refund** action on a debit entry (POST `/api/refunds` -> `Refund`) and confirm a refund entry appears with `refund_of_entry_id` set.
-6. Batch: run a batch spend/refund (POST `/api/batch/spend` / `/api/batch/refund` -> `Batch`) and toggle **Atomic** to compare all-or-nothing vs best-effort behavior under insufficient funds.
+## Frontend Modes
 
-Monitor logs for:
+`localhost`:
+- No TLS certificates required
+- UI served at `http://localhost:8000`
 
-- Demo backend: zap logs containing `status` + `user_id` fields.
-- `ledgerd`: gRPC operations landing in the ledger.
-- `tauth`: nonce/login/refresh lifecycle.
+`computercat`:
+- Uses TLS on `:4443`
+- Expects host certificate files mounted through:
+  - `DEMO_TLS_CERT_FILE`
+  - `DEMO_TLS_KEY_FILE`
+- If those variables are unset, Compose defaults to `/media/share/Drive/exchange/certs/computercat/computercat-cert.pem` and `/media/share/Drive/exchange/certs/computercat/computercat-key.pem`
 
-The UI also surfaces toast banners for auth/sign-out events so flows remain observable without tailing logs.
+## Stop The Demo
+
+From `demo/`:
+
+```bash
+./down.sh
+```
+
+## Smoke Check
+
+After startup:
+
+1. Open the frontend for the selected profile.
+2. Sign in through the header.
+3. Confirm the wallet bootstraps and the balance appears.
+4. Spend, purchase, reserve, capture, release, refund, and batch actions should all flow through the proxied `/api` routes.
+
+Persistent volumes:
+
+- `ledger_data`
+- `tauth_data`

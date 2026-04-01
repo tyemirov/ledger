@@ -49,11 +49,11 @@ const filesToUpdate = [
   path.join(projectRoot, 'ui', 'index.html'),
 ];
 
-const tauthConfigPath = path.join(projectRoot, 'tauth.config.yaml');
+const tauthConfigPath = path.join(projectRoot, 'configs', 'tauth.config.yaml');
 
 const envFiles = [
-  path.join(projectRoot, '.env.tauth'),
-  path.join(projectRoot, '.env.tauth.example'),
+  path.join(projectRoot, 'configs', '.env.tauth'),
+  path.join(projectRoot, 'configs', '.env.tauth.example'),
 ];
 
 /**

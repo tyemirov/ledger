@@ -1,12 +1,15 @@
 # Demo TLS Certificates
 
-The demo Compose stack expects a TLS certificate/key pair for the HTTPS UI entrypoint.
+The `localhost` profile does not use TLS certificates.
 
-Place the following files in this directory (they are gitignored):
+The `computercat` profile expects a certificate/key pair on the host and mounts them into `ghttp` via:
 
-- `computercat-cert.pem`
-- `computercat-key.pem`
+- `DEMO_TLS_CERT_FILE`
+- `DEMO_TLS_KEY_FILE`
 
-These are mounted into the `ghttp` container and used with `--tls-cert` / `--tls-key`.
+If you do not set those variables, Compose defaults to the existing computercat host paths used in other repos:
 
-Note: the `ghttp` container does not run as root, so the private key must be readable by the container user (for example `chmod 0644 computercat-key.pem`).
+- `/media/share/Drive/exchange/certs/computercat/computercat-cert.pem`
+- `/media/share/Drive/exchange/certs/computercat/computercat-key.pem`
+
+This directory can still hold local copies if you want to point the env vars here instead.

@@ -108,12 +108,9 @@ service:
   listen_addr: "${GRPC_LISTEN_ADDR:-:50051}"
 
 tenants:
-  - id: "default"
-    name: "Default Tenant"
-    secret_key: "${DEFAULT_TENANT_SECRET:-default-secret}"
   - id: "demo"
     name: "Demo Tenant"
-    secret_key: "${DEMO_TENANT_SECRET:-demo-secret}"
+    secret_key: "${DEMO_TENANT_SECRET}"
 ```
 
 Each tenant requires a non-empty `id` and `secret_key`. Clients must send the matching secret as a Bearer token in the `authorization` gRPC metadata header (see [Authentication](#authentication)).
@@ -126,6 +123,20 @@ Environment variables:
 | `GRPC_LISTEN_ADDR`      | `:50051`                  | gRPC server listen address                                     |
 | `DEFAULT_TENANT_SECRET` | `default-secret`          | Bearer token for the `default` tenant                          |
 | `DEMO_TENANT_SECRET`    | `demo-secret`             | Bearer token for the `demo` tenant                             |
+
+### Generate a secret
+
+Generate a random tenant secret with:
+
+```bash
+openssl rand -hex 32
+```
+
+For example, you can assign it directly to the ledger tenant secret:
+
+```bash
+export DEFAULT_TENANT_SECRET="$(openssl rand -hex 32)"
+```
 
 ---
 
@@ -361,7 +372,7 @@ Docker Compose reads configuration from `.env.ledger`, so the container runtime 
 
 ## Database Selection
 
-The CLI defaults to SQLite when `DATABASE_URL` is not set (file path via `DATABASE_URL=sqlite:///...`). The provided Docker Compose stack provisions PostgreSQL by default; `ledgerd` applies its schema automatically via GORM on startup.
+The CLI defaults to SQLite when `DATABASE_URL` is not set (file path via `DATABASE_URL=sqlite:///...`). The provided Docker Compose stack runs SQLite by default using the `DATABASE_URL` in `.env.ledger`.
 
 To run against Postgres outside Compose, set `DATABASE_URL` to a Postgres DSN (for example `postgres://...`) and ensure the database exists. The server chooses the correct GORM driver based on the URL scheme.
 

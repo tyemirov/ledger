@@ -1,19 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: ledger-postgres
-    pull_policy: always
-    env_file:
-      - ../.env.postgres
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 3s
-      timeout: 3s
-      retries: 20
-    volumes:
-      - ledger_postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
-
   ledger:
     build:
       context: ..
@@ -21,16 +6,13 @@ services:
     image: ledger-ledger:local
     container_name: ledger-ledger
     env_file:
-      - ./.env.ledger.sqlite
-    environment:
-      - DEFAULT_TENANT_SECRET=default-secret
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - ./configs/.env.ledger
+    command: ["/srv/ledgerd", "--config", "/srv/config.yml"]
     ports:
       - "50051:50051"
     volumes:
-        - ledger_data:/srv/data
+      - ledger_data:/srv/data
+      - ./configs/config.yml:/srv/config.yml:ro
     restart: unless-stopped
 
   tauth:
@@ -38,10 +20,10 @@ services:
     container_name: ledger-tauth
     pull_policy: always
     env_file:
-      - ./.env.tauth
+      - ./configs/.env.tauth
     volumes:
       - tauth_data:/data
-      - ./tauth.config.yaml:/config.yaml:ro
+      - ./configs/tauth.config.yaml:/config.yaml:ro
     ports:
       - "8081:8080"
     restart: unless-stopped
@@ -53,18 +35,59 @@ services:
     image: ledger-demoapi:latest
     container_name: ledger-demoapi
     env_file:
-      - ./.env.demoapi
+      - ./configs/.env.demoapi
     depends_on:
-      - ledger
-      - tauth
+      ledger:
+        condition: service_started
+      tauth:
+        condition: service_started
     ports:
       - "9090:9090"
     restart: unless-stopped
 
-  ghttp:
+  frontend-localhost:
+    profiles:
+      - localhost
     image: ghcr.io/tyemirov/ghttp:latest
-    container_name: ledger-ghttp
+    container_name: ledger-ghttp-localhost
     pull_policy: always
+    depends_on:
+      demoapi:
+        condition: service_started
+      tauth:
+        condition: service_started
+    command:
+      [
+        "--directory",
+        "/data",
+        "--proxy",
+        "/api=http://demoapi:9090",
+        "--proxy",
+        "/auth=http://tauth:8080",
+        "--proxy",
+        "/me=http://tauth:8080",
+        "--proxy",
+        "/tauth.js=http://tauth:8080",
+        "8000",
+      ]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ui:/data:ro
+      - ./config.js:/data/config.js:ro
+    restart: unless-stopped
+
+  frontend-computercat:
+    profiles:
+      - computercat
+    image: ghcr.io/tyemirov/ghttp:latest
+    container_name: ledger-ghttp-computercat
+    pull_policy: always
+    depends_on:
+      demoapi:
+        condition: service_started
+      tauth:
+        condition: service_started
     command:
       [
         "--directory",
@@ -88,13 +111,10 @@ services:
     volumes:
       - ./ui:/data:ro
       - ./config.js:/data/config.js:ro
-      - ./certs:/certs:ro
-    depends_on:
-      - demoapi
-      - tauth
+      - "${DEMO_TLS_CERT_FILE:-/media/share/Drive/exchange/certs/computercat/computercat-cert.pem}:/certs/computercat-cert.pem:ro"
+      - "${DEMO_TLS_KEY_FILE:-/media/share/Drive/exchange/certs/computercat/computercat-key.pem}:/certs/computercat-key.pem:ro"
     restart: unless-stopped
 
 volumes:
-  ledger_postgres_data:
   tauth_data:
   ledger_data:
