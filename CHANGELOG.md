@@ -4,6 +4,27 @@
 
 - No unreleased items yet.
 
+## [v1.0.2] - 2026-04-01
+
+### Features ✨
+- Support for default environment variable fallback values in configuration files.
+
+### Improvements ⚙️
+- Moved agentic flow files to the `.mprlab` directory for better organization.
+- Updated Go dependencies for improved stability and performance.
+- Enhanced config loading to expand variables with default values.
+- Updated README to clarify environment variables and tenant secret generation.
+- Removed outdated environment and coverage files to clean up the repository.
+
+### Bug Fixes 🐛
+- _No changes._
+
+### Testing 🧪
+- Added tests for configuration variable expansion with defaults and environment overrides.
+
+### Docs 📚
+- Updated documentation and demo files to align with latest configuration changes.
+- Relocated multiple documentation files under `.mprlab` directory.
 
 ## [v1.0.1] - 2026-03-31
 
