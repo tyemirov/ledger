@@ -85,11 +85,13 @@ Guidelines for building the browser front end with semantic web components, Alpi
 
 ## Testing & Quality
 
-- Follows the repo-wide **Testing Philosophy** in `AGENTS.md`: inverted test pyramid, 100% coverage driven by black-box integration/end-to-end scenarios.
+- Testing follows an **inverted test pyramid**: Playwright-driven black-box integration/end-to-end tests are the primary mechanism and should drive coverage toward (approximately) 100%, with CI enforcing an agreed threshold.
 - Playwright is the standard browser automation framework; Puppeteer and other harnesses are not allowed.
-- Perform semantic testing of component visibility, accessibility, and payout correctness through Playwright scenarios.
-- `npm test` (or `make test`) runs the Playwright harness headless.
-- Use table-driven test cases.
+- For user-visible behavior, tests MUST exercise the real deployed code path through the browser (no bypassing Alpine wiring or DOM behavior).
+- Integration tests only; unit tests are prohibited.
+- Perform semantic testing of component visibility, accessibility, and behavior through Playwright scenarios.
+- `make test` runs the Playwright harness headless (it may delegate to package scripts).
+- When you have many scenarios, table-drive Playwright cases (data sets) to cover permutations.
 - Black-box tests only: assert observable behavior and events, not internal DOM wiring.
 
 ## Documentation & Refactors
@@ -114,7 +116,8 @@ Guidelines for building the browser front end with semantic web components, Alpi
 
 ## Linting & Formatting
 
-- Run ESLint manually (Dockerized). Prettier runs only when explicitly requested; never on save.
+- Run lint/format via the repo `Makefile` targets (prefer `make lint` / `make fmt` / `make ci`). If ESLint runs in Docker, the Makefile target should encapsulate that so contributors do not need ad-hoc commands.
+- Prettier runs only when explicitly requested; never on save.
 - Enforced rules include `no-unused-vars`, `no-implicit-globals`, `no-var`, `prefer-const`, `eqeqeq`, and `no-magic-numbers` (allowed: -1, 0, 1, 100, 360).
 
 ## Data > Logic
