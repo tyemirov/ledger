@@ -1,0 +1,29 @@
+---
+mprlab_resources:
+  schema_version: 1
+  repo:
+    id: ledger
+    directory: ledger
+    dispatch_target: ledger
+  resources:
+    - type: make_workflow
+      name: ledger
+      targets:
+        release: release
+        publish: publish
+        deploy: deploy
+    - type: container_service
+      name: ledger-api
+      host_group: gateway
+      image: ghcr.io/tyemirov/ledger:latest
+      ports:
+        - container_port: 50051
+      compose_file: docker-compose.yml
+      compose_project: mprlab-nginx-gateway
+      runtime_assets:
+        - path: .mprlab/deploy/.env
+          example_path: .mprlab/deploy/runtime.env.example
+          destination: configs/.env.ledger
+          mode: "0600"
+        - path: .mprlab/deploy/config.yml
+          destination: configs/config.ledger.yml

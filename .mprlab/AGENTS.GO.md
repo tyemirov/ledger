@@ -29,7 +29,8 @@ Backend guidance for Go code. Follow AGENTS.md for repo-wide policies, documenta
 - Only changed files.
 - No diffs, snippets, or examples.
 - Must compile cleanly.
-- Must pass `go fmt ./... && go vet ./... && go test ./...`.
+- Must pass `make ci` (or, at minimum, `make fmt`, `make lint`, and `make test`).
+- `make lint` MUST run `go vet`, `staticcheck`, and `ineffassign`.
 
 ---
 
@@ -81,13 +82,12 @@ Backend guidance for Go code. Follow AGENTS.md for repo-wide policies, documenta
 
 ### Testing
 
-- Follows the repo-wide **Testing Philosophy** in `AGENTS.md`: inverted test pyramid, 100% coverage driven by black-box integration/end-to-end scenarios; unit tests are optional implementation guardrails.
-- No filesystem pollution.
-- Use `t.TempDir()` for temporary dirs.
-- Dependency injection for I/O.
-- Table-driven tests.
-- Mock external boundaries via interfaces.
-- Use real, integration tests with comprehensive coverage
+- Testing follows an **inverted test pyramid**: heavy bias to black-box integration and end-to-end tests.
+- Cover behavior through real entry points (HTTP endpoints, CLI commands, public APIs) and exercise the real deployed code path (routing/middleware/etc).
+- Integration tests only; unit tests are prohibited.
+- Use `t.TempDir()` for temporary dirs; no filesystem pollution.
+- When you have many scenarios, table-drive them inside an integration test harness (subtests) while still exercising real entry points.
+- Coverage should trend toward (approximately) 100% via integration/end-to-end scenarios through public entry points, with CI enforcing an agreed threshold.
 
 ---
 
@@ -140,7 +140,7 @@ Backend guidance for Go code. Follow AGENTS.md for repo-wide policies, documenta
 - Replace branching with data tables where appropriate.
 - Implement minimal, cohesive types.
 - Inject dependencies.
-- Prove with table-driven tests.
+- Prove behavior via black-box integration/end-to-end tests through public entry points.
 
 ---
 
@@ -154,5 +154,5 @@ Backend guidance for Go code. Follow AGENTS.md for repo-wide policies, documenta
 - [ ] Constants used for repeated strings.
 - [ ] zap logging; contextual errors.
 - [ ] Config via Viper; validated in `PreRunE`.
-- [ ] Table-driven tests; no filesystem pollution.
-- [ ] `go fmt`, `go vet`, `go test ./...` pass.
+- [ ] Black-box integration/end-to-end coverage through public entry points; no filesystem pollution.
+- [ ] `make fmt`, `make lint`, `make test` (or `make ci`) pass.
