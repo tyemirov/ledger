@@ -142,6 +142,16 @@ export DEFAULT_TENANT_SECRET="$(openssl rand -hex 32)"
 
 ## Running the service
 
+Production artifacts follow the repository lifecycle:
+
+```bash
+make release
+make publish
+make deploy
+```
+
+`make release` runs CI and prepares the multi-platform Ledger container archives, changelog commit, annotated tag, and release manifest entirely from local state under `.git/mprlab-release`. It performs no remote write. `make publish` pushes the exact prepared Git refs, GitHub Release assets, and container image without rebuilding. `make deploy` verifies that the published release tag and `latest` image are identical, then replaces only the gateway-owned `ledger-api` service through the dedicated Ledger gateway profile.
+
 ```bash
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/credit?sslmode=disable \
 GRPC_LISTEN_ADDR=:50051 \

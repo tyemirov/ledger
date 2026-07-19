@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-- No unreleased items yet.
+### Improvements ⚙️
+- Release preparation, publication, and deployment now use a repository-owned immutable container artifact and canonical app-owned runtime declaration.
+
+### Bug Fixes 🐛
+- Keep production reachability lint scoped to packages with non-test Go sources so black-box release-contract packages remain part of CI without being misclassified as dead production code.
 
 ## [v1.0.2] - 2026-04-01
 

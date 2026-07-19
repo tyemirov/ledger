@@ -7,9 +7,11 @@
 - **Fail fast** (dev) and **wrap errors with context** at boundaries (prod).
 - **Narrow interfaces**: accept domain types, not loose primitives, when a domain type exists.
 - **No duplicate checks** in core; once validated, don’t re-validate.
+- **No duplicated reusable literals**: define shared paths/keys/operation names/messages once and reference constants.
 - Tests target **contracts/invariants**, not defensive branches.
-- Testing follows an **inverted test pyramid**: prefer high-value black-box integration tests over unit tests; unit tests are optional implementation guardrails, not product-level acceptance tests.
-- We **strive for 100% test coverage** driven primarily by integration/black-box suites that exercise observable behavior and contracts rather than internal implementation details; replacing clunky unit tests with stronger integration coverage is encouraged.
+- **Inverted test pyramid (integration-first)**: Bias hard toward black-box integration and end-to-end tests that exercise the real code path through public entry points (HTTP endpoints, CLI commands, browser flows).
+- **Integration tests only (default)**: Unit tests are prohibited for Go and Front-End/JS work. Python may allow narrow unit tests only when explicitly permitted by `AGENTS.PY.md`, and never as a substitute for black-box coverage of user-visible behavior.
+- We **strive for (approximately) 100% test coverage** achieved via those black-box integration/end-to-end suites, with CI enforcing an agreed threshold. If coverage drops, add scenarios at the public entry points.
 
 ---
 
@@ -25,6 +27,10 @@
    - **Prod boundary**: **wrap** with operation + subject + stable code.
 
 6. **No silent fallbacks** or “best-effort” paths unless a product requirement is cited in the commit.
+7. **Timeout inflation is forbidden as a fix**: do not increase test/runtime timeouts to mask failures. Fix the underlying logic/state contract first.
+8. **Centralize reusable constants**: repeated literals (paths, filenames, operation values, shared messages, config keys) MUST have a single canonical declaration.
+9. **Go constant source of truth**: shared literals MUST be exported from a reusable package and consumed via constants, not repeated string literals.
+10. **JS constant/payload rule**: UI logic MUST use shared constants or backend-provided payload values; avoid hardcoded workflow/path literals in feature code.
 
 ---
 
@@ -43,29 +49,57 @@
 
 - Smart constructors returning `(Type, error)`; **no exported invalid zero-values**.
 - Typed/sentinel errors; wrap using `fmt.Errorf("%w: context", ErrX)`.
-- CI gates MUST pass: `go vet ./... && staticcheck ./... && ineffassign ./...`.
+- CI gates MUST pass via the repository `Makefile` targets (prefer `make ci`): `make lint` MUST run `go vet`, `staticcheck`, and `ineffassign`, and `make test` MUST run `go test`.
 
 ### Python
 
 - `@dataclass(frozen=True)` or **Pydantic if already present**.
 - Validate in `__post_init__` (or Pydantic validators); raise `ValueError` subclasses.
-- CI gate MUST pass: `mypy --strict domain service` (or `pyright` equivalent).
+- CI gates MUST pass via the repository `Makefile` targets (prefer `make ci`): `make lint` MUST run `mypy --strict` (or `pyright` equivalent), and `make test` MUST run `pytest`.
 
 ### JavaScript (vanilla ESM + JSDoc; no build step)
 
 - `// @ts-check` at top of every new/edited file.
 - JSDoc typedefs; factory functions **throw** on invalid input.
-- CI gate MUST pass: `tsc --noEmit` (type-checking only).
+- CI gates MUST pass via the repository `Makefile` targets (prefer `make ci`): `make lint` and/or `make test` MUST run `tsc --noEmit` (type-checking only) for edited files.
 
 ---
 
 ## D. Prohibited patterns (auto-reject)
 
+- Adding unit tests in Go or Front-End/JS work.
+- Using unit tests as product-correctness coverage for externally observable behavior. If a behavior is user-visible, it must be covered via a black-box integration/end-to-end test through a public entry point (even if a stack allows narrow unit tests for pure helpers).
+- Tests that claim product correctness but bypass the real entry point (HTTP routing/middleware, CLI entrypoint, browser flow) as the only validation.
 - Exporting partially initialized/invalid structs/classes.
 - Swallowing errors (`catch {}` with no action; `if err == nil { /* ignore */ }`).
 - Re-validating a domain object already built by a smart constructor.
-- Adding “best-effort” fallback without a cited product requirement.
+- Adding "best-effort" fallback without a cited product requirement.
 - Boolean/flag parameters that conflate behaviors when a sum-type or distinct API is clearer.
+- Increasing timeouts/waits as the primary response to flakiness or failing behavior.
+- Repeating shared string literals across files when a canonical constant exists.
+- Hardcoding frontend workflow/path/message literals when the backend payload already provides those values.
+
+---
+
+## M. Constants & Literals Centralization (binding)
+
+- Treat reusable literals as API: define once, reuse everywhere.
+- Canonical constants must be imported/consumed across packages/modules instead of retyping string literals.
+- For Go shared literals, prefer exported constants in a dedicated package (for example, `issuesspec`) and use those constants in runtime code and tests.
+- For JS/frontend flows, consume backend payload fields (`message`, `operation`, `confirmationMessage`, `contextDirectory`, etc.) and shared constants modules; do not reconstruct canonical strings inline.
+- Add/maintain automated guards that fail CI when protected literals appear outside their canonical source.
+
+---
+
+## L. Timeout & waiting policy (binding)
+
+- Treat waits/timeouts as **diagnostic guards**, not correctness mechanisms.
+- For any timeout-related failure, first identify the missing precondition or stalled contract (API readiness, event delivery, state transition, lock release, etc.).
+- Required remediation order:
+1. Make the state transition explicit and observable.
+2. Gate on deterministic readiness signals.
+3. Remove or reduce blind waiting/retry loops.
+- Only after systemic remediation may timeout values be revisited, and only with a documented justification tied to an external constraint.
 
 ---
 
@@ -81,10 +115,10 @@
 
 ## F. CI gates (must wire or respect)
 
-- **Go:** `go vet ./... && staticcheck ./... && ineffassign ./...`
-- **Python:** `mypy --strict domain service` (or `pyright`)
-- **JS:** `tsc --noEmit` with `// @ts-check` present in edited files
-- **Coverage:** CI MUST enforce a coverage gate aligned with the repo-wide testing philosophy in `AGENTS.md`—integration/black-box suites should drive effective coverage to (approximately) 100% for code under test, and CI should fail when coverage drops below the agreed threshold.
+- **Go:** `make lint` (must run `go vet`, `staticcheck`, `ineffassign`) and `make test` (or `make ci`).
+- **Python:** `make lint` (mypy/pyright) and `make test` (pytest), as wired in the repository.
+- **JS:** `make lint` and/or `make test` must include `tsc --noEmit` for edited files, with `// @ts-check` present in edited modules.
+- **Coverage:** CI MUST enforce a coverage gate aligned with the repo-wide testing philosophy in `AGENTS.md`—integration/black-box suites should drive effective coverage toward (approximately) 100% for code under test, and CI should fail when coverage drops below the agreed threshold.
 
 > Failing any gate = patch is not acceptable.
 
@@ -184,7 +218,7 @@ feat(domain): introduce {DomainType} smart constructor; move validation to edge
 - adapt handlers/adapters to construct at edges
 - remove interior defensive checks (validated once at boundary)
 - wrap errors with operation+subject+stable code (e.g., user.create.invalid_email)
-- CI: {go vet/staticcheck | ineffassign | mypy/pyright | tsc --noEmit} passing
+- CI: `make fmt`, `make lint`, `make test` (or `make ci`) passing
 ```
 
 ---
@@ -207,33 +241,14 @@ feat(domain): introduce {DomainType} smart constructor; move validation to edge
 
 ### CI snippets
 
-**Go (Makefile)**
+Run the repo's CI gates via `make` (preferred) and always prefix commands with `timeout`:
 
-```
-.PHONY: verify
-verify:
-	go vet ./...
-	staticcheck ./...
-	ineffassign ./...
-	go test ./... -coverprofile=coverage.out -covermode=count
-	go tool cover -func=coverage.out | awk 'END { if ($3+0 < 100.0) { print "coverage below 100%"; exit 1 } }'
-```
+```sh
+# Full suite (preferred when available)
+timeout -k 350s -s SIGKILL 350s make ci
 
-**Python (Makefile)**
-
-```
-.PHONY: verify
-verify:
-	mypy --strict domain service
-	pytest -q --cov=your_package --cov-fail-under=100
-```
-
-**JS (package.json)**
-
-```json
-{
-  "scripts": {
-    "verify": "tsc --noEmit"
-  }
-}
+# Per-target (when you need to isolate failures)
+timeout -k 30s -s SIGKILL 30s make fmt
+timeout -k 30s -s SIGKILL 30s make lint
+timeout -k 350s -s SIGKILL 350s make test
 ```

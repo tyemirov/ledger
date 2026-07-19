@@ -14,7 +14,7 @@ Docker build standards for the repository. Follow AGENTS.md for shared documenta
 
 - Always use multi-stage Dockerfiles: compile or package artifacts in an initial stage, then copy only the required outputs into a lean runtime stage.
 - Avoid elaborate build steps when an existing base image that already contains the needed tooling or dependencies can be used. Prefer composing from purpose-built images over scripting complex setups inside Dockerfiles.
-- Provide curated Dockerfile YAML samples (development and production variants) for each service so contributors consistently follow approved patterns.
+- Provide curated Dockerfile and docker-compose YAML samples (development and production variants) for each service so contributors consistently follow approved patterns.
 - Development Dockerfiles must build artifacts directly so they can exercise uncommitted or unmerged changes before they land on main.
 - Production Dockerfiles must always pull the newest base image before layering repo artifacts to ensure dependencies stay current.
 

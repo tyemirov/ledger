@@ -1,0 +1,14 @@
+service:
+  database_url: "${DATABASE_URL}"
+  listen_addr: "${GRPC_LISTEN_ADDR}"
+
+tenants:
+  - id: "ps"
+    name: "Poodle Scanner"
+    secret_key: "${POODLESCANNER_TENANT_SECRET}"
+  - id: "hecate"
+    name: "Hecate"
+    secret_key: "${HECATE_TENANT_SECRET}"
+  - id: "namesignal"
+    name: "NameSignal"
+    secret_key: "${NAMESIGNAL_TENANT_SECRET}"
