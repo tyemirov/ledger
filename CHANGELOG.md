@@ -92,6 +92,6 @@
 ### Docs 📚
 - Document ledger integration, error contracts, and API idempotency semantics
 - Refresh demo stack instructions and clarify service vs. library locations
-- Add LG-301 ledger logging documentation
+- Add ledger logging documentation
 - Remove broken and symlinked demo and documentation folders
 - Update README with demo compose commands and HTTPS entrypoint setup

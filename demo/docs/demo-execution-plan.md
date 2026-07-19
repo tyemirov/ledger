@@ -1,4 +1,4 @@
-# LG-100 Demo Execution Plan
+# Demo Execution Plan
 
 ## Objectives and Success Criteria
 - Demonstrate an end-to-end "virtual currency" experience that exercises the ledger gRPC service plus the tooling stack under `tools/`.
@@ -67,7 +67,7 @@ Components:
 | `/api/transactions` | POST | Execute the 5-coin spend scenario. Body contains optional metadata (`{ "reason": "demo" }`). Responds with `{ status: "success" }` or `{ status: "insufficient_funds" }`. | `Spend(500 cents)` using a new UUID-based idempotency key per click. Map `ErrInsufficientFunds` to HTTP 409. |
 | `/api/purchases` | POST | Buy coins (body `{ "coins": 5 }`). Validates `coins` >= 5 & multiple of 5. Grants `<coins>*100` cents. | `Grant` with metadata describing the top-up source. |
 
-- Optional: future reservation scenarios can reuse `Reserve/Capture`, but LG-100 only needs direct spends.
+- Optional: future reservation scenarios can reuse `Reserve/Capture`, but this plan only needs direct spends.
 - Responses include updated balance so UI updates without extra fetches.
 - Log structured events with zap and wrap ledger/TAuth errors per `POLICY.md`.
 - Use `context.WithTimeout` (~3s) for each gRPC call to avoid hanging the UI.
@@ -104,7 +104,7 @@ Components:
 - Provide a Dockerfile inside `demo/` that builds the demo backend from the local `demo/backend` sources when the `demo/` directory is copied to another host.
 - Provide `scripts/demo-up.sh` wrapper (optional) that exports the needed env variables and launches the binaries directly for contributors who prefer the Go toolchain over Compose.
 
-## Implementation Breakdown for LG-101
+## Implementation Breakdown
 1. **Backend scaffolding** – create `internal/demo` with:
    - Configuration loader (Viper) + `cmd/demo/main.go` entrypoint.
    - Session middleware using `sessionvalidator`.
@@ -114,20 +114,20 @@ Components:
 3. **Orchestration** – add Compose file + docs showing how to run TAuth, ledger, demo API, and ghttp together. Document port map + env variables in README or a dedicated `docs/demo/README.md`.
 4. **Testing** –
    - Go integration tests under `internal/demo` using `httptest.Server` + an in-process ledger service (instantiate `credit.Service` with the SQLite store backed by `t.TempDir()` and `grpc/test/bufconn` to avoid real sockets).
-   - UI smoke tests via Playwright (stretch) once LG-101 adds the front-end; scenario scripts click the button three times to observe success/failure/zero-state.
+   - UI smoke tests via Playwright (stretch) once the front-end lands; scenario scripts click the button three times to observe success/failure/zero-state.
 5. **CI hooks** – extend `make test` to run new backend tests; include the demo assets in `make lint` or `npm run lint` only if a JS toolchain becomes necessary (today we stay framework-free).
 
 ## Validation & Monitoring Strategy
 - Every backend endpoint logs structured fields: `user_id`, `operation`, `idempotency_key`, `coins`, latency.
 - Map ledger errors to HTTP codes (`ErrInsufficientFunds` → 409, gRPC unavailability → 503). Always relay a JSON error payload consumed by the UI.
 - UI displays toast/banners for each scenario; include telemetry hooks (optional) listening to `mpr-ui:auth:*` events to confirm login/out states.
-- Manual demo script (to be written in LG-101 docs) walks through: login → auto-grant 20 coins → click `Transact` 4 times (success, success, success, failure) → `Buy Coins (10)` → `Transact` twice to hit zero.
+- Manual demo script walks through: login → auto-grant 20 coins → click `Transact` 4 times (success, success, success, failure) → `Buy Coins (10)` → `Transact` twice to hit zero.
 
-## Deliverables for Implementing LG-101
+## Deliverables
 - `backend/cmd/demo` binary + supporting `backend/internal/demo/...` packages.
 - Static UI assets under `demo/ui/` with `mpr-ui` components + JS glue.
 - `demo/docker-compose.yml` (or instructions for running binaries manually) plus `demo/configs/.env.demoapi.example` capturing required env vars.
 - Documentation snippet (README section or `docs/demo.md`) that references this plan, lists ports, and explains how to run the demo.
 - Integration tests verifying ledger balances for the three required scenarios.
 
-Following this plan ties together every dependency under `tools/`, keeps validation at the HTTP edge (per `POLICY.md`), and gives LG-101 a concrete backlog of backend/UI tasks to implement the demo end-to-end.
+Following this plan ties together every dependency under `tools/`, keeps validation at the HTTP edge (per `POLICY.md`), and gives the demo work a concrete backlog of backend/UI tasks to implement the flow end-to-end.
