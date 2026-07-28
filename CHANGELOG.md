@@ -8,6 +8,19 @@
 ### Bug Fixes 🐛
 - Keep production reachability lint scoped to packages with non-test Go sources so black-box release-contract packages remain part of CI without being misclassified as dead production code.
 
+## [v1.0.3] - 2026-07-28
+
+- Merge pull request #73 from tyemirov/bugfix/B306-repository-owned-release
+- Merge remote-tracking branch 'origin/master' into bugfix/B306-repository-owned-release
+- chore(demo): remove .env.tauth.example from Google Client ID update script
+- docs(env): clarify runtime.env.example is non-operational and update examples
+- Merge pull request #72 from tyemirov/tyemirov/bugfix/B305-issues-id-format
+- Merge pull request #71 from tyemirov/bugfix/B306-repository-owned-release
+- Merge pull request #70 from tyemirov/tyemirov/bugfix/B305-issues-id-format
+- Fix B306 repository-owned release lifecycle
+- docs: rename demo plan file and update texts for clarity
+- docs: update issue formatting to use section-letter IDs instead of LG- prefixes
+
 ## [v1.0.2] - 2026-04-01
 
 ### Features ✨
