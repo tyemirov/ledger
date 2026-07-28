@@ -53,7 +53,6 @@ const tauthConfigPath = path.join(projectRoot, 'configs', 'tauth.config.yaml');
 
 const envFiles = [
   path.join(projectRoot, 'configs', '.env.tauth'),
-  path.join(projectRoot, 'configs', '.env.tauth.example'),
 ];
 
 /**
@@ -92,7 +91,7 @@ if (shouldUpdateLiterals) {
     }
   });
 } else {
-  console.log(`googleClientId already set to ${normalizedId}; syncing TAuth env files only.`);
+  console.log(`googleClientId already set to ${normalizedId}; syncing the private TAuth env file only.`);
 }
 
 if (fs.existsSync(tauthConfigPath)) {
