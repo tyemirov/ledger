@@ -9,6 +9,15 @@
 - Keep production reachability lint scoped to packages with non-test Go sources so black-box release-contract packages remain part of CI without being misclassified as dead production code.
 - Make `make release`, `make publish`, and `make deploy` retry-safe: exact releases verify without version bumps or rebuilds, publication never overwrites immutable assets/tags, completed remote state remains verifiable without local staging, missing images fail with an explicit diagnostic, and every release entrypoint uses the dependency-free helper through Python 3 without requiring `uv`.
 
+## [v1.0.4] - 2026-07-28
+
+- Merge pull request #74 from tyemirov/bugfix/B307-idempotent-release-lifecycle
+- test: assert canonical python3 runtime and invocations in release lifecycle
+- fix(release): invoke release_helper.py with python3 and update shebang
+- fix(release): ensure all entrypoints use Python 3 helper without uv dependency
+- docs(issues): note removal of undeclared `uv` runtime dependency in release flow
+- fix(release): make release, publish, and deploy safe and idempotent
+
 ## [v1.0.3] - 2026-07-28
 
 - Merge pull request #73 from tyemirov/bugfix/B306-repository-owned-release
