@@ -303,7 +303,7 @@ func TestContainerPublicationDoesNotRewriteExactRegistryState(t *testing.T) {
 	writeExecutableFixtureFile(
 		t,
 		filepath.Join(fixtureReleaseScripts, "release_helper.py"),
-		"#!/usr/bin/env bash\nset -euo pipefail\n[[ \"${1:-}\" == \"verify-release-artifact\" ]]\n",
+		"#!/usr/bin/env python3\nimport sys\nraise SystemExit(0 if sys.argv[1:] == [\"verify-release-artifact\"] else 1)\n",
 	)
 	writeFixtureFile(t, filepath.Join(artifactDirectory, "manifest.json"), "{\"version\":\"v1.0.0\"}\n")
 	amd64ArchiveContent := []byte("amd64 archive\n")
