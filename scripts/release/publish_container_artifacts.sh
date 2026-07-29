@@ -289,7 +289,7 @@ fi
 
 command -v gh >/dev/null 2>&1 || { echo "error: gh is required" >&2; exit 1; }
 helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release_helper.py"
-"${helper}" verify-release-artifact >/dev/null
+python3 "${helper}" verify-release-artifact >/dev/null
 release_version="$(python3 - "${artifact_dir}/manifest.json" <<'PY'
 import json
 import sys

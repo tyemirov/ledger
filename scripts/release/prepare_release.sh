@@ -106,7 +106,7 @@ cd "${repo_root}"
 if [[ -z "${helper}" ]]; then
   helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release_helper.py"
 fi
-[[ -x "${helper}" ]] || { echo "error: release helper is not executable: ${helper}" >&2; exit 1; }
+[[ -f "${helper}" ]] || { echo "error: release helper does not exist: ${helper}" >&2; exit 1; }
 
 json_value() {
   python3 - "$1" "$2" <<'PY'
@@ -189,7 +189,7 @@ release_timestamp="$(date +%Y-%m-%dT%H:%M:%S%z)"
 release_date="${release_timestamp%%T*}"
 
 run_local_preflight() {
-  if ! "${helper}" preflight --local --release-timestamp "${release_timestamp}" >"${preflight_json}"; then
+  if ! python3 "${helper}" preflight --local --release-timestamp "${release_timestamp}" >"${preflight_json}"; then
     cat "${preflight_json}"
     echo "error: local release preflight failed" >&2
     exit 1
@@ -245,7 +245,7 @@ if [[ "${#head_release_tags[@]}" -eq 1 ]]; then
   [[ "${artifact_dir}" == /* ]] || artifact_dir="${repo_root}/${artifact_dir}"
   release_artifact_state="missing"
   if [[ -d "${artifact_dir}" ]] && [[ -n "$(find "${artifact_dir}" -mindepth 1 -print -quit)" ]]; then
-    if ! "${helper}" verify-release-artifact >"${prepared_artifact_json}"; then
+    if ! python3 "${helper}" verify-release-artifact >"${prepared_artifact_json}"; then
       cat "${prepared_artifact_json}"
       echo "error: HEAD is already ${prepared_version}, but its local release artifact is invalid" >&2
       exit 1
@@ -320,7 +320,7 @@ next_version="$(sed -n '1p' <<<"${selection}")"
 boundary_tag="$(sed -n '2p' <<<"${selection}")"
 effective_scheme="$(sed -n '3p' <<<"${selection}")"
 
-"${helper}" initialize-release-artifact \
+python3 "${helper}" initialize-release-artifact \
   --version "${next_version}" \
   --source-commit "${source_commit}" \
   --release-timestamp "${release_timestamp}"
@@ -347,8 +347,8 @@ notes_args=(generate-notes --version "${next_version}" --release-date "${release
 if [[ -n "${boundary_tag}" ]]; then
   notes_args+=(--since-tag "${boundary_tag}")
 fi
-"${helper}" "${notes_args[@]}" | tee "${notes_file}"
-"${helper}" insert-changelog --notes-file "${notes_file}"
+python3 "${helper}" "${notes_args[@]}" | tee "${notes_file}"
+python3 "${helper}" insert-changelog --notes-file "${notes_file}"
 
 git add CHANGELOG.md
 if git diff --cached --quiet -- CHANGELOG.md; then
@@ -365,7 +365,7 @@ fi
 git commit -m "Release ${next_version}"
 release_commit="$(git rev-parse HEAD)"
 git tag -a "${next_version}" -m "Release ${next_version}" "${release_commit}"
-"${helper}" write-release-artifact \
+python3 "${helper}" write-release-artifact \
   --version "${next_version}" \
   --source-commit "${source_commit}" \
   --release-commit "${release_commit}" \
