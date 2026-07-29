@@ -7,6 +7,7 @@
 
 ### Bug Fixes 🐛
 - Keep production reachability lint scoped to packages with non-test Go sources so black-box release-contract packages remain part of CI without being misclassified as dead production code.
+- Make `make release`, `make publish`, and `make deploy` retry-safe: exact releases verify without version bumps or rebuilds, publication never overwrites immutable assets/tags, completed remote state remains verifiable without local staging, and missing images fail with an explicit diagnostic.
 
 ## [v1.0.3] - 2026-07-28
 
