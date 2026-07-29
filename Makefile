@@ -74,7 +74,7 @@ publish-release:
 	@RELEASE_HELPER="$(RELEASE_HELPER)" bash scripts/publish-release.sh $(PUBLISH_RELEASE_ARGS)
 
 publish: publish-release
-	@"$(RELEASE_TOOL_DIR)/publish_container_artifacts.sh"
+	@DOCKER_IMAGE="$(DOCKER_IMAGE)" PUBLISH_PLATFORMS="$(PUBLISH_PLATFORMS)" "$(RELEASE_TOOL_DIR)/publish_container_artifacts.sh"
 
 deploy:
 	@GATEWAY_DIR="$(GATEWAY_DIR)" DOCKER_IMAGE="$(DOCKER_IMAGE)" bash scripts/deploy.sh $(DEPLOY_ARGS)

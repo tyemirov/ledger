@@ -106,7 +106,7 @@ cd "${repo_root}"
 if [[ -z "${helper}" ]]; then
   helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release_helper.py"
 fi
-[[ -x "${helper}" ]] || { echo "error: release helper is not executable: ${helper}" >&2; exit 1; }
+[[ -f "${helper}" ]] || { echo "error: release helper does not exist: ${helper}" >&2; exit 1; }
 
 json_value() {
   python3 - "$1" "$2" <<'PY'
@@ -179,8 +179,9 @@ print(effective_scheme)
 
 preflight_json="$(mktemp)"
 notes_file="$(mktemp)"
+prepared_artifact_json="$(mktemp)"
 cleanup() {
-  rm -f "${preflight_json}" "${notes_file}"
+  rm -f "${preflight_json}" "${notes_file}" "${prepared_artifact_json}"
 }
 trap cleanup EXIT
 
@@ -188,7 +189,7 @@ release_timestamp="$(date +%Y-%m-%dT%H:%M:%S%z)"
 release_date="${release_timestamp%%T*}"
 
 run_local_preflight() {
-  if ! "${helper}" preflight --local --release-timestamp "${release_timestamp}" >"${preflight_json}"; then
+  if ! python3 "${helper}" preflight --local --release-timestamp "${release_timestamp}" >"${preflight_json}"; then
     cat "${preflight_json}"
     echo "error: local release preflight failed" >&2
     exit 1
@@ -200,6 +201,99 @@ echo "==> [release] Checking local release state"
 run_local_preflight
 default_branch="$(json_value "${preflight_json}" "default_branch")"
 source_commit="$(git rev-parse HEAD)"
+
+head_release_tags=()
+head_tag_output="$(git tag --points-at HEAD --list 'v*' --sort=-version:refname)"
+while IFS= read -r head_tag; do
+  [[ -n "${head_tag}" ]] || continue
+  if [[ "${head_tag}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+    head_release_tags+=("${head_tag}")
+  fi
+done <<<"${head_tag_output}"
+if [[ "${#head_release_tags[@]}" -gt 1 ]]; then
+  echo "error: multiple SemVer release tags point at HEAD: ${head_release_tags[*]}" >&2
+  exit 1
+fi
+if [[ "${#head_release_tags[@]}" -eq 1 ]]; then
+  prepared_version="${head_release_tags[0]}"
+  if [[ -n "${version}" && "${version}" != "${prepared_version}" ]]; then
+    echo "error: HEAD is already release ${prepared_version}; refusing to prepare requested ${version}" >&2
+    exit 1
+  fi
+  [[ "$(git cat-file -t "refs/tags/${prepared_version}")" == "tag" ]] || {
+    echo "error: release tag ${prepared_version} must be annotated" >&2
+    exit 1
+  }
+  release_parent_line="$(git rev-list --parents -n 1 HEAD)"
+  read -r -a release_parent_values <<<"${release_parent_line}"
+  [[ "${#release_parent_values[@]}" -eq 2 ]] || {
+    echo "error: prepared release commit must have exactly one source parent" >&2
+    exit 1
+  }
+  prepared_source_commit="${release_parent_values[1]}"
+  prepared_changed_files="$(git diff-tree --no-commit-id --name-only -r HEAD)"
+  [[ "${prepared_changed_files}" == "CHANGELOG.md" ]] || {
+    echo "error: prepared release commit must contain only CHANGELOG.md" >&2
+    exit 1
+  }
+  grep -Eq "^## \[${prepared_version//./\\.}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md || {
+    echo "error: CHANGELOG.md does not contain the exact ${prepared_version} release heading" >&2
+    exit 1
+  }
+
+  artifact_dir="$(git rev-parse --git-path mprlab-release)"
+  [[ "${artifact_dir}" == /* ]] || artifact_dir="${repo_root}/${artifact_dir}"
+  release_artifact_state="missing"
+  if [[ -d "${artifact_dir}" ]] && [[ -n "$(find "${artifact_dir}" -mindepth 1 -print -quit)" ]]; then
+    if ! python3 "${helper}" verify-release-artifact >"${prepared_artifact_json}"; then
+      cat "${prepared_artifact_json}"
+      echo "error: HEAD is already ${prepared_version}, but its local release artifact is invalid" >&2
+      exit 1
+    fi
+    prepared_manifest_path="${artifact_dir}/manifest.json"
+    python3 - "${prepared_manifest_path}" "${prepared_version}" "${source_commit}" "${prepared_source_commit}" "${default_branch}" <<'PY_PREPARED_RELEASE'
+import datetime as dt
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    manifest = json.load(handle)
+expected = {
+    "schema_version": 2,
+    "artifact_kind": "mprlab.release",
+    "version": sys.argv[2],
+    "release_commit": sys.argv[3],
+    "source_commit": sys.argv[4],
+    "default_branch": sys.argv[5],
+}
+for field, value in expected.items():
+    if manifest.get(field) != value:
+        raise SystemExit(f"prepared release manifest {field} is {manifest.get(field)!r}, expected {value!r}")
+timestamp = manifest.get("release_timestamp")
+if not isinstance(timestamp, str):
+    raise SystemExit("prepared release manifest has no release_timestamp")
+parsed_timestamp = dt.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+if parsed_timestamp.tzinfo is None or parsed_timestamp.utcoffset() is None:
+    raise SystemExit("prepared release manifest release_timestamp must include a timezone")
+PY_PREPARED_RELEASE
+    release_artifact_state="verified"
+  fi
+
+  echo "release_already_prepared=true"
+  echo "release_scope=local"
+  echo "default_branch=${default_branch}"
+  echo "version=${prepared_version}"
+  echo "source_commit=${prepared_source_commit}"
+  echo "release_commit=${source_commit}"
+  echo "release_artifact=${release_artifact_state}"
+  if [[ "${release_artifact_state}" == "verified" ]]; then
+    echo "Release ${prepared_version} is already prepared with its exact local payloads; run make publish."
+  else
+    echo "Release ${prepared_version} is already prepared and tagged; local payloads are absent, so make publish will verify the published state."
+  fi
+  exit 0
+fi
+
 selection="$(select_release "${preflight_json}")"
 next_version="$(sed -n '1p' <<<"${selection}")"
 boundary_tag="$(sed -n '2p' <<<"${selection}")"
@@ -226,7 +320,7 @@ next_version="$(sed -n '1p' <<<"${selection}")"
 boundary_tag="$(sed -n '2p' <<<"${selection}")"
 effective_scheme="$(sed -n '3p' <<<"${selection}")"
 
-"${helper}" initialize-release-artifact \
+python3 "${helper}" initialize-release-artifact \
   --version "${next_version}" \
   --source-commit "${source_commit}" \
   --release-timestamp "${release_timestamp}"
@@ -253,8 +347,8 @@ notes_args=(generate-notes --version "${next_version}" --release-date "${release
 if [[ -n "${boundary_tag}" ]]; then
   notes_args+=(--since-tag "${boundary_tag}")
 fi
-"${helper}" "${notes_args[@]}" | tee "${notes_file}"
-"${helper}" insert-changelog --notes-file "${notes_file}"
+python3 "${helper}" "${notes_args[@]}" | tee "${notes_file}"
+python3 "${helper}" insert-changelog --notes-file "${notes_file}"
 
 git add CHANGELOG.md
 if git diff --cached --quiet -- CHANGELOG.md; then
@@ -271,7 +365,7 @@ fi
 git commit -m "Release ${next_version}"
 release_commit="$(git rev-parse HEAD)"
 git tag -a "${next_version}" -m "Release ${next_version}" "${release_commit}"
-"${helper}" write-release-artifact \
+python3 "${helper}" write-release-artifact \
   --version "${next_version}" \
   --source-commit "${source_commit}" \
   --release-commit "${release_commit}" \

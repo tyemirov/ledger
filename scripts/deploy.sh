@@ -39,10 +39,37 @@ TAG="$(env_or_default DEPLOY_TAG "")"
 SKIP_IMAGE_VERIFY="false"
 SKIP_BACKEND="false"
 DEFAULT_BRANCH="master"
+temporary_directory="$(mktemp -d)"
+cleanup() {
+  rm -rf "${temporary_directory}"
+}
+trap cleanup EXIT
 
-image_digest() {
+inspect_digest() {
   local image_ref="$1"
-  docker buildx imagetools inspect "${image_ref}" 2>&1 | awk '/^Digest:/ { print $2; exit }'
+  local error_file="$2"
+  local inspect_output
+  local inspect_status
+  local digest
+
+  if inspect_output="$(timeout -k 30s -s SIGKILL 30s docker buildx imagetools inspect "${image_ref}" 2>"${error_file}")"; then
+    digest="$(awk '/^Digest:/ {print $2; exit}' <<<"${inspect_output}")"
+    [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+      echo "error: registry returned no valid digest for ${image_ref}" >&2
+      return 1
+    }
+    printf '%s\n' "${digest}"
+    return 0
+  else
+    inspect_status="$?"
+  fi
+
+  if grep -Eqi 'not found|manifest unknown|name unknown|no such manifest' "${error_file}"; then
+    return 2
+  fi
+  cat "${error_file}" >&2
+  echo "error: registry lookup failed for ${image_ref} with status ${inspect_status}" >&2
+  return 1
 }
 
 while [[ $# -gt 0 ]]; do
@@ -114,10 +141,24 @@ if [[ "${SKIP_IMAGE_VERIFY}" != "true" ]]; then
   command -v docker >/dev/null 2>&1 || { echo "error: docker is required for image verification" >&2; exit 1; }
   docker buildx version >/dev/null 2>&1 || { echo "error: docker buildx is required for image verification" >&2; exit 1; }
   echo "==> [deploy] Verifying ${IMAGE_REPOSITORY}:latest matches release ${TAG}"
-  release_digest="$(image_digest "${IMAGE_REPOSITORY}:${TAG}")"
-  latest_digest="$(image_digest "${IMAGE_REPOSITORY}:latest")"
-  [[ -n "${release_digest}" ]] || { echo "error: ${IMAGE_REPOSITORY}:${TAG} is not published in the registry; run make publish" >&2; exit 1; }
-  [[ -n "${latest_digest}" ]] || { echo "error: ${IMAGE_REPOSITORY}:latest is not published in the registry; run make publish" >&2; exit 1; }
+  if release_digest="$(inspect_digest "${IMAGE_REPOSITORY}:${TAG}" "${temporary_directory}/release-image.error")"; then
+    :
+  else
+    inspect_status="$?"
+    if [[ "${inspect_status}" -eq 2 ]]; then
+      echo "error: ${IMAGE_REPOSITORY}:${TAG} is not published; run make publish" >&2
+    fi
+    exit 1
+  fi
+  if latest_digest="$(inspect_digest "${IMAGE_REPOSITORY}:latest" "${temporary_directory}/latest-image.error")"; then
+    :
+  else
+    inspect_status="$?"
+    if [[ "${inspect_status}" -eq 2 ]]; then
+      echo "error: ${IMAGE_REPOSITORY}:latest is not published; run make publish" >&2
+    fi
+    exit 1
+  fi
   [[ "${release_digest}" == "${latest_digest}" ]] || { echo "error: ${IMAGE_REPOSITORY}:latest does not match ${TAG}; run make publish first" >&2; exit 1; }
 fi
 

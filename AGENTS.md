@@ -42,6 +42,14 @@ All rules for validation, error handling, invariants, and “confident programmi
 - `make lint` enforces linting rules before code review.
 - `make ci` mirrors the GitHub Actions workflow and should pass locally before opening a PR.
 
+### Retry-Safe Release Lifecycle
+
+- `make release`, `make publish`, and `make deploy` are idempotent lifecycle operations.
+- Repeating `make release` at an exact release tag verifies that release and exits successfully without selecting another version, running CI, rebuilding payloads, or changing Git state.
+- Published tags, GitHub Release metadata/assets, and versioned container tags are immutable. `make publish` creates only missing state, verifies exact existing state, and rejects conflicts.
+- When a completed release no longer has local prepared payloads, `make publish` verifies the tagged release, GitHub manifest/assets, exact platform manifests, version image, and `latest` image without reconstructing or rewriting them.
+- Repeating `make deploy` verifies the same published image and reruns the convergent gateway transaction safely.
+
 ### Tooling Workflow (Tests, Lint, Format)
 
 - For any change intended to land, agents MUST ensure that all required tooling for the relevant stack (tests, linters, and formatters as defined in `AGENTS*` and `POLICY.md`) passes cleanly on the branch before code is merged or released.
