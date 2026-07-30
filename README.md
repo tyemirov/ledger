@@ -150,11 +150,12 @@ make publish
 make deploy
 ```
 
-`make release` runs CI and prepares the multi-platform Ledger container archives, changelog commit, annotated tag, and release manifest entirely from local state under `.git/mprlab-release`. It performs no remote write. At an exact release tag it verifies the release commit and local artifact, when present, then exits without selecting another version or rebuilding.
-
-`make publish` pushes only missing prepared Git refs, immutable GitHub Release assets, and immutable platform/version container tags. A retry verifies existing bytes and manifests without overwriting them. If a completed release no longer has local prepared payloads, it verifies the tagged GitHub release and exact published GHCR platform/version/`latest` manifests instead of reconstructing artifacts.
-
-`make deploy` verifies that the published release tag and `latest` image are identical, then runs the convergent gateway-owned `ledger-api` transaction through the dedicated Ledger gateway profile. All three lifecycle commands are safe to repeat.
+All three commands delegate to the exact sibling `../mprlab-gateway`. Ledger
+declares only its Go container, retained `ledger-data` volume, committed
+non-secret configuration, operator-owned secret references, and
+`ledger.grpc` endpoint in `.mprlab/deploy/resources.yml`. The gateway owns
+release sealing, immutable publication, deployment convergence, and retry
+verification. Ledger has no Node lifecycle dependency.
 
 ```bash
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/credit?sslmode=disable \

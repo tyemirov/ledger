@@ -4,17 +4,8 @@ UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResear
 PRODUCTION_PACKAGES := $(shell go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./...)
 INTEGRATION_TEST_PACKAGES :=
 DEADCODE_ENTRYPOINT_PACKAGES := ./cmd/credit
-DOCKER_IMAGE ?= ghcr.io/tyemirov/ledger
-PUBLISH_PLATFORMS ?= linux/amd64,linux/arm64
-RELEASE_ARGS ?=
-RELEASE_HELPER := $(abspath $(CURDIR)/scripts/release/release_helper.py)
-PUBLISH_RELEASE_ARGS ?=
-DEPLOY_ARGS ?=
-RELEASE_ARTIFACT_TARGETS ?= container-artifacts
-RELEASE_TOOL_DIR := $(abspath $(CURDIR)/scripts/release)
-GATEWAY_DIR ?=
 
-.PHONY: fmt format check-format lint test test-unit test-integration ci tools check-unused-packages build-cgo-off release container-artifacts publish-release publish deploy
+.PHONY: fmt format check-format lint test test-unit test-integration ci tools check-unused-packages build-cgo-off
 
 fmt: check-format
 
@@ -64,21 +55,6 @@ build-cgo-off:
 	trap 'rm -rf "$$out_dir"' EXIT; \
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$$out_dir/ledgerd" ./cmd/credit
 
-release:
-	@RELEASE_HELPER="$(RELEASE_HELPER)" RELEASE_ARTIFACT_TARGETS="$(RELEASE_ARTIFACT_TARGETS)" bash scripts/release.sh $(RELEASE_ARGS)
-
-container-artifacts:
-	@"$(RELEASE_TOOL_DIR)/prepare_container_artifact.sh" --name ledger --image "$(DOCKER_IMAGE)" --file Dockerfile --context . --platforms "$(PUBLISH_PLATFORMS)"
-
-publish-release:
-	@RELEASE_HELPER="$(RELEASE_HELPER)" bash scripts/publish-release.sh $(PUBLISH_RELEASE_ARGS)
-
-publish: publish-release
-	@DOCKER_IMAGE="$(DOCKER_IMAGE)" PUBLISH_PLATFORMS="$(PUBLISH_PLATFORMS)" "$(RELEASE_TOOL_DIR)/publish_container_artifacts.sh"
-
-deploy:
-	@GATEWAY_DIR="$(GATEWAY_DIR)" DOCKER_IMAGE="$(DOCKER_IMAGE)" bash scripts/deploy.sh $(DEPLOY_ARGS)
-
 test: test-unit
 
 test-unit:
@@ -92,3 +68,16 @@ tools:
 	@command -v ineffassign >/dev/null 2>&1 || go install github.com/gordonklaus/ineffassign@latest
 	@command -v errcheck >/dev/null 2>&1 || go install github.com/kisielk/errcheck@latest
 	@command -v deadcode >/dev/null 2>&1 || go install golang.org/x/tools/cmd/deadcode@latest
+
+.PHONY: release publish deploy
+
+release publish deploy:
+	@application_root="$$(git rev-parse --show-toplevel)"; \
+	gateway_root="$$(dirname "$${application_root}")/mprlab-gateway"; \
+	if [ ! -d "$${gateway_root}" ]; then \
+		printf "required sibling gateway is missing: %s; clone mprlab-gateway at exactly %s\n" \
+			"$${gateway_root}" "$${gateway_root}" >&2; \
+		exit 2; \
+	fi; \
+	$(MAKE) --no-print-directory -C "$${gateway_root}" "app-$@" \
+		MPRLAB_APP_ROOT="$${application_root}"

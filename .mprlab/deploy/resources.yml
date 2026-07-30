@@ -1,29 +1,58 @@
 ---
 mprlab_resources:
-  schema_version: 1
-  repo:
-    id: ledger
-    directory: ledger
-    dispatch_target: ledger
+  schema_version: 2
+  owner: ledger
+  dependencies: []
   resources:
-    - type: make_workflow
-      name: ledger
-      targets:
-        release: release
-        publish: publish
-        deploy: deploy
-    - type: container_service
-      name: ledger-api
-      host_group: gateway
-      image: ghcr.io/tyemirov/ledger:latest
-      ports:
-        - container_port: 50051
-      compose_file: docker-compose.yml
-      compose_project: mprlab-nginx-gateway
-      runtime_assets:
-        - path: .mprlab/deploy/.env
-          example_path: .mprlab/deploy/runtime.env.example
-          destination: configs/.env.ledger
-          mode: "0600"
-        - path: .mprlab/deploy/config.yml
-          destination: configs/config.ledger.yml
+    - kind: compose_project
+      id: runtime
+      placement: gateway
+      profiles: []
+      images:
+        - id: ledger-image
+          repository: ghcr.io/tyemirov/ledger
+          build:
+            context: .
+            dockerfile: Dockerfile
+            platforms:
+              - linux/amd64
+              - linux/arm64
+      services:
+        - id: ledger-api
+          image: ledger-image
+          environment:
+            DATABASE_URL:
+              secret: ledger.database-url
+            HECATE_TENANT_SECRET:
+              secret: ledger.hecate-tenant-secret
+            NAMESIGNAL_TENANT_SECRET:
+              secret: ledger.namesignal-tenant-secret
+            POODLESCANNER_TENANT_SECRET:
+              secret: ledger.poodlescanner-tenant-secret
+          assets:
+            - source: configs/config.ledger.yml
+              target: /srv/config.yml
+              mode: "0444"
+          mounts:
+            - volume: data
+              target: /srv/data
+              read_only: false
+          ports:
+            - container_port: 50051
+      volumes:
+        - id: data
+          name: ledger-data
+          retention: retain
+    - kind: runtime_capability
+      id: grpc
+      name: ledger.grpc
+      version: 1
+      project: runtime
+      service: ledger-api
+      endpoint:
+        scope: same_host
+        scheme: grpc
+        alias: ledger-api
+        port: 50051
+      health:
+        protocol: tcp
