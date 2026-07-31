@@ -8,6 +8,9 @@ mprlab_resources:
       id: runtime
       placement: gateway
       profiles: []
+      retired_services:
+        - project: mprlab-nginx-gateway
+          service: ledger-api
       images:
         - id: ledger-image
           repository: ghcr.io/tyemirov/ledger
