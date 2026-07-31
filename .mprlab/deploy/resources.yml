@@ -11,6 +11,7 @@ mprlab_resources:
       images:
         - id: ledger-image
           repository: ghcr.io/tyemirov/ledger
+          visibility: public
           build:
             context: .
             dockerfile: Dockerfile
