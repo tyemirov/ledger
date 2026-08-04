@@ -1,6 +1,7 @@
 tools/
 .env
 .env.*
+.mprlab/deploy/.env
 
 PLAN.md
 coverage.out

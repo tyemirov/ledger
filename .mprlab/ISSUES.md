@@ -187,6 +187,20 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Docs: update `demo/README.md` scenario checklist to include the new demo actions and the ledger RPCs they exercise.
   - Validation: `timeout -k 350s -s SIGKILL 350s make ci` and `timeout -k 350s -s SIGKILL 350s (cd demo && make ci)` pass.
   Resolved 2026-02-10: demo backend now exposes reservation/refund/batch endpoints; demo UI includes hold capture/release, per-entry refunds, and batch spend/refund controls; `demo/README.md` updated; tooling passing.
+- [-] [I022] (P0) Adopt the sibling gateway schema-v3 lifecycle.
+  Goal:
+  Make the committed Ledger production declaration consumable by the current exact sibling gateway without changing local demo orchestration or running a production lifecycle stage.
+  Requirements:
+  - Preserve the one Ledger image, singular gateway placement, fresh retained `ledger-data` volume, bounded retirement of `mprlab-nginx-gateway/ledger-api`, committed runtime config, and `ledger.grpc` capability.
+  - Replace schema-v2 top-level dependencies, project placement, profiles, and direct secret references with schema v3, per-service placement, and one typed private-values resource.
+  - Keep one ignored mode-0600 `.mprlab/deploy/.env` input containing the four exact production values and exclude it from every Docker context that contains it.
+  - Keep local demo Compose and the zero-argument `make release`, `make publish`, and `make deploy` wrappers unchanged.
+  Deliverables:
+  - Current manifest, private-input boundary, deployment documentation, changelog, and black-box lifecycle contract coverage.
+  Validation:
+  - `make fmt`, `make lint`, `make test`, and `make ci` pass.
+  - The clean sibling gateway passes release, publish, and deploy plans plus selected-manifest isolation for the committed Ledger revision.
+  - No release, publication, deployment, production access, or unrelated application inspection occurs.
 
 
 ## Maintenance
@@ -376,4 +390,3 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## Planning
 *do not implement yet*
-

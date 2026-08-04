@@ -8,6 +8,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	go.uber.org/zap v1.27.1
+	go.yaml.in/yaml/v3 v3.0.4
 	google.golang.org/grpc v1.77.0
 	google.golang.org/protobuf v1.36.11
 	gorm.io/datatypes v1.2.7
@@ -18,7 +19,6 @@ require (
 require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
 )
 
 require (

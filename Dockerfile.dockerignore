@@ -1,0 +1,15 @@
+.mprlab/deploy/.env
+.git
+.github
+.mprlab
+.env
+.env.*
+.DS_Store
+coverage.out
+demo
+docs
+node_modules
+test-results
+tools
+**/*_test.go
+**/testdata
