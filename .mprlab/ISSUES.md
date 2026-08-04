@@ -187,7 +187,7 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Docs: update `demo/README.md` scenario checklist to include the new demo actions and the ledger RPCs they exercise.
   - Validation: `timeout -k 350s -s SIGKILL 350s make ci` and `timeout -k 350s -s SIGKILL 350s (cd demo && make ci)` pass.
   Resolved 2026-02-10: demo backend now exposes reservation/refund/batch endpoints; demo UI includes hold capture/release, per-entry refunds, and batch spend/refund controls; `demo/README.md` updated; tooling passing.
-- [-] [I022] (P0) Adopt the sibling gateway schema-v3 lifecycle.
+- [x] [I022] (P0) Adopt the sibling gateway schema-v3 lifecycle.
   Goal:
   Make the committed Ledger production declaration consumable by the current exact sibling gateway without changing local demo orchestration or running a production lifecycle stage.
   Requirements:
@@ -201,6 +201,7 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - `make fmt`, `make lint`, `make test`, and `make ci` pass.
   - The clean sibling gateway passes release, publish, and deploy plans plus selected-manifest isolation for the committed Ledger revision.
   - No release, publication, deployment, production access, or unrelated application inspection occurs.
+  Resolution 2026-08-03: migrated the complete Ledger production graph to schema v3 with singular service placement, four typed private outputs, an exact Docker exclusion, and preserved fresh/legacy volume boundaries; Ledger formatting, lint, tests, and full CI passed with 100% production coverage, and the clean sibling gateway passed release, publish, deploy, and selected-manifest-isolation plans without production mutation.
 
 
 ## Maintenance
