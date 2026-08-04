@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Improvements ⚙️
+- [I022] Migrate Ledger's complete production declaration to the sibling gateway's schema-v3 selected-manifest contract with per-service placement, typed private values, and an explicit Docker-context exclusion for the ignored deployment input.
 - Release preparation, publication, and deployment now use a repository-owned immutable container artifact and canonical app-owned runtime declaration.
 
 ### Bug Fixes 🐛

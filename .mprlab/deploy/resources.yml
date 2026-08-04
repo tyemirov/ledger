@@ -1,13 +1,17 @@
 ---
 mprlab_resources:
-  schema_version: 2
+  schema_version: 3
   owner: ledger
-  dependencies: []
   resources:
+    - kind: private_values
+      id: private
+      bindings:
+        database-url: DATABASE_URL
+        hecate-tenant-secret: HECATE_TENANT_SECRET
+        namesignal-tenant-secret: NAMESIGNAL_TENANT_SECRET
+        poodlescanner-tenant-secret: POODLESCANNER_TENANT_SECRET
     - kind: compose_project
       id: runtime
-      placement: gateway
-      profiles: []
       retired_services:
         - project: mprlab-nginx-gateway
           service: ledger-api
@@ -24,15 +28,22 @@ mprlab_resources:
       services:
         - id: ledger-api
           image: ledger-image
+          placement:
+            group: gateway
+            cardinality: one
           environment:
             DATABASE_URL:
-              secret: ledger.database-url
+              resource: private
+              output: database-url
             HECATE_TENANT_SECRET:
-              secret: ledger.hecate-tenant-secret
+              resource: private
+              output: hecate-tenant-secret
             NAMESIGNAL_TENANT_SECRET:
-              secret: ledger.namesignal-tenant-secret
+              resource: private
+              output: namesignal-tenant-secret
             POODLESCANNER_TENANT_SECRET:
-              secret: ledger.poodlescanner-tenant-secret
+              resource: private
+              output: poodlescanner-tenant-secret
           assets:
             - source: configs/config.ledger.yml
               target: /srv/config.yml

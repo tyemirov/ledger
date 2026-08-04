@@ -153,11 +153,16 @@ make deploy
 All three commands delegate to the exact sibling `../mprlab-gateway`. Ledger
 declares only its Go container, a fresh retained `ledger-data` volume,
 bounded retirement of the legacy `mprlab-nginx-gateway/ledger-api` service,
-committed non-secret configuration, operator-owned secret references, and
-`ledger.grpc` endpoint in `.mprlab/deploy/resources.yml`. The legacy volume
-remains untouched. The gateway owns release sealing, immutable publication,
-deployment convergence, and retry verification. Ledger has no Node lifecycle
-dependency.
+committed non-secret configuration, and `ledger.grpc` endpoint in the sole
+tracked production declaration, `.mprlab/deploy/resources.yml`. That manifest
+uses schema v3: its one service declares singular gateway placement and binds
+`DATABASE_URL` plus the three tenant secrets through one typed
+`private_values` resource. The exact values live only in the ignored mode-0600
+`.mprlab/deploy/.env` input, which is excluded from the Ledger Docker build
+context and read only by deployment. Release and publication do not read it.
+The legacy volume remains untouched. The gateway owns release sealing,
+immutable publication, deployment convergence, and retry verification. Ledger
+has no Node lifecycle dependency.
 
 ```bash
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/credit?sslmode=disable \
