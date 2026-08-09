@@ -31,12 +31,8 @@ Backend guidance for Python code. Follow root `AGENTS.md` and `.mprlab/POLICY.md
 
 ## Validation
 
-Use repo-native targets:
+Use `.mprlab/POLICY.md` for validation.
 
-```bash
-make lint
-make test
-make ci
-```
+During the change, run the smallest Python target that validates the changed contract.
 
 When wired, lint should run mypy or pyright for typed Python surfaces.
