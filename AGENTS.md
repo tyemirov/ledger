@@ -53,7 +53,7 @@ All rules for validation, error handling, invariants, and “confident programmi
 ### Tooling Workflow (Tests, Lint, Format)
 
 - For any change intended to land, agents MUST ensure that all required tooling for the relevant stack (tests, linters, and formatters as defined in `AGENTS*` and `POLICY.md`) passes cleanly on the branch before code is merged or released.
-- `NOTES.md` defines the concrete workflow for humans (when and how to invoke specific commands such as `make test`, `make lint`, `make ci`, and formatter targets); agents should treat those steps as given but do not need to restate or modify them.
+- `.mprlab/NOTES.md` defines the human workflow. `.mprlab/POLICY.md` defines when validation targets run.
 
 ### Testing Philosophy
 
