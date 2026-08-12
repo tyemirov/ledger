@@ -16,7 +16,7 @@ Ledger is an application-agnostic gRPC virtual-credits ledger with an append-onl
 
 - NOTES.md: Read-only process playbook maintained by leads. Agents never edit it during implementation cycles.
 - ISSUES.md: Append-only log of newly discovered requests and changes. No instructive sections live here; each entry records what changed or what was discovered.
-- PLAN.md: Working plan for one concrete change/issue; ephemeral and replaced per change.
+- `.mprlab/<PLAN-ID>-PLAN.md`: Temporary execution plan. Use `.mprlab/PLANNING.md` for the plan ID.
 
 ### Document Precedence
 
@@ -83,3 +83,26 @@ ISSUES.md manages this repository through the current application contract.
 - Use `.mprlab/runtime.yml` as the repository execution contract.
 - Keep these required documents current through the ISSUES.md onboarding pull request.
 <!-- END ISSUES.MD MANAGED ONBOARDING -->
+
+<!-- BEGIN MPRLAB-GOVERNANCE -->
+## MPR Lab Governance
+
+Most workflow context files live under `.mprlab/`. The root `AGENTS.md` remains the repository entrypoint for agents.
+
+Read these files before editing:
+
+- `.mprlab/POLICY.md`: binding validation and confident-programming rules.
+- `.mprlab/PLANNING.md`: durable planning contract.
+- `.mprlab/AGENTS.DOCS.md`: ASD-STE100 documentation rules.
+- `.mprlab/TERMINOLOGY.md`: approved repository technical terms.
+- `.mprlab/issues-md-format.md`: issue tracker format and recurring identifier rules.
+- `.mprlab/ISSUES.md`: active issue tracker.
+- `.mprlab/AGENTS.GIT.md`: Git and pull request workflow.
+- `.mprlab/AGENTS.API.md`: RESTful HTTP and gRPC API guidance.
+- `.mprlab/AGENTS.GO.md`: Go guidance.
+- `.mprlab/AGENTS.FRONTEND.md`: browser frontend guidance.
+- `.mprlab/AGENTS.DOCKER.md`: Docker and container guidance.
+
+Do not create `.mprlab/AGENTS.md`. Scoped guidance belongs in `.mprlab/AGENTS.*.md` files.
+If guidance conflicts, follow `.mprlab/POLICY.md` first, then root `AGENTS.md`, then the relevant scoped guide.
+<!-- END MPRLAB-GOVERNANCE -->
