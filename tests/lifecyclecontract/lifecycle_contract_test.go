@@ -53,7 +53,6 @@ type retiredService struct {
 type containerImage struct {
 	ID         string         `yaml:"id"`
 	Repository string         `yaml:"repository"`
-	Visibility string         `yaml:"visibility"`
 	Build      containerBuild `yaml:"build"`
 }
 
@@ -122,6 +121,9 @@ func TestSchemaV4LifecycleContract(testingContext *testing.T) {
 	repositoryRoot := locateRepositoryRoot(testingContext)
 	manifestPath := filepath.Join(repositoryRoot, ".mprlab", "deploy", "resources.yml")
 	manifestBytes := readFile(testingContext, manifestPath)
+	if strings.Contains(string(manifestBytes), "\n          visibility:") {
+		testingContext.Fatal("application image retains removed visibility field")
+	}
 
 	var documentNode yaml.Node
 	if unmarshalError := yaml.Unmarshal(manifestBytes, &documentNode); unmarshalError != nil {
@@ -183,7 +185,7 @@ func TestSchemaV4LifecycleContract(testingContext *testing.T) {
 		testingContext.Fatalf("expected one image, got %d", len(composeResource.Images))
 	}
 	ledgerImage := composeResource.Images[0]
-	if ledgerImage.ID != "ledger-image" || ledgerImage.Repository != "ghcr.io/tyemirov/ledger" || ledgerImage.Visibility != "public" {
+	if ledgerImage.ID != "ledger-image" || ledgerImage.Repository != "ghcr.io/tyemirov/ledger" {
 		testingContext.Fatalf("unexpected image declaration: %#v", ledgerImage)
 	}
 	if ledgerImage.Build.Context != "." || ledgerImage.Build.Dockerfile != "Dockerfile" || !reflect.DeepEqual(ledgerImage.Build.Platforms, []string{"linux/amd64", "linux/arm64"}) {
