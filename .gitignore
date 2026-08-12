@@ -3,7 +3,6 @@ tools/
 .env.*
 .mprlab/deploy/.env
 
-PLAN.md
 coverage.out
 *.db
 node_modules/
@@ -22,3 +21,7 @@ bin/
 # Local TLS materials for demo HTTPS entrypoint (never commit).
 demo/certs/*
 !demo/certs/README.md
+
+# BEGIN MPRLAB-GOVERNANCE
+/.mprlab/*-PLAN.md
+# END MPRLAB-GOVERNANCE
