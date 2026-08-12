@@ -203,6 +203,30 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - No release, publication, deployment, production access, or unrelated application inspection occurs.
   Resolution 2026-08-03: migrated the complete Ledger production graph to schema v3 with singular service placement, four typed private outputs, an exact Docker exclusion, and preserved fresh/legacy volume boundaries; Ledger formatting, lint, tests, and full CI passed with 100% production coverage, and the clean sibling gateway passed release, publish, deploy, and selected-manifest-isolation plans without production mutation.
 
+- [x] [I023] (P0) Move the release policy into the resource manifest.
+  Goal:
+  Use one tracked application file for release and deployment configuration.
+  Requirements:
+  - Set the manifest schema version to 4.
+  - Add `release.scheme: semver` to the manifest.
+  - Delete `.mprlab/release.yml`.
+  - Keep the resource graph and lifecycle commands unchanged.
+  Validation:
+  - Pass the lifecycle contract test.
+  - Pass the sibling gateway manifest plan.
+  - Pass `make ci`.
+  Resolution 2026-08-12:
+  - Moved the SemVer policy into the schema-4 resource manifest.
+  - Deleted the obsolete `.mprlab/release.yml` file.
+  - Kept the resource graph and lifecycle commands unchanged.
+  - Updated the lifecycle contract and current deployment documentation.
+  - The lifecycle contract failed against schema 3 and passed against schema 4.
+  - The final `make ci` run passed with 100 percent coverage.
+  - The sibling plan remains pending until the gateway checkout is clean.
+  - Changed files: `.mprlab/deploy/resources.yml`, `.mprlab/ISSUES.md`,
+    `CHANGELOG.md`, `README.md`, and
+    `tests/lifecyclecontract/lifecycle_contract_test.go`.
+
 
 ## Maintenance
 

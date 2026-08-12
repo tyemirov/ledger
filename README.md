@@ -155,9 +155,9 @@ declares only its Go container, a fresh retained `ledger-data` volume,
 bounded retirement of the legacy `mprlab-nginx-gateway/ledger-api` service,
 committed non-secret configuration, and `ledger.grpc` endpoint in the sole
 tracked production declaration, `.mprlab/deploy/resources.yml`. That manifest
-uses schema v3: its one service declares singular gateway placement and binds
-`DATABASE_URL` plus the three tenant secrets through one typed
-`private_values` resource. The exact values live only in the ignored mode-0600
+uses schema version 4 and contains the SemVer release policy. Its one service
+declares singular gateway placement and binds `DATABASE_URL` plus three tenant
+secrets through one typed `private_values` resource. The exact values live only in the ignored mode-0600
 `.mprlab/deploy/.env` input, which is excluded from the Ledger Docker build
 context and read only by deployment. Release and publication do not read it.
 The legacy volume remains untouched. The gateway owns release sealing,
