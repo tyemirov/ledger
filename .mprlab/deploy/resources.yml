@@ -1,7 +1,9 @@
 ---
 mprlab_resources:
-  schema_version: 3
+  schema_version: 4
   owner: ledger
+  release:
+    scheme: semver
   resources:
     - kind: private_values
       id: private

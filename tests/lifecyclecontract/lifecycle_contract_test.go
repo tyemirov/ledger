@@ -19,7 +19,12 @@ type manifestEnvelope struct {
 type applicationManifest struct {
 	SchemaVersion int                 `yaml:"schema_version"`
 	Owner         string              `yaml:"owner"`
+	Release       releasePolicy       `yaml:"release"`
 	Resources     []lifecycleResource `yaml:"resources"`
+}
+
+type releasePolicy struct {
+	Scheme string `yaml:"scheme"`
 }
 
 type lifecycleResource struct {
@@ -112,7 +117,7 @@ type capabilityHealth struct {
 	Protocol string `yaml:"protocol"`
 }
 
-func TestSchemaV3LifecycleContract(testingContext *testing.T) {
+func TestSchemaV4LifecycleContract(testingContext *testing.T) {
 	testingContext.Parallel()
 	repositoryRoot := locateRepositoryRoot(testingContext)
 	manifestPath := filepath.Join(repositoryRoot, ".mprlab", "deploy", "resources.yml")
@@ -126,7 +131,16 @@ func TestSchemaV3LifecycleContract(testingContext *testing.T) {
 	requireMappingKeys(
 		testingContext,
 		mappingValue(testingContext, documentNode.Content[0], "mprlab_resources"),
-		[]string{"owner", "resources", "schema_version"},
+		[]string{"owner", "release", "resources", "schema_version"},
+	)
+	requireMappingKeys(
+		testingContext,
+		mappingValue(
+			testingContext,
+			mappingValue(testingContext, documentNode.Content[0], "mprlab_resources"),
+			"release",
+		),
+		[]string{"scheme"},
 	)
 
 	var envelope manifestEnvelope
@@ -134,8 +148,14 @@ func TestSchemaV3LifecycleContract(testingContext *testing.T) {
 		testingContext.Fatalf("decode deployment manifest: %v", unmarshalError)
 	}
 	manifest := envelope.MPRLabResources
-	if manifest.SchemaVersion != 3 || manifest.Owner != "ledger" {
+	if manifest.SchemaVersion != 4 || manifest.Owner != "ledger" {
 		testingContext.Fatalf("unexpected manifest identity: schema=%d owner=%q", manifest.SchemaVersion, manifest.Owner)
+	}
+	if manifest.Release != (releasePolicy{Scheme: "semver"}) {
+		testingContext.Fatalf("unexpected release policy: %#v", manifest.Release)
+	}
+	if _, statError := os.Stat(filepath.Join(repositoryRoot, ".mprlab", "release.yml")); !os.IsNotExist(statError) {
+		testingContext.Fatalf("obsolete release policy file remains: %v", statError)
 	}
 	if len(manifest.Resources) != 3 {
 		testingContext.Fatalf("expected three production resources, got %d", len(manifest.Resources))
