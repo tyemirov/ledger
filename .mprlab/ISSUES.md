@@ -30,6 +30,21 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## Improvements
 
+- [x] [I024] (P0) Use the permanent versionless selected application manifest.
+  Goal:
+  Use one selected application manifest contract without a schema number.
+  Requirements:
+  - Remove `schema_version` from `.mprlab/deploy/resources.yml`.
+  - Require only `owner`, `release`, and `resources` at the manifest root.
+  - Reject each numbered selected application manifest form.
+  - Preserve independent schema contracts.
+  Validation:
+  - Run `make ci` after the last repository change.
+  - Plan release through gateway commit `753c727` without production contact.
+  Resolution:
+  - The manifest preserves the SemVer release scheme without a schema number.
+  - The compiled lifecycle contract rejects a `schema_version` field.
+
 - [x] [I001] (P1) Extract ledger core into a reusable Go library.
   Resolved: domain types + store interfaces enforced, adapters updated, tests/ci passing.
   - Promote `internal/credit` into a public `pkg/ledger` module with explicit domain types and invariants.
