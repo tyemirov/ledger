@@ -3,8 +3,9 @@
 ## Unreleased
 
 ### Improvements ⚙️
-- [I023] Moved the SemVer release policy into the schema-4 resource manifest and removed the obsolete policy file.
-- [I022] Migrate Ledger's complete production declaration to the sibling gateway's schema-v3 selected-manifest contract with per-service placement, typed private values, and an explicit Docker-context exclusion for the ignored deployment input.
+- [I024] Removed schema versioning from the selected application manifest while preserving the explicit SemVer release policy.
+- [I023] Moved the SemVer release policy into the current resource manifest and removed the obsolete policy file.
+- [I022] Migrate Ledger's complete production declaration to the sibling gateway's current selected-manifest contract with per-service placement, typed private values, and an explicit Docker-context exclusion for the ignored deployment input.
 - Release preparation, publication, and deployment now use a repository-owned immutable container artifact and canonical app-owned runtime declaration.
 
 ### Bug Fixes 🐛
