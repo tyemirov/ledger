@@ -144,5 +144,7 @@ if [[ "${ready}" != 1 ]]; then
 fi
 
 printf 'Ledger is ready.\n'
+printf 'Browser URL: %s/\n' "${public_origin}"
+printf 'gRPC address: localhost:50051\n'
 printf 'Readiness: page=200, health=200, config=200, TAuth session=204, protected tenants=401.\n'
 printf 'Stop the local runtime with make down.\n'
