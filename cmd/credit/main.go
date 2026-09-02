@@ -153,7 +153,7 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 		return fmt.Errorf("parse config file: %w", err)
 	}
 
-	if err := v.Unmarshal(cfg); err != nil {
+	if err := v.UnmarshalExact(cfg); err != nil {
 		return fmt.Errorf("unmarshal config: %w", err)
 	}
 
@@ -473,6 +473,10 @@ func (logger *zapOperationLogger) LogControlRequest(entry controlplane.RequestLo
 	}
 	if entry.ResourceID != "" {
 		fields = append(fields, zap.String("resource_id", entry.ResourceID))
+	}
+	if entry.Error != nil {
+		logger.logger.Error("control.request", append(fields, zap.Error(entry.Error))...)
+		return
 	}
 	logger.logger.Info("control.request", fields...)
 }
