@@ -24,6 +24,7 @@
       id="ledger-header"
       data-config-url="/config-ui.yaml"
       auth-transition='{"title":"Opening Ledger","message":"Loading your workspace.","completionEvent":"ledger:workspace-ready"}'
+      horizontal-links='{"alignment":"right","links":[{"label":"Documentation","href":"https://github.com/tyemirov/ledger/blob/master/docs/integration.md","target":"_blank","rel":"noopener noreferrer"}]}'
     >
       <a slot="brand" class="ledger-brand" href="/" aria-label="Ledger workspace">
         <span class="ledger-mark" aria-hidden="true">L</span>
@@ -62,13 +63,12 @@
               <span class="section-kicker">Account</span>
               <h1>Tenants</h1>
             </div>
-            <button type="button" class="icon-button" aria-label="Create tenant" x-on:click="openCreateTenant($event)">+</button>
+            <button type="button" class="button button--primary tenant-create-button" x-on:click="openCreateTenant($event)">Create tenant</button>
           </header>
 
           <p class="resource-message" x-show="tenantState === resourceStates.LOADING">Loading tenants…</p>
           <div class="resource-message" x-show="tenantState === resourceStates.EMPTY">
             <p>Create your first tenant to start a Ledger integration.</p>
-            <button type="button" class="button button--primary" x-on:click="openCreateTenant($event)">Create tenant</button>
           </div>
           <div class="resource-message resource-message--error" x-show="tenantState === resourceStates.ERROR">
             <p>Ledger could not load your tenants.</p>
@@ -92,14 +92,14 @@
           <button type="button" class="load-more" x-show="nextCursor" x-bind:disabled="collectionController" x-on:click="loadMoreTenants()">Load more</button>
         </aside>
 
-        <div class="mobile-tenant-control" x-show="tenants.length">
-          <label for="mobile-tenant">Tenant</label>
-          <select id="mobile-tenant" x-bind:value="selectedTenantID" x-on:change="selectTenant($event.target.value)">
+        <div class="mobile-tenant-control">
+          <label for="mobile-tenant" x-show="tenants.length">Tenant</label>
+          <select id="mobile-tenant" x-show="tenants.length" x-bind:value="selectedTenantID" x-on:change="selectTenant($event.target.value)">
             <template x-for="item in tenants" x-bind:key="item.id">
               <option x-bind:value="item.id" x-text="item.name"></option>
             </template>
           </select>
-          <button type="button" class="icon-button" aria-label="Create tenant" x-on:click="openCreateTenant($event)">+</button>
+          <button type="button" class="button button--primary tenant-create-button" x-on:click="openCreateTenant($event)">Create tenant</button>
         </div>
 
         <article class="tenant-workspace" x-show="selectedTenant">

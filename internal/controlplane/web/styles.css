@@ -55,7 +55,13 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   font-size: 0.75rem;
 }
 
-.header-status { max-width: min(420px, 42vw); margin-left: auto; }
+.header-status {
+  position: absolute;
+  left: 50%;
+  max-width: min(420px, 42vw);
+  margin: 0;
+  transform: translateX(-50%);
+}
 .header-status span { color: var(--ledger-muted); font-size: 0.78rem; }
 .header-status span[data-kind="error"] { color: var(--ledger-danger); }
 .header-status span[data-kind="success"] { color: var(--ledger-success); }
@@ -168,6 +174,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .mobile-tenant-control { display: none; align-items: center; gap: 0.4rem; padding: 0.5rem; }
 .mobile-tenant-control label { color: var(--ledger-muted); font-size: 0.72rem; }
 .mobile-tenant-control select { min-width: 0; flex: 1; border: 1px solid var(--ledger-border); border-radius: 6px; background: var(--ledger-surface-strong); color: var(--ledger-text); padding: 0.4rem; }
+.mobile-tenant-control .tenant-create-button { flex: 0 0 auto; margin-left: auto; }
 
 .dialog-overlay { position: fixed; z-index: 2100; inset: 0; display: grid; place-items: center; background: rgba(5, 7, 10, 0.76); padding: 1rem; }
 .dialog { width: min(480px, 100%); max-height: calc(100vh - 2rem); overflow: auto; border: 1px solid var(--ledger-border-strong); border-radius: 6px; background: var(--ledger-surface); padding: 0.85rem; }
