@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-mpr-theme="dark">
+<html lang="en" data-mpr-theme="dark" data-ledger-palette="default">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -19,12 +19,13 @@
     ></script>
     <script type="module" src="/assets/ledger/js/app.js"></script>
   </head>
-  <body x-data="ledgerWorkspace">
+  <body x-data="ledgerWorkspace" data-mpr-theme="dark" data-ledger-palette="default">
     <mpr-header
       id="ledger-header"
       data-config-url="/config-ui.yaml"
       auth-transition='{"title":"Opening Ledger","message":"Loading your workspace.","completionEvent":"ledger:workspace-ready"}'
       horizontal-links='{"alignment":"right","links":[{"label":"Documentation","href":"https://github.com/tyemirov/ledger/blob/master/docs/integration.md","target":"_blank","rel":"noopener noreferrer"}]}'
+      theme-config='{"attribute":"data-mpr-theme","targets":["document","body"],"initialMode":"default-dark","modes":[{"value":"default-light","attributeValue":"light","dataset":{"data-ledger-palette":"default"}},{"value":"sunrise-light","attributeValue":"light","dataset":{"data-ledger-palette":"sunrise"}},{"value":"default-dark","attributeValue":"dark","dataset":{"data-ledger-palette":"default"}},{"value":"forest-dark","attributeValue":"dark","dataset":{"data-ledger-palette":"forest"}}]}'
     >
       <a slot="brand" class="ledger-brand" href="/" aria-label="Ledger workspace">
         <span class="ledger-mark" aria-hidden="true">L</span>
@@ -233,6 +234,7 @@
       prefix-text="Ledger by Marco Polo Research Lab"
       links-collection='{"style":"drop-up","text":"Documentation","links":[{"label":"Ledger API","url":"https://github.com/tyemirov/ledger/blob/master/docs/api.md"},{"label":"Integration guide","url":"https://github.com/tyemirov/ledger/blob/master/docs/integration.md"}]}'
       theme-switcher="square"
+      theme-config='{"attribute":"data-mpr-theme","targets":["document","body"],"initialMode":"default-dark","modes":[{"value":"default-light","attributeValue":"light","dataset":{"data-ledger-palette":"default"}},{"value":"sunrise-light","attributeValue":"light","dataset":{"data-ledger-palette":"sunrise"}},{"value":"default-dark","attributeValue":"dark","dataset":{"data-ledger-palette":"default"}},{"value":"forest-dark","attributeValue":"dark","dataset":{"data-ledger-palette":"forest"}}]}'
     ></mpr-footer>
   </body>
 </html>
