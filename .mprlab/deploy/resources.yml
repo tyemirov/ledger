@@ -1,7 +1,8 @@
 ---
 mprlab_resources:
-  schema_version: 3
   owner: ledger
+  release:
+    scheme: semver
   resources:
     - kind: private_values
       id: private
@@ -18,7 +19,6 @@ mprlab_resources:
       images:
         - id: ledger-image
           repository: ghcr.io/tyemirov/ledger
-          visibility: public
           build:
             context: .
             dockerfile: Dockerfile

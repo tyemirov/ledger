@@ -17,9 +17,13 @@ type manifestEnvelope struct {
 }
 
 type applicationManifest struct {
-	SchemaVersion int                 `yaml:"schema_version"`
-	Owner         string              `yaml:"owner"`
-	Resources     []lifecycleResource `yaml:"resources"`
+	Owner     string              `yaml:"owner"`
+	Release   releasePolicy       `yaml:"release"`
+	Resources []lifecycleResource `yaml:"resources"`
+}
+
+type releasePolicy struct {
+	Scheme string `yaml:"scheme"`
 }
 
 type lifecycleResource struct {
@@ -48,7 +52,6 @@ type retiredService struct {
 type containerImage struct {
 	ID         string         `yaml:"id"`
 	Repository string         `yaml:"repository"`
-	Visibility string         `yaml:"visibility"`
 	Build      containerBuild `yaml:"build"`
 }
 
@@ -112,11 +115,14 @@ type capabilityHealth struct {
 	Protocol string `yaml:"protocol"`
 }
 
-func TestSchemaV3LifecycleContract(testingContext *testing.T) {
+func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	testingContext.Parallel()
 	repositoryRoot := locateRepositoryRoot(testingContext)
 	manifestPath := filepath.Join(repositoryRoot, ".mprlab", "deploy", "resources.yml")
 	manifestBytes := readFile(testingContext, manifestPath)
+	if strings.Contains(string(manifestBytes), "\n          visibility:") {
+		testingContext.Fatal("application image retains removed visibility field")
+	}
 
 	var documentNode yaml.Node
 	if unmarshalError := yaml.Unmarshal(manifestBytes, &documentNode); unmarshalError != nil {
@@ -126,7 +132,16 @@ func TestSchemaV3LifecycleContract(testingContext *testing.T) {
 	requireMappingKeys(
 		testingContext,
 		mappingValue(testingContext, documentNode.Content[0], "mprlab_resources"),
-		[]string{"owner", "resources", "schema_version"},
+		[]string{"owner", "release", "resources"},
+	)
+	requireMappingKeys(
+		testingContext,
+		mappingValue(
+			testingContext,
+			mappingValue(testingContext, documentNode.Content[0], "mprlab_resources"),
+			"release",
+		),
+		[]string{"scheme"},
 	)
 
 	var envelope manifestEnvelope
@@ -134,8 +149,14 @@ func TestSchemaV3LifecycleContract(testingContext *testing.T) {
 		testingContext.Fatalf("decode deployment manifest: %v", unmarshalError)
 	}
 	manifest := envelope.MPRLabResources
-	if manifest.SchemaVersion != 3 || manifest.Owner != "ledger" {
-		testingContext.Fatalf("unexpected manifest identity: schema=%d owner=%q", manifest.SchemaVersion, manifest.Owner)
+	if manifest.Owner != "ledger" {
+		testingContext.Fatalf("unexpected manifest owner: %q", manifest.Owner)
+	}
+	if manifest.Release != (releasePolicy{Scheme: "semver"}) {
+		testingContext.Fatalf("unexpected release policy: %#v", manifest.Release)
+	}
+	if _, statError := os.Stat(filepath.Join(repositoryRoot, ".mprlab", "release.yml")); !os.IsNotExist(statError) {
+		testingContext.Fatalf("obsolete release policy file remains: %v", statError)
 	}
 	if len(manifest.Resources) != 3 {
 		testingContext.Fatalf("expected three production resources, got %d", len(manifest.Resources))
@@ -163,7 +184,7 @@ func TestSchemaV3LifecycleContract(testingContext *testing.T) {
 		testingContext.Fatalf("expected one image, got %d", len(composeResource.Images))
 	}
 	ledgerImage := composeResource.Images[0]
-	if ledgerImage.ID != "ledger-image" || ledgerImage.Repository != "ghcr.io/tyemirov/ledger" || ledgerImage.Visibility != "public" {
+	if ledgerImage.ID != "ledger-image" || ledgerImage.Repository != "ghcr.io/tyemirov/ledger" {
 		testingContext.Fatalf("unexpected image declaration: %#v", ledgerImage)
 	}
 	if ledgerImage.Build.Context != "." || ledgerImage.Build.Dockerfile != "Dockerfile" || !reflect.DeepEqual(ledgerImage.Build.Platforms, []string{"linux/amd64", "linux/arm64"}) {
