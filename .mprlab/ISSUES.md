@@ -32,6 +32,70 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## Improvements
 
+- [ ] [I025] (P1) {F001,F002} Complete the one-time production UserAccount migration.
+  Goal:
+  I025 authorizes one migration of the retained production data.
+  It does not add a migration capability to normal startup or deployment.
+  The 2026-09-02 production audit found legacy tenant data in the retained SQLite database.
+  The database contains seven `hecate` accounts, four `ps` accounts, and 41 ledger entries.
+  The migration preserves all accounting history and gives each approved UserAccount its Ledger tenants.
+  Each current client uses its canonical tenant ID and tenant credential after deployment.
+  Requirements:
+  - Use the retained `ledger-data` SQLite database as the only production migration source.
+  - Select one production TAuth tenant for the Ledger workspace.
+  - Resolve each owner from the exact TAuth issuer, TAuth tenant ID, and immutable TAuth user ID.
+  - Verify each approved owner email through its production TAuth profile.
+  - Store only the exact TAuth identity values in the private migration input.
+  - Keep each owner email and identity value out of source control.
+  - Include `ps`, `hecate`, and `namesignal` in the complete legacy tenant set.
+  - Assign each legacy tenant to an operator-approved UserAccount.
+  - Generate one canonical tenant UUID and one tenant credential for each legacy tenant.
+  - Preserve every Ledger account, ledger entry, reservation, balance, timestamp, metadata value, and idempotency key.
+  - Stop Ledger writes before the database snapshot and migration.
+  - Create and verify a recoverable database snapshot before mutation.
+  - Store the migration mapping in one private mode-0600 operator file.
+  - Keep private mapping values out of Git, logs, plans, receipts, and issue records.
+  - Use GORM for each migration transaction and schema change.
+  - Keep the data migration valid for SQLite and PostgreSQL.
+  - Use the existing bounded migration command only for this production change.
+  - Run the command as a separate operator action before the canonical runtime starts.
+  - Do not call the migration from Ledger startup, `make deploy`, or a recurring deployment step.
+  - Do not add migration input to the normal runtime contract.
+  - Keep application-specific migration logic out of `mprlab-gateway`.
+  - Stage each canonical tenant ID and tenant credential in its client before runtime activation.
+  - Use each client repository's canonical private deployment input.
+  - Activate Ledger and each client in one controlled production sequence.
+  - Reject each old tenant ID and static credential after the migration.
+  - Do not add dual reads, dual writes, legacy credentials, or compatibility paths.
+  - Remove the migration command, private input, and temporary operator automation after production verification.
+  Deliverables:
+  - Prepare one temporary Ledger-owned operator procedure for the existing migration command.
+  - Prepare one validated private owner mapping for all configured legacy tenants.
+  - Prepare canonical tenant identifiers and credentials for PoodleScanner, Hecate, and NameSignal.
+  - Update each client through its repository-owned deployment contract.
+  - Remove the obsolete static tenant secrets from the Ledger deployment input.
+  - Delete all temporary migration code, targets, files, and documentation after production verification.
+  - Keep the final runtime and deployment contracts free of migration behavior.
+  - Record the production migration and client verification results without secret values.
+  Validation:
+  - Run `make ci` after the last source change.
+  - Run the migration against a private copy of the production database before production mutation.
+  - Verify the copy contains the canonical schema and no legacy `accounts` table.
+  - Verify the production operator action uses the exact released Ledger artifact.
+  - Record current account, entry, reservation, and balance values immediately before production migration.
+  - Compare each recorded value with the canonical database after migration.
+  - Verify each Ledger account references its approved canonical Ledger tenant.
+  - Authenticate through the selected production TAuth tenant and open the same UserAccount.
+  - Verify the UserAccount lists each approved migrated Ledger tenant.
+  - Request a balance through each updated production client and its canonical tenant credential.
+  - Verify each old static credential and legacy tenant ID is rejected.
+  - Verify no private mapping value appears in Git, logs, plans, receipts, or browser data.
+  - Verify normal startup does not do or schedule a data migration.
+  - Verify subsequent deployments require only the canonical schema and normal runtime inputs.
+  - Verify the repository contains no migration command, target, mapping file, or startup migration branch.
+  - Record source CI, release, publication, deployment, runtime, and client acceptance as separate results.
+  - Remove the migration command only after all production checks pass.
+
 - [x] [I024] (P0) Use the permanent versionless selected application manifest.
   Goal:
   Use one selected application manifest contract without a schema number.
