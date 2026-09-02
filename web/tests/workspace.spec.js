@@ -94,6 +94,84 @@ test("uses the canonical MPR shell and sends no protected request before authent
   expect(configuration).toContain(`- "${baseURL}"`);
 });
 
+test("aligns the public shell controls on shared vertical edges", async ({ page }) => {
+  await page.unroute("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css");
+  await page.unroute("https://cdn.jsdelivr.net/npm/js-yaml@5.4.1/dist/browser/js-yaml.umd.min.js");
+  await page.unroute("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui-config.js");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(baseURL);
+  await expect.poll(() => page.evaluate(() => Boolean(customElements.get("mpr-header") && customElements.get("mpr-footer")))).toBe(true);
+
+  const brand = page.getByRole("link", { name: "Ledger workspace" });
+  const signIn = page.getByRole("button", { name: "Sign in", exact: true });
+  const privacy = page.getByRole("link", { name: "Privacy • Terms", exact: true });
+  const documentation = page.getByRole("button", { name: "Documentation", exact: true });
+  await expect(brand).toBeVisible();
+  await expect(signIn).toBeVisible();
+  await expect(privacy).toBeVisible();
+  await expect(documentation).toBeVisible();
+
+  const [brandBox, signInBox, privacyBox, documentationBox] = await Promise.all([
+    brand.boundingBox(),
+    signIn.boundingBox(),
+    privacy.boundingBox(),
+    documentation.boundingBox(),
+  ]);
+  expect(brandBox).not.toBeNull();
+  expect(signInBox).not.toBeNull();
+  expect(privacyBox).not.toBeNull();
+  expect(documentationBox).not.toBeNull();
+  if (!brandBox || !signInBox || !privacyBox || !documentationBox) throw new Error("shell_control_not_rendered");
+  expect(Math.abs(brandBox.x - privacyBox.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(signInBox.x + signInBox.width - documentationBox.x - documentationBox.width)).toBeLessThanOrEqual(1);
+
+  await page.evaluate(() => {
+    const mprUI = Reflect.get(window, "MPRUI");
+    const header = document.getElementById("ledger-header");
+    mprUI.testing.authenticate(header, {
+      user_id: "browser-layout-user",
+      display: "Browser Layout User",
+      given_name: "Browser",
+      user_email: "browser-layout@example.test",
+    });
+  });
+  const userControl = page.locator("mpr-user");
+  await expect(userControl).toBeVisible();
+  const userControlBox = await userControl.boundingBox();
+  expect(userControlBox).not.toBeNull();
+  if (!userControlBox) throw new Error("user_control_not_rendered");
+  expect(Math.abs(userControlBox.x + userControlBox.width - documentationBox.x - documentationBox.width)).toBeLessThanOrEqual(1);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test("shows one tenant creation action for an empty collection", async ({ page }) => {
+  await page.route(`${baseURL}/api/**`, (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === "PUT" && url.pathname === "/api/user-account") {
+      return json(route, { user_account: { id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf810", created_at: "2026-09-01T20:00:00Z" } });
+    }
+    if (request.method() === "GET" && url.pathname === "/api/tenants") return json(route, { tenants: [] });
+    return json(route, { error: { code: "not_found", message: "Not found", request_id: "request" } }, 404);
+  });
+
+  await page.goto(baseURL);
+  await page.evaluate(() => {
+    const header = document.getElementById("ledger-header");
+    header?.setAttribute("data-mpr-auth-status", "authenticated");
+    document.dispatchEvent(new CustomEvent("mpr-ui:auth:authenticated"));
+  });
+  await expect(page.getByText("Create your first tenant to start a Ledger integration.")).toBeVisible();
+  const visibleCreateButtons = page.getByRole("button", { name: "Create tenant", exact: true }).filter({ visible: true });
+  await expect(visibleCreateButtons).toHaveCount(1);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(visibleCreateButtons).toHaveCount(1);
+  await expect(visibleCreateButtons).toHaveText("Create tenant");
+});
+
 test("manages tenants and one-time credentials through the authenticated workspace", async ({ page }) => {
   /** @type {Array<{method: string, url: string, idempotencyKey: string, body: unknown}>} */
   const calls = [];
