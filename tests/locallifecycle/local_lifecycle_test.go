@@ -42,6 +42,7 @@ func TestLocalMakeUpBuildsCanonicalRuntime(testingContext *testing.T) {
 	requireEnvironment(testingContext, ledgerEnvironment, map[string]string{
 		"DATABASE_URL":              "sqlite:///srv/data/ledger.db",
 		"LEDGER_PUBLIC_ORIGIN":      "http://localhost:8000",
+		"TAUTH_GOOGLE_CLIENT_ID":    "611549676198-d8800qv64voofseor1qod1euto5duivu.apps.googleusercontent.com",
 		"TAUTH_JWT_ISSUER":          "tauth",
 		"TAUTH_LOGIN_PATH":          "/auth/google",
 		"TAUTH_LOGOUT_PATH":         "/auth/logout",
@@ -54,6 +55,7 @@ func TestLocalMakeUpBuildsCanonicalRuntime(testingContext *testing.T) {
 	requireEnvironment(testingContext, tauthEnvironment, map[string]string{
 		"TAUTH_CONFIG_FILE":         "/config.yaml",
 		"TAUTH_DATABASE_URL":        "sqlite:///data/tauth.db",
+		"TAUTH_GOOGLE_CLIENT_ID":    "611549676198-d8800qv64voofseor1qod1euto5duivu.apps.googleusercontent.com",
 		"TAUTH_PUBLIC_ORIGIN":       "http://localhost:8000",
 		"TAUTH_REFRESH_COOKIE_NAME": "ledger_local_refresh",
 		"TAUTH_SESSION_COOKIE_NAME": "ledger_local_session",
