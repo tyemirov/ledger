@@ -139,7 +139,7 @@ function ledgerWorkspace() {
         this.account = await provisionUserAccount(controller.signal);
         const page = await listTenants(EMPTY, controller.signal);
         if (!this.canApply(version, controller)) return;
-        this.tenants = page.tenants;
+        this.mergeTenants(page.tenants);
         this.nextCursor = page.next_cursor;
         this.tenantState = this.tenants.length ? RESOURCE_STATES.READY : RESOURCE_STATES.EMPTY;
         this.authState = AUTH_STATES.AUTHENTICATED;
@@ -194,6 +194,15 @@ function ledgerWorkspace() {
       return this.authVersion === version && !controller.signal.aborted && this.readAuthStatus() === AUTH_STATES.AUTHENTICATED;
     },
 
+    mergeTenants(items) {
+      const tenantsByID = new Map(this.tenants.map((item) => [item.id, item]));
+      for (const item of items) tenantsByID.set(item.id, item);
+      this.tenants = [...tenantsByID.values()].sort((left, right) => {
+        const createdAtOrder = left.created_at.localeCompare(right.created_at);
+        return createdAtOrder || left.id.localeCompare(right.id);
+      });
+    },
+
     async loadMoreTenants() {
       if (!this.nextCursor || this.collectionController) return;
       const version = this.authVersion;
@@ -203,7 +212,7 @@ function ledgerWorkspace() {
       try {
         const page = await listTenants(cursor, controller.signal);
         if (!this.canApply(version, controller) || cursor !== this.nextCursor) return;
-        this.tenants = [...this.tenants, ...page.tenants];
+        this.mergeTenants(page.tenants);
         this.nextCursor = page.next_cursor;
       } catch (error) {
         if (!this.isAbort(error)) this.setNotice("error", COPY.TENANTS_ERROR);
@@ -268,7 +277,7 @@ function ledgerWorkspace() {
       try {
         const item = await createTenant(name, crypto.randomUUID(), controller.signal);
         if (!this.canApply(version, controller)) return;
-        this.tenants = [...this.tenants, item];
+        this.mergeTenants([item]);
         this.tenantState = RESOURCE_STATES.READY;
         this.createTenantOpen = false;
         this.setNotice("success", COPY.TENANT_CREATED);

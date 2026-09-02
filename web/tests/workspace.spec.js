@@ -12,7 +12,7 @@ const alpineModule = await readFile(path.join(import.meta.dirname, "../node_modu
 const tenantOne = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf801", name: "Primary", created_at: "2026-09-01T20:01:00Z" });
 const tenantTwo = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf802", name: "Sandbox", created_at: "2026-09-01T20:02:00Z" });
 const tenantThree = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf803", name: "Analytics", created_at: "2026-09-01T20:03:00Z" });
-const tenantFour = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf804", name: "Archive", created_at: "2026-09-01T20:03:30Z" });
+const tenantFour = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf804", name: "Archive", created_at: "2026-09-01T20:02:00Z" });
 const credentialOne = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf811", tenant_id: tenantOne.id, created_at: "2026-09-01T20:04:00Z" });
 const credentialTwo = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf812", tenant_id: tenantThree.id, created_at: "2026-09-01T20:05:00Z" });
 const generatedSecret = `ledger_${credentialTwo.id}_MDEyMzQ1Njc4OWFiY2RlZmdoaWprbG1ub3BxcnN0dXY`;
@@ -110,7 +110,7 @@ test("manages tenants and one-time credentials through the authenticated workspa
       return json(route, { user_account: { id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf810", created_at: "2026-09-01T20:00:00Z" } });
     }
     if (request.method() === "GET" && url.pathname === "/api/tenants") {
-      if (url.searchParams.get("cursor") === "cursor-2") return json(route, { tenants: [tenantFour] });
+      if (url.searchParams.get("cursor") === "cursor-2") return json(route, { tenants: [tenantFour, tenantThree] });
       return json(route, { tenants: [tenantOne, tenantTwo], next_cursor: "cursor-2" });
     }
     if (request.method() === "POST" && url.pathname === "/api/tenants") {
@@ -140,9 +140,6 @@ test("manages tenants and one-time credentials through the authenticated workspa
   await expect(page.getByRole("heading", { name: "Primary" })).toBeVisible();
   expect(calls[0].method).toBe("PUT");
   expect(calls[1].url).toContain("/api/tenants?limit=50");
-  await page.getByRole("button", { name: "Load more" }).click();
-  await expect(page.locator(".tenant-row strong")).toHaveText(["Primary", "Sandbox", "Archive"]);
-  expect(calls.find((call) => call.method === "GET" && call.url.includes("cursor=cursor-2"))).toBeTruthy();
 
   const createButton = page.getByRole("button", { name: "Create tenant" }).first();
   await createButton.focus();
@@ -152,11 +149,15 @@ test("manages tenants and one-time credentials through the authenticated workspa
   await page.getByRole("button", { name: "Create tenant", exact: true }).last().click();
   await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
   await expect(createButton).toBeFocused();
-  await expect(page.locator(".tenant-row strong")).toHaveText(["Primary", "Sandbox", "Archive", "Analytics"]);
+  await expect(page.locator(".tenant-row strong")).toHaveText(["Primary", "Sandbox", "Analytics"]);
   const tenantCreation = calls.find((call) => call.method === "POST" && call.url === "/api/tenants");
   expect(tenantCreation).toMatchObject({ idempotencyKey: expect.any(String), body: { name: "Analytics" } });
   expect(tenantCreation?.idempotencyKey).not.toBe("");
   await expect.poll(() => new URL(page.url()).searchParams.get("tenant")).toBe(tenantThree.id);
+
+  await page.getByRole("button", { name: "Load more" }).click();
+  await expect(page.locator(".tenant-row strong")).toHaveText(["Primary", "Sandbox", "Archive", "Analytics"]);
+  expect(calls.find((call) => call.method === "GET" && call.url.includes("cursor=cursor-2"))).toBeTruthy();
 
   await page.getByRole("button", { name: "Credentials" }).click();
   const createCredentialButton = page.getByRole("button", { name: "Create credential" });
