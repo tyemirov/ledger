@@ -225,4 +225,3 @@ Archive note 2026-08-09:
   - The clean sibling gateway passes release, publish, and deploy plans plus selected-manifest isolation for the committed Ledger revision.
   - No release, publication, deployment, production access, or unrelated application inspection occurs.
   Resolution 2026-08-03: migrated the complete Ledger production graph to schema v3 with singular service placement, four typed private outputs, an exact Docker exclusion, and preserved fresh/legacy volume boundaries; Ledger formatting, lint, tests, and full CI passed with 100% production coverage, and the clean sibling gateway passed release, publish, deploy, and selected-manifest-isolation plans without production mutation.
-
