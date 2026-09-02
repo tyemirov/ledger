@@ -1,18 +1,8 @@
-.PHONY: ci test backend-test frontend-test configure-google-client-id
+.PHONY: ci test
 
-ci: backend-test frontend-test
+ci: test
 
-test: ci
-
-backend-test:
-	cd backend && go test ./...
-
-frontend-test:
-	cd ui && npm test
-
-configure-google-client-id:
-	@if [ -z "$(GOOGLE_CLIENT_ID)" ]; then \
-		echo "GOOGLE_CLIENT_ID is required, e.g. make configure-google-client-id GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com"; \
-		exit 1; \
-	fi
-	node scripts/set-google-client-id.js "$(GOOGLE_CLIENT_ID)"
+test:
+	@! rg -n 'tauth\.js|demoapi|wallet|secret_key' docker-compose.yml configs/config.yml README.md
+	bash -n up.sh down.sh
+	LEDGER_LOCAL_LEDGER_ENV_FILE=/dev/null LEDGER_LOCAL_TAUTH_ENV_FILE=/dev/null docker compose --project-name ledger-local config --quiet

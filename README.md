@@ -11,7 +11,7 @@ It is intentionally **application-agnostic** — you decide when and why credits
 ## Features
 
 * Append-only ledger with immutable entries
-* Atomic operations using PostgreSQL transactions
+* Atomic operations with PostgreSQL transactions
 * Idempotency keys to make operations safe to retry
 * Holds/reservations with later capture/release
 * Expiration support for promotional credits
@@ -20,23 +20,26 @@ It is intentionally **application-agnostic** — you decide when and why credits
 * Reservation introspection APIs (GetReservation / ListReservations)
 * ListEntries filtering (types / reservation_id / idempotency_key_prefix)
 * gRPC API for integration from any language
+* Authenticated browser workspace for UserAccount, tenant, and credential management
+* Owner-scoped Ledger tenants with no application tenant-count limit
+* One-time, revocable tenant credentials for application clients
 * Audit-friendly — no balance overwrites, all changes are recorded
 
 ---
 
 ## Architecture
 
-```
-[Your App / Web API]
-        |
-        |  gRPC
-        v
- [Ledger Service]  <--->  PostgreSQL
+```text
+Browser --> mpr-ui and TAuth --> Ledger HTTP control plane
+                                      |
+Application client --> private gRPC --+--> PostgreSQL or SQLite
 ```
 
 * `pkg/ledger` – core domain logic (ledger) reusable as a Go module
 * `internal/store/gormstore` – database-backed implementation of `ledger.Store` (SQLite/PostgreSQL via GORM)
 * `internal/grpcserver` – gRPC API bindings
+* `internal/controlplane` – authenticated HTTP resources and the browser workspace
+* `internal/useraccount` – UserAccount and Ledger tenant ownership rules
 * `api/credit/v1` – protobuf definitions
 
 ### Authentication
@@ -84,7 +87,7 @@ Install dependencies:
 go mod tidy
 ```
 
-When targeting PostgreSQL, ensure the database exists and set `DATABASE_URL` accordingly.
+When you use PostgreSQL, make sure that the database exists and set `DATABASE_URL`.
 The service applies its schema automatically via GORM on startup (same as SQLite).
 
 Generate gRPC code (if you modify `.proto` files):
@@ -114,17 +117,28 @@ auth:
   tauth_tenant_id: "${TAUTH_TENANT_ID}"
   session_cookie_name: "${TAUTH_SESSION_COOKIE_NAME}"
   public_origin: "${LEDGER_PUBLIC_ORIGIN}"
+
+ui:
+  description: "Ledger"
+  tauth_url: "${TAUTH_URL}"
+  google_client_id: "${TAUTH_GOOGLE_CLIENT_ID}"
+  login_path: "${TAUTH_LOGIN_PATH}"
+  logout_path: "${TAUTH_LOGOUT_PATH}"
+  nonce_path: "${TAUTH_NONCE_PATH}"
+  session_path: "${TAUTH_SESSION_PATH}"
 ```
 
 Static tenants and plaintext configuration secrets are not supported. An authenticated person provisions one UserAccount, creates named tenants, and creates or revokes each tenant credential through the HTTP control plane.
 
 Environment variables:
 
-The committed configuration requires `DATABASE_URL`, `TAUTH_JWT_SIGNING_KEY`, `TAUTH_JWT_ISSUER`, `TAUTH_TENANT_ID`, `TAUTH_SESSION_COOKIE_NAME`, and `LEDGER_PUBLIC_ORIGIN`. Listener addresses are explicit configuration fields.
+The committed configuration requires `DATABASE_URL`, `LEDGER_PUBLIC_ORIGIN`, `TAUTH_GOOGLE_CLIENT_ID`, `TAUTH_JWT_ISSUER`, `TAUTH_JWT_SIGNING_KEY`, `TAUTH_LOGIN_PATH`, `TAUTH_LOGOUT_PATH`, `TAUTH_NONCE_PATH`, `TAUTH_SESSION_COOKIE_NAME`, `TAUTH_SESSION_PATH`, `TAUTH_TENANT_ID`, and `TAUTH_URL`. Listener addresses are explicit configuration fields.
 
 ### HTTP control plane
 
-The HTTP listener exposes `GET /healthz` and these TAuth-protected resources:
+The HTTP listener serves the browser workspace at `/`, its checked assets under `/assets/ledger/`, the public browser authentication config at `/config-ui.yaml`, and `GET /healthz`.
+
+The listener also exposes these TAuth-protected resources:
 
 - `PUT` and `GET /api/user-account`.
 - `POST` and `GET /api/tenants`.
@@ -132,7 +146,7 @@ The HTTP listener exposes `GET /healthz` and these TAuth-protected resources:
 - `POST` and `GET /api/tenants/{tenant_id}/credentials`.
 - `DELETE /api/tenants/{tenant_id}/credentials/{credential_id}`.
 
-Unsafe requests require the exact configured `Origin` and `X-Ledger-CSRF: 1`. Tenant and credential creation also require `Idempotency-Key`. A new credential secret appears only in its successful creation response.
+The workspace requests a protected resource only after `mpr-ui` reports an authenticated TAuth session. Unsafe requests require the exact configured `Origin` and `X-Ledger-CSRF: 1`. Tenant and credential creation also require `Idempotency-Key`. A new credential secret appears only in its successful creation response.
 
 ---
 
@@ -152,7 +166,7 @@ The manifest retires the legacy `mprlab-nginx-gateway/ledger-api` service.
 It also declares the non-secret configuration and the `ledger.grpc` endpoint.
 `.mprlab/deploy/resources.yml` is the only tracked production declaration. That manifest
 uses the permanent versionless contract and contains the SemVer release policy. Its one service
-declares singular gateway placement and binds the database plus the required TAuth and public-origin values through one typed `private_values` resource. The exact values live only in the ignored mode-0600
+declares singular gateway placement and binds the database plus the required TAuth, browser, and public-origin values through one typed `private_values` resource. The exact values live only in the ignored mode-0600
 `.mprlab/deploy/.env` input, which is excluded from the Ledger Docker build
 context and read only by deployment. Release and publication do not read it.
 The legacy volume remains untouched. The gateway owns release sealing,
@@ -183,7 +197,7 @@ The mapping declares the complete legacy tenant set, each canonical tenant UUID 
 
 ## Usage
 
-Below are example calls using [`grpcurl`](https://github.com/fullstorydev/grpcurl).
+Below are example calls with [`grpcurl`](https://github.com/fullstorydev/grpcurl).
 
 Mutation RPCs return `entry_id` + `created_unix_utc` so clients can correlate requests with the persisted ledger entry without an extra `ListEntries` round-trip.
 
@@ -285,7 +299,7 @@ grpcurl -plaintext \
 
 ### Refund a debit (spend/capture)
 
-Refunds are first-class entries linked to an original debit entry; the ledger enforces that refunds cannot exceed the original debit amount.
+Refunds are first-class entries that link to an original debit entry. The ledger prevents refunds that exceed the original debit amount.
 
 ```bash
 grpcurl -plaintext \
@@ -385,36 +399,46 @@ Use the provided `Makefile` targets for local tooling:
 
 ```bash
 make fmt   # verifies gofmt formatting
-make lint  # runs go vet, staticcheck, and ineffassign
+make lint  # runs Go static checks and the checked browser-module compile
 make test  # executes go test with 100% coverage enforcement
-make ci    # runs fmt + lint + test
+make ci    # runs format, lint, Go coverage, and browser acceptance checks
+make up    # builds and starts the verified localhost runtime
+make down  # stops the localhost runtime and preserves its data
 ```
-
-Docker Compose reads configuration from `.env.ledger`, so the container runtime matches the CLI flag/environment setup.
 
 ---
 
 ## Database Selection
 
-The CLI defaults to SQLite when `DATABASE_URL` is not set (file path via `DATABASE_URL=sqlite:///...`). The provided Docker Compose stack runs SQLite by default using the `DATABASE_URL` in `.env.ledger`.
+The CLI defaults to SQLite when `DATABASE_URL` is not set. Use `DATABASE_URL=sqlite:///...` to select a file path.
 
-To run against Postgres outside Compose, set `DATABASE_URL` to a Postgres DSN (for example `postgres://...`) and ensure the database exists. The server chooses the correct GORM driver based on the URL scheme.
+The local runtime uses SQLite volumes for Ledger and TAuth. The `make down` command preserves both volumes.
+
+To use Postgres outside Compose, set `DATABASE_URL` to a Postgres DSN, for example `postgres://...`. Make sure that the database exists.
+
+The server selects the correct GORM driver from the URL scheme.
 
 ---
 
-## Demo Application
+## Local Workspace
 
-All demo assets (UI, Docker compose, optional backend) live under `demo/`. The ledger service code remains agnostic of the demo; see `demo/README.md` inside that folder for usage.
+Run `make up` from the repository root. The command builds Ledger from the current source and starts TAuth and the same-origin proxy.
+
+Open `http://localhost:8000/` for the Ledger workspace. Use `localhost:50051` for a local gRPC client.
+
+The command returns after it verifies the page, health route, browser config, TAuth session route, and protected control plane.
+
+Run `make down` to stop the local runtime. See `demo/README.md` for the complete local contract.
 
 ---
 
 ## Notes
 
-* **Amounts** are stored as integer cents to avoid floating point errors.
-  - `spend` entries store debits as negative `amount_cents`; refunds/grants are positive.
+* **Amounts** are stored as integer cents to prevent floating point errors.
+  - `spend` entries store debits as negative `amount_cents`. Refund and grant entries are positive.
 * **Idempotency keys** must be unique per account for each logical operation.
   Use UUIDs or other request-unique identifiers.
-  - If your client treats `duplicate_idempotency_key` as a no-op success, strongly namespace keys by operation to avoid collisions across entry types.
+  - If your client treats `duplicate_idempotency_key` as a no-op success, use operation namespaces to prevent key conflicts.
 * The service never overwrites balances — everything is computed from ledger entries.
 * For **permanent credits**, set `expires_at_unix_utc` to `0`. Use expiry only for explicitly time-limited promotions.
 

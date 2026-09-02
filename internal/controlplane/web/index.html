@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en" data-mpr-theme="dark" data-ledger-palette="default">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ledger</title>
+    <meta name="description" content="Manage Ledger tenants and application credentials.">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="theme-color" content="#101216">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css">
+    <link rel="stylesheet" href="/assets/ledger/styles.css">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@5.4.1/dist/browser/js-yaml.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui-config.js"></script>
+    <script
+      id="mpr-ui-bundle"
+      type="application/json"
+      data-mpr-ui-bundle-src="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.js"
+    ></script>
+    <script type="module" src="/assets/ledger/js/app.js"></script>
+  </head>
+  <body x-data="ledgerWorkspace" data-mpr-theme="dark" data-ledger-palette="default">
+    <mpr-header
+      id="ledger-header"
+      data-config-url="/config-ui.yaml"
+      auth-transition='{"title":"Opening Ledger","message":"Loading your workspace.","completionEvent":"ledger:workspace-ready"}'
+      horizontal-links='{"alignment":"right","links":[{"label":"Documentation","href":"https://github.com/tyemirov/ledger/blob/master/docs/integration.md","target":"_blank","rel":"noopener noreferrer"}]}'
+      theme-config='{"attribute":"data-mpr-theme","targets":["document","body"],"initialMode":"default-dark","modes":[{"value":"default-light","attributeValue":"light","dataset":{"data-ledger-palette":"default"}},{"value":"sunrise-light","attributeValue":"light","dataset":{"data-ledger-palette":"sunrise"}},{"value":"default-dark","attributeValue":"dark","dataset":{"data-ledger-palette":"default"}},{"value":"forest-dark","attributeValue":"dark","dataset":{"data-ledger-palette":"forest"}}]}'
+    >
+      <a slot="brand" class="ledger-brand" href="/" aria-label="Ledger workspace">
+        <span class="ledger-mark" aria-hidden="true">L</span>
+        <span>Ledger</span>
+      </a>
+      <div slot="aux" class="header-status" x-cloak x-show="notice" role="status" aria-live="polite" aria-atomic="true">
+        <span x-bind:data-kind="noticeKind" x-text="notice"></span>
+      </div>
+      <mpr-user slot="aux" display-mode="avatar" logout-url="/" logout-label="Sign out"></mpr-user>
+    </mpr-header>
+
+    <main class="ledger-shell">
+      <section class="state-panel" x-cloak x-show="authState === authStates.LOADING" aria-live="polite">
+        <span class="state-kicker">Session</span>
+        <h1>Loading Ledger</h1>
+        <p>Ledger is opening your account and tenant collection.</p>
+      </section>
+
+      <section class="state-panel" x-cloak x-show="authState === authStates.UNAUTHENTICATED">
+        <span class="state-kicker">Account</span>
+        <h1>Sign in to Ledger</h1>
+        <p>Use the account control in the header to open your private workspace.</p>
+      </section>
+
+      <section class="state-panel state-panel--error" x-cloak x-show="authState === authStates.ERROR" role="alert">
+        <span class="state-kicker">Workspace</span>
+        <h1>Ledger could not open</h1>
+        <p>Retry the protected workspace request. Your accounting data was not changed.</p>
+        <button type="button" class="button button--primary" x-on:click="retryWorkspace()">Retry</button>
+      </section>
+
+      <section class="workspace" x-cloak x-show="authState === authStates.AUTHENTICATED" aria-label="Ledger workspace">
+        <aside class="tenant-rail" aria-label="Ledger tenants">
+          <header class="rail-header">
+            <div>
+              <span class="section-kicker">Account</span>
+              <h1>Tenants</h1>
+            </div>
+            <button type="button" class="button button--primary tenant-create-button" x-on:click="openCreateTenant($event)">Create tenant</button>
+          </header>
+
+          <p class="resource-message" x-show="tenantState === resourceStates.LOADING">Loading tenants…</p>
+          <div class="resource-message" x-show="tenantState === resourceStates.EMPTY">
+            <p>Create your first tenant to start a Ledger integration.</p>
+          </div>
+          <div class="resource-message resource-message--error" x-show="tenantState === resourceStates.ERROR">
+            <p>Ledger could not load your tenants.</p>
+            <button type="button" class="button" x-on:click="retryWorkspace()">Retry</button>
+          </div>
+
+          <nav class="tenant-list" x-show="tenants.length" aria-label="Tenant collection">
+            <template x-for="item in tenants" x-bind:key="item.id">
+              <button
+                type="button"
+                class="tenant-row"
+                x-bind:class="{'is-selected': item.id === selectedTenantID}"
+                x-bind:aria-current="item.id === selectedTenantID ? 'page' : null"
+                x-on:click="selectTenant(item.id)"
+              >
+                <strong x-text="item.name"></strong>
+                <code x-text="item.id"></code>
+              </button>
+            </template>
+          </nav>
+          <button type="button" class="load-more" x-show="nextCursor" x-bind:disabled="collectionController" x-on:click="loadMoreTenants()">Load more</button>
+        </aside>
+
+        <div class="mobile-tenant-control">
+          <label for="mobile-tenant" x-show="tenants.length">Tenant</label>
+          <select id="mobile-tenant" x-show="tenants.length" x-bind:value="selectedTenantID" x-on:change="selectTenant($event.target.value)">
+            <template x-for="item in tenants" x-bind:key="item.id">
+              <option x-bind:value="item.id" x-text="item.name"></option>
+            </template>
+          </select>
+          <button type="button" class="button button--primary tenant-create-button" x-on:click="openCreateTenant($event)">Create tenant</button>
+        </div>
+
+        <article class="tenant-workspace" x-show="selectedTenant">
+          <header class="tenant-header">
+            <div class="tenant-identity">
+              <span class="section-kicker">Selected tenant</span>
+              <h2 x-text="selectedTenant?.name"></h2>
+              <code x-text="selectedTenantID"></code>
+            </div>
+            <span class="status-pill" x-text="`${activeCredentialCount} active ${activeCredentialCount === 1 ? 'credential' : 'credentials'}`"></span>
+          </header>
+
+          <nav class="section-tabs" aria-label="Tenant sections">
+            <button type="button" x-bind:aria-current="activeSection === sections.OVERVIEW ? 'page' : null" x-on:click="setSection(sections.OVERVIEW)">Overview</button>
+            <button type="button" x-bind:aria-current="activeSection === sections.CREDENTIALS ? 'page' : null" x-on:click="setSection(sections.CREDENTIALS)">Credentials</button>
+            <button type="button" x-bind:aria-current="activeSection === sections.INTEGRATION ? 'page' : null" x-on:click="setSection(sections.INTEGRATION)">Integration</button>
+          </nav>
+
+          <section class="content-panel" x-show="activeSection === sections.OVERVIEW" aria-labelledby="overview-title">
+            <header class="panel-header">
+              <div>
+                <span class="section-kicker">Tenant</span>
+                <h3 id="overview-title">Overview</h3>
+              </div>
+            </header>
+            <dl class="facts">
+              <div><dt>Name</dt><dd x-text="selectedTenant?.name"></dd></div>
+              <div><dt>Tenant ID</dt><dd><code x-text="selectedTenantID"></code></dd></div>
+              <div><dt>Created</dt><dd x-text="selectedTenantCreatedAt"></dd></div>
+              <div><dt>Credentials</dt><dd x-text="`${credentials.length} total, ${activeCredentialCount} active`"></dd></div>
+            </dl>
+          </section>
+
+          <section class="content-panel" x-show="activeSection === sections.CREDENTIALS" aria-labelledby="credentials-title">
+            <header class="panel-header">
+              <div>
+                <span class="section-kicker">Application access</span>
+                <h3 id="credentials-title">Credentials</h3>
+              </div>
+              <button type="button" class="button button--primary" x-bind:disabled="createCredentialPending" x-on:click="issueCredential($event)">
+                <span x-text="createCredentialPending ? 'Creating…' : 'Create credential'"></span>
+              </button>
+            </header>
+            <p class="resource-message" x-show="credentialState === resourceStates.LOADING">Loading credentials…</p>
+            <div class="resource-message" x-show="credentialState === resourceStates.EMPTY">
+              <p>This tenant has no credentials. Create one when an application client is ready.</p>
+            </div>
+            <div class="resource-message resource-message--error" x-show="credentialState === resourceStates.ERROR">
+              <p>Ledger could not load tenant credentials.</p>
+              <button type="button" class="button" x-on:click="selectTenant(selectedTenantID, false)">Retry</button>
+            </div>
+            <ul class="credential-list" x-show="credentials.length">
+              <template x-for="item in credentials" x-bind:key="item.id">
+                <li>
+                  <div>
+                    <strong x-text="item.revoked_at ? 'Revoked' : 'Active'"></strong>
+                    <code x-text="item.id"></code>
+                    <span x-text="`Created ${formatTime(item.created_at)}`"></span>
+                    <span x-show="item.revoked_at" x-text="`Revoked ${formatTime(item.revoked_at)}`"></span>
+                  </div>
+                  <button
+                    type="button"
+                    class="button"
+                    x-bind:class="{'button--danger': !item.revoked_at}"
+                    x-bind:aria-disabled="item.revoked_at ? 'true' : null"
+                    x-on:click="!item.revoked_at && openRevokeCredential(item.id, $event)"
+                    x-text="item.revoked_at ? 'Revoked' : 'Revoke'"
+                  ></button>
+                </li>
+              </template>
+            </ul>
+          </section>
+
+          <section class="content-panel" x-show="activeSection === sections.INTEGRATION" aria-labelledby="integration-title">
+            <header class="panel-header">
+              <div>
+                <span class="section-kicker">Private data plane</span>
+                <h3 id="integration-title">Integration</h3>
+              </div>
+            </header>
+            <p>Use a tenant credential only from an application client. Keep the gRPC endpoint private.</p>
+            <pre class="integration-example"><code x-text="integrationExample"></code></pre>
+            <div class="doc-links">
+              <a href="https://github.com/tyemirov/ledger/blob/master/docs/api.md" target="_blank" rel="noopener noreferrer">gRPC API</a>
+              <a href="https://github.com/tyemirov/ledger/blob/master/docs/integration.md" target="_blank" rel="noopener noreferrer">Go library guide</a>
+            </div>
+          </section>
+        </article>
+      </section>
+    </main>
+
+    <div class="dialog-overlay" x-cloak x-show="createTenantOpen" x-bind:inert="!createTenantOpen" x-bind:aria-hidden="createTenantOpen ? 'false' : 'true'" x-on:keydown.escape.window="createTenantOpen && closeCreateTenant()">
+      <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="create-tenant-title" x-on:click.outside="closeCreateTenant()">
+        <header><div><span class="section-kicker">Account resource</span><h2 id="create-tenant-title">Create tenant</h2></div></header>
+        <form x-on:submit.prevent="submitTenant()">
+          <label for="tenant-name">Tenant name</label>
+          <input id="tenant-name" x-ref="tenantName" x-model="createTenantName" maxlength="80" autocomplete="off" required>
+          <p class="field-help">Use a short name that identifies the application or environment.</p>
+          <footer>
+            <button type="button" class="button" x-bind:disabled="createTenantPending" x-on:click="closeCreateTenant()">Cancel</button>
+            <button type="submit" class="button button--primary" x-bind:disabled="createTenantPending || !createTenantName.trim()" x-text="createTenantPending ? 'Creating…' : 'Create tenant'"></button>
+          </footer>
+        </form>
+      </section>
+    </div>
+
+    <div class="dialog-overlay" x-cloak x-show="generatedCredential" x-bind:inert="!generatedCredential" x-bind:aria-hidden="generatedCredential ? 'false' : 'true'">
+      <section class="dialog dialog--secret" x-ref="generatedCredentialDialog" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="credential-created-title">
+        <header><div><span class="section-kicker">Shown once</span><h2 id="credential-created-title">Save this credential</h2></div></header>
+        <p>Ledger cannot show this secret again. Store it in the client secret manager before you continue.</p>
+        <div class="secret-value"><code x-text="generatedCredential"></code></div>
+        <button type="button" class="button" x-on:click="copyGeneratedCredential()" x-text="credentialCopied ? 'Copied' : 'Copy credential'"></button>
+        <label class="confirmation"><input type="checkbox" x-model="credentialSaved"> <span>I saved this credential.</span></label>
+        <footer><button type="button" class="button button--primary" x-bind:disabled="!credentialSaved" x-on:click="closeGeneratedCredential()">Done</button></footer>
+      </section>
+    </div>
+
+    <div class="dialog-overlay" x-cloak x-show="revokeCredentialID" x-bind:inert="!revokeCredentialID" x-bind:aria-hidden="revokeCredentialID ? 'false' : 'true'" x-on:keydown.escape.window="revokeCredentialID && closeRevokeCredential()">
+      <section class="dialog" x-ref="revokeConfirm" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="revoke-title">
+        <header><div><span class="section-kicker">Tenant credential</span><h2 id="revoke-title">Revoke credential?</h2></div></header>
+        <p>This credential will stop authorizing gRPC requests for <strong x-text="selectedTenant?.name"></strong>.</p>
+        <dl class="facts facts--compact"><div><dt>Tenant</dt><dd><code x-text="selectedTenantID"></code></dd></div><div><dt>Credential</dt><dd><code x-text="revokeCredentialID"></code></dd></div></dl>
+        <footer>
+          <button type="button" class="button" x-bind:disabled="revokeCredentialPending" x-on:click="closeRevokeCredential()">Cancel</button>
+          <button type="button" class="button button--danger" x-bind:disabled="revokeCredentialPending" x-on:click="confirmRevokeCredential()" x-text="revokeCredentialPending ? 'Revoking…' : 'Revoke credential'"></button>
+        </footer>
+      </section>
+    </div>
+
+    <mpr-footer
+      prefix-text="Ledger by Marco Polo Research Lab"
+      links-collection='{"style":"drop-up","text":"Documentation","links":[{"label":"Ledger API","url":"https://github.com/tyemirov/ledger/blob/master/docs/api.md"},{"label":"Integration guide","url":"https://github.com/tyemirov/ledger/blob/master/docs/integration.md"}]}'
+      theme-switcher="square"
+      theme-config='{"attribute":"data-mpr-theme","targets":["document","body"],"initialMode":"default-dark","modes":[{"value":"default-light","attributeValue":"light","dataset":{"data-ledger-palette":"default"}},{"value":"sunrise-light","attributeValue":"light","dataset":{"data-ledger-palette":"sunrise"}},{"value":"default-dark","attributeValue":"dark","dataset":{"data-ledger-palette":"default"}},{"value":"forest-dark","attributeValue":"dark","dataset":{"data-ledger-palette":"forest"}}]}'
+    ></mpr-footer>
+  </body>
+</html>

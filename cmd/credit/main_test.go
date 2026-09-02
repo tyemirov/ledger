@@ -188,6 +188,14 @@ auth:
   tauth_tenant_id: "mprlab"
   session_cookie_name: "app_session"
   public_origin: "https://ledger.example.test"
+ui:
+  description: "Ledger"
+  tauth_url: "https://ledger.example.test"
+  google_client_id: "google-client-id"
+  login_path: "/auth/google"
+  logout_path: "/auth/logout"
+  nonce_path: "/auth/nonce"
+  session_path: "/auth/session"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -215,6 +223,53 @@ auth:
 	}
 }
 
+func TestLoadConfigRejectsObsoleteKeys(test *testing.T) {
+	base := `
+service:
+  database_url: "sqlite://test.db"
+  grpc_listen_addr: ":50051"
+  http_listen_addr: ":8080"
+auth:
+  jwt_signing_key: "secret"
+  jwt_issuer: "tauth"
+  tauth_tenant_id: "mprlab"
+  session_cookie_name: "app_session"
+  public_origin: "https://ledger.example.test"
+ui:
+  description: "Ledger"
+  tauth_url: "https://ledger.example.test"
+  google_client_id: "google-client-id"
+  login_path: "/auth/google"
+  logout_path: "/auth/logout"
+  nonce_path: "/auth/nonce"
+  session_path: "/auth/session"
+`
+	for name, obsolete := range map[string]string{
+		"service listen address": "  listen_addr: \":50051\"\n",
+		"static tenants":         "tenants:\n  legacy:\n    secret: obsolete\n",
+	} {
+		test.Run(name, func(test *testing.T) {
+			configFile := filepath.Join(test.TempDir(), "config.yml")
+			content := base
+			if strings.HasPrefix(obsolete, "  ") {
+				content = strings.Replace(content, "auth:\n", obsolete+"auth:\n", 1)
+			} else {
+				content += obsolete
+			}
+			if err := os.WriteFile(configFile, []byte(content), 0o600); err != nil {
+				test.Fatalf("write config: %v", err)
+			}
+			cfg := &runtimeConfig{}
+			cmd := newRootCommand()
+			cmd.Flags().String(flagConfigFile, configFile, "config")
+			_ = cmd.Flags().Set(flagConfigFile, configFile)
+			if err := loadConfig(cmd, cfg); err == nil {
+				test.Fatalf("obsolete configuration key was accepted")
+			}
+		})
+	}
+}
+
 func TestLoadConfigWithDefaultExpansion(test *testing.T) {
 	viper.Reset()
 	tempDir := test.TempDir()
@@ -230,6 +285,14 @@ auth:
   tauth_tenant_id: "mprlab"
   session_cookie_name: "app_session"
   public_origin: "https://ledger.example.test"
+ui:
+  description: "Ledger"
+  tauth_url: "https://ledger.example.test"
+  google_client_id: "google-client-id"
+  login_path: "/auth/google"
+  logout_path: "/auth/logout"
+  nonce_path: "/auth/nonce"
+  session_path: "/auth/session"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -270,6 +333,14 @@ auth:
   tauth_tenant_id: "mprlab"
   session_cookie_name: "app_session"
   public_origin: "https://ledger.example.test"
+ui:
+  description: "Ledger"
+  tauth_url: "https://ledger.example.test"
+  google_client_id: "google-client-id"
+  login_path: "/auth/google"
+  logout_path: "/auth/logout"
+  nonce_path: "/auth/nonce"
+  session_path: "/auth/session"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -864,8 +935,12 @@ func TestZapOperationLoggerEmitsInfoAndError(test *testing.T) {
 	operationLogger := &zapOperationLogger{logger: logger}
 	operationLogger.LogControlRequest(controlplane.RequestLog{Operation: "GET /api/tenants", StatusCode: http.StatusOK})
 	operationLogger.LogControlRequest(controlplane.RequestLog{Operation: "GET /api/tenants/id", StatusCode: http.StatusOK, UserAccountID: "account", ResourceID: "tenant"})
-	if observedLogs.FilterMessage("control.request").Len() != 2 {
+	operationLogger.LogControlRequest(controlplane.RequestLog{Operation: "POST /api/tenants", StatusCode: http.StatusInternalServerError, Error: errors.New("database unavailable")})
+	if observedLogs.FilterMessage("control.request").Len() != 3 {
 		test.Fatalf("expected control request logs")
+	}
+	if observedLogs.FilterMessage("control.request").FilterLevelExact(zapcore.ErrorLevel).Len() != 1 {
+		test.Fatalf("expected failed control request log")
 	}
 
 	reservationID, err := ledger.NewReservationID("order-1")
@@ -1080,6 +1155,14 @@ auth:
   tauth_tenant_id: "mprlab"
   session_cookie_name: "app_session"
   public_origin: "https://ledger.example.test"
+ui:
+  description: "Ledger"
+  tauth_url: "https://ledger.example.test"
+  google_client_id: "google-client-id"
+  login_path: "/auth/google"
+  logout_path: "/auth/logout"
+  nonce_path: "/auth/nonce"
+  session_path: "/auth/session"
 `, sqlitePath, listenAddress, httpAddress)
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -1262,6 +1345,13 @@ func configuredRuntime(databaseURL string, grpcAddress string, httpAddress strin
 	configuration.Auth.TAuthTenantID = "mprlab"
 	configuration.Auth.SessionCookieName = "app_session"
 	configuration.Auth.PublicOrigin = testRuntimeOrigin
+	configuration.UI.Description = "Ledger"
+	configuration.UI.TAuthURL = testRuntimeOrigin
+	configuration.UI.GoogleClientID = "google-client-id"
+	configuration.UI.LoginPath = "/auth/google"
+	configuration.UI.LogoutPath = "/auth/logout"
+	configuration.UI.NoncePath = "/auth/nonce"
+	configuration.UI.SessionPath = "/auth/session"
 	return configuration
 }
 
@@ -1526,6 +1616,12 @@ tenants:
 	}
 	if err := database.Exec(`CREATE TABLE accounts (account_id text PRIMARY KEY, tenant_id text NOT NULL, user_id text NOT NULL, ledger_id text NOT NULL, created_at datetime NOT NULL)`).Error; err != nil {
 		test.Fatalf("create legacy accounts: %v", err)
+	}
+	if err := database.Exec(`CREATE TABLE ledger_entries (entry_id text PRIMARY KEY, account_id text NOT NULL, type text NOT NULL, amount_cents integer NOT NULL, idempotency_key text NOT NULL, metadata blob NOT NULL, created_at datetime NOT NULL)`).Error; err != nil {
+		test.Fatalf("create legacy entries: %v", err)
+	}
+	if err := database.Exec(`CREATE TABLE reservations (account_id text NOT NULL, reservation_id text NOT NULL, amount_cents integer NOT NULL, status text NOT NULL, created_at datetime NOT NULL, updated_at datetime NOT NULL, PRIMARY KEY (account_id, reservation_id))`).Error; err != nil {
+		test.Fatalf("create legacy reservations: %v", err)
 	}
 	if err := database.Exec(`INSERT INTO accounts(account_id, tenant_id, user_id, ledger_id, created_at) VALUES (?, ?, ?, ?, ?)`, "0196f0ec-3e80-7a54-bd2b-56cfe90bf900", "legacy", "user", "default", time.Now().UTC()).Error; err != nil {
 		test.Fatalf("insert legacy account: %v", err)

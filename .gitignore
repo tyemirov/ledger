@@ -8,6 +8,7 @@ coverage.out
 node_modules/
 test-results/
 *.png
+.cache/
 
 docs/mpr-ui
 docs/TAuth

@@ -69,6 +69,14 @@ type composeService struct {
 	Assets      []runtimeAsset                `yaml:"assets"`
 	Mounts      []volumeMount                 `yaml:"mounts"`
 	Ports       []servicePort                 `yaml:"ports"`
+	Readiness   serviceReadiness              `yaml:"readiness"`
+}
+
+type serviceReadiness struct {
+	Protocol       string `yaml:"protocol"`
+	Port           int    `yaml:"port"`
+	Path           string `yaml:"path"`
+	ExpectedStatus int    `yaml:"expected_status"`
 }
 
 type servicePlacement struct {
@@ -112,7 +120,9 @@ type capabilityEndpoint struct {
 }
 
 type capabilityHealth struct {
-	Protocol string `yaml:"protocol"`
+	Protocol       string `yaml:"protocol"`
+	Path           string `yaml:"path"`
+	ExpectedStatus int    `yaml:"expected_status"`
 }
 
 func TestVersionlessLifecycleContract(testingContext *testing.T) {
@@ -158,8 +168,8 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	if _, statError := os.Stat(filepath.Join(repositoryRoot, ".mprlab", "release.yml")); !os.IsNotExist(statError) {
 		testingContext.Fatalf("obsolete release policy file remains: %v", statError)
 	}
-	if len(manifest.Resources) != 3 {
-		testingContext.Fatalf("expected three production resources, got %d", len(manifest.Resources))
+	if len(manifest.Resources) != 4 {
+		testingContext.Fatalf("expected four production resources, got %d", len(manifest.Resources))
 	}
 
 	privateResource := requireResource(testingContext, manifest.Resources, "private_values", "private")
@@ -168,8 +178,14 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 		"ledger-public-origin":      "LEDGER_PUBLIC_ORIGIN",
 		"tauth-jwt-issuer":          "TAUTH_JWT_ISSUER",
 		"tauth-jwt-signing-key":     "TAUTH_JWT_SIGNING_KEY",
+		"tauth-google-client-id":    "TAUTH_GOOGLE_CLIENT_ID",
+		"tauth-login-path":          "TAUTH_LOGIN_PATH",
+		"tauth-logout-path":         "TAUTH_LOGOUT_PATH",
+		"tauth-nonce-path":          "TAUTH_NONCE_PATH",
 		"tauth-session-cookie-name": "TAUTH_SESSION_COOKIE_NAME",
+		"tauth-session-path":        "TAUTH_SESSION_PATH",
 		"tauth-tenant-id":           "TAUTH_TENANT_ID",
+		"tauth-url":                 "TAUTH_URL",
 	}
 	if !reflect.DeepEqual(privateResource.Bindings, expectedBindings) {
 		testingContext.Fatalf("unexpected private bindings: %#v", privateResource.Bindings)
@@ -204,8 +220,14 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 		"LEDGER_PUBLIC_ORIGIN":      {Resource: "private", Output: "ledger-public-origin"},
 		"TAUTH_JWT_ISSUER":          {Resource: "private", Output: "tauth-jwt-issuer"},
 		"TAUTH_JWT_SIGNING_KEY":     {Resource: "private", Output: "tauth-jwt-signing-key"},
+		"TAUTH_GOOGLE_CLIENT_ID":    {Resource: "private", Output: "tauth-google-client-id"},
+		"TAUTH_LOGIN_PATH":          {Resource: "private", Output: "tauth-login-path"},
+		"TAUTH_LOGOUT_PATH":         {Resource: "private", Output: "tauth-logout-path"},
+		"TAUTH_NONCE_PATH":          {Resource: "private", Output: "tauth-nonce-path"},
 		"TAUTH_SESSION_COOKIE_NAME": {Resource: "private", Output: "tauth-session-cookie-name"},
+		"TAUTH_SESSION_PATH":        {Resource: "private", Output: "tauth-session-path"},
 		"TAUTH_TENANT_ID":           {Resource: "private", Output: "tauth-tenant-id"},
+		"TAUTH_URL":                 {Resource: "private", Output: "tauth-url"},
 	}
 	if !reflect.DeepEqual(ledgerService.Environment, expectedEnvironment) {
 		testingContext.Fatalf("unexpected service environment: %#v", ledgerService.Environment)
@@ -219,6 +241,9 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	if !reflect.DeepEqual(ledgerService.Ports, []servicePort{{ContainerPort: 50051}, {ContainerPort: 8080}}) {
 		testingContext.Fatalf("unexpected service ports: %#v", ledgerService.Ports)
 	}
+	if ledgerService.Readiness != (serviceReadiness{Protocol: "http", Port: 8080, Path: "/healthz", ExpectedStatus: 200}) {
+		testingContext.Fatalf("unexpected service readiness: %#v", ledgerService.Readiness)
+	}
 	if !reflect.DeepEqual(composeResource.Volumes, []retainedVolume{{ID: "data", Name: "ledger-data", Retention: "retain"}}) {
 		testingContext.Fatalf("unexpected retained volumes: %#v", composeResource.Volumes)
 	}
@@ -229,6 +254,13 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	}
 	if capabilityResource.Endpoint != (capabilityEndpoint{Scope: "same_host", Scheme: "grpc", Alias: "ledger-api", Port: 50051}) || capabilityResource.Health != (capabilityHealth{Protocol: "tcp"}) {
 		testingContext.Fatalf("unexpected capability endpoint or health: %#v %#v", capabilityResource.Endpoint, capabilityResource.Health)
+	}
+	httpCapability := requireResource(testingContext, manifest.Resources, "runtime_capability", "http")
+	if httpCapability.Name != "ledger.http" || httpCapability.Version != 1 || httpCapability.Project != "runtime" || httpCapability.Service != "ledger-api" {
+		testingContext.Fatalf("unexpected HTTP runtime capability: %#v", httpCapability)
+	}
+	if httpCapability.Endpoint != (capabilityEndpoint{Scope: "same_host", Scheme: "http", Alias: "ledger-api", Port: 8080}) || httpCapability.Health != (capabilityHealth{Protocol: "http", Path: "/healthz", ExpectedStatus: 200}) {
+		testingContext.Fatalf("unexpected HTTP capability endpoint or health: %#v %#v", httpCapability.Endpoint, httpCapability.Health)
 	}
 
 	requireExactIgnore(testingContext, filepath.Join(repositoryRoot, ".gitignore"), ".mprlab/deploy/.env", false)

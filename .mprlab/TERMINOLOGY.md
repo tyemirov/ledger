@@ -80,9 +80,11 @@ Give each term one meaning. Use the same term for the same concept in all docume
 Add repository-specific technical nouns below this line.
 
 - `control plane`: The HTTP API that manages UserAccount and Ledger tenant resources.
+- `data migration`: A bounded operation that moves persisted data into the current schema.
 - `data plane`: The gRPC API that performs credit operations.
 - `Ledger account`: A credit namespace that one tenant ID, one user ID, and one ledger ID identify.
 - `Ledger tenant`: A Ledger workspace that contains Ledger accounts and belongs to one UserAccount.
+- `Ledger workspace`: The authenticated browser frontend that manages one UserAccount and its Ledger tenants.
 - `TAuth session`: A TAuth-issued session that identifies an authenticated person.
 - `TAuth tenant`: A TAuth authentication realm that issues sessions for the Ledger application.
 - `tenant credential`: A revocable secret that authorizes a client for one Ledger tenant.
@@ -126,6 +128,7 @@ Use the simple present, simple past, simple future, imperative, or infinitive fo
 
 Add repository-specific technical verbs below this line.
 
+- `migrate`: Move persisted data into the current schema. Approved forms: migrate, migrates, migrated.
 - `provision`: Create the canonical UserAccount for one authenticated TAuth identity. Approved forms: provision, provisions, provisioned.
 
 ```text

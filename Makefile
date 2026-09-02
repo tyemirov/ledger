@@ -1,11 +1,17 @@
 GO_SOURCES := $(shell find . -name '*.go' -not -path "./vendor/*" -not -path "./.git/*" -not -path "*/.git/*")
 STATICCHECK_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1)
-UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1)
+UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1 | grep -v github.com/MarkoPoloResearchLab/ledger/tests/locallifecycle)
 PRODUCTION_PACKAGES := $(shell go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./...)
-INTEGRATION_TEST_PACKAGES :=
+INTEGRATION_TEST_PACKAGES := ./tests/locallifecycle
 DEADCODE_ENTRYPOINT_PACKAGES := ./cmd/credit
+NPM ?= npm
+FRONTEND_DIRECTORY := web
+PLAYWRIGHT_BROWSERS_PATH := $(CURDIR)/$(FRONTEND_DIRECTORY)/node_modules/.cache/ms-playwright
+FRONTEND_DEPENDENCY_STAMP := $(PLAYWRIGHT_BROWSERS_PATH)/.ledger-frontend-dependencies
 
-.PHONY: fmt format check-format lint test test-unit test-integration ci tools check-unused-packages build-cgo-off
+export PLAYWRIGHT_BROWSERS_PATH
+
+.PHONY: fmt format check-format lint frontend-dependencies frontend-lint frontend-test test test-unit test-integration test-local-lifecycle ci tools check-unused-packages build-cgo-off up down
 
 fmt: check-format
 
@@ -22,7 +28,7 @@ check-format:
 		exit 1; \
 	fi
 
-lint: tools
+lint: tools frontend-lint
 	go vet $(UNIT_TEST_PACKAGES)
 	staticcheck -tests=false $(STATICCHECK_PACKAGES)
 	ineffassign $(UNIT_TEST_PACKAGES)
@@ -55,13 +61,40 @@ build-cgo-off:
 	trap 'rm -rf "$$out_dir"' EXIT; \
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$$out_dir/ledgerd" ./cmd/credit
 
-test: test-unit
+frontend-dependencies: $(FRONTEND_DEPENDENCY_STAMP)
+
+$(FRONTEND_DEPENDENCY_STAMP): $(FRONTEND_DIRECTORY)/package.json $(FRONTEND_DIRECTORY)/package-lock.json
+	cd $(FRONTEND_DIRECTORY) && $(NPM) ci
+	cd $(FRONTEND_DIRECTORY) && ./node_modules/.bin/playwright install chromium --only-shell
+	@mkdir -p "$(PLAYWRIGHT_BROWSERS_PATH)"
+	@touch "$@"
+
+frontend-lint: frontend-dependencies
+	cd $(FRONTEND_DIRECTORY) && $(NPM) run lint
+
+frontend-test: frontend-dependencies
+	cd $(FRONTEND_DIRECTORY) && $(NPM) test
+
+test: test-unit test-integration
 
 test-unit:
 	go test $(UNIT_TEST_PACKAGES) -coverprofile=coverage.out -covermode=count
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 100.0) { print "coverage below 100%"; exit 1 } }'
 
-ci: check-format lint test-unit
+test-integration: frontend-test test-local-lifecycle
+
+test-local-lifecycle:
+	bash -n demo/up.sh demo/down.sh
+	LEDGER_LOCAL_LEDGER_ENV_FILE=/dev/null LEDGER_LOCAL_TAUTH_ENV_FILE=/dev/null docker compose --file demo/docker-compose.yml --project-name ledger-local config --quiet
+	go test $(INTEGRATION_TEST_PACKAGES) -count=1
+
+up:
+	@./demo/up.sh
+
+down:
+	@./demo/down.sh
+
+ci: check-format lint test
 
 tools:
 	@command -v staticcheck >/dev/null 2>&1 || go install honnef.co/go/tools/cmd/staticcheck@latest

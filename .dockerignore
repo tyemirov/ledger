@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+.mprlab/deploy/.env
+.mprlab/*-PLAN.md
+coverage.out
+*.db
+**/node_modules
+**/test-results
+demo/certs/*
+.cache

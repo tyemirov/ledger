@@ -10,3 +10,12 @@ auth:
   tauth_tenant_id: "${TAUTH_TENANT_ID}"
   session_cookie_name: "${TAUTH_SESSION_COOKIE_NAME}"
   public_origin: "${LEDGER_PUBLIC_ORIGIN}"
+
+ui:
+  description: "Ledger"
+  tauth_url: "${TAUTH_URL}"
+  google_client_id: "${TAUTH_GOOGLE_CLIENT_ID}"
+  login_path: "${TAUTH_LOGIN_PATH}"
+  logout_path: "${TAUTH_LOGOUT_PATH}"
+  nonce_path: "${TAUTH_NONCE_PATH}"
+  session_path: "${TAUTH_SESSION_PATH}"

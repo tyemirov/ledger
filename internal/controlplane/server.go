@@ -35,6 +35,7 @@ type RequestLog struct {
 	Duration      time.Duration
 	UserAccountID string
 	ResourceID    string
+	Error         error
 }
 
 type RequestLogger interface {
@@ -48,6 +49,7 @@ type Handler struct {
 	authTenantID string
 	publicOrigin string
 	logger       RequestLogger
+	browser      BrowserConfig
 	mux          *http.ServeMux
 }
 
@@ -55,6 +57,7 @@ type requestState struct {
 	requestID     string
 	userAccountID string
 	resourceID    string
+	internalError error
 }
 
 type requestStateKey struct{}
@@ -131,13 +134,16 @@ type credentialBody struct {
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 }
 
-func NewHandler(accounts *useraccount.Service, tenants *tenant.Service, sessions SessionValidator, authTenantID string, publicOrigin string, logger RequestLogger) (*Handler, error) {
+func NewHandler(accounts *useraccount.Service, tenants *tenant.Service, sessions SessionValidator, authTenantID string, publicOrigin string, browser BrowserConfig, logger RequestLogger) (*Handler, error) {
 	if accounts == nil || tenants == nil || sessions == nil || logger == nil || strings.TrimSpace(authTenantID) == "" {
 		return nil, errors.New("control_plane_invalid_dependency")
 	}
 	origin := strings.TrimRight(strings.TrimSpace(publicOrigin), "/")
 	if origin == "" {
 		return nil, errors.New("control_plane_invalid_public_origin")
+	}
+	if err := browser.validate(origin, authTenantID); err != nil {
+		return nil, err
 	}
 	handler := &Handler{
 		accounts:     accounts,
@@ -146,6 +152,7 @@ func NewHandler(accounts *useraccount.Service, tenants *tenant.Service, sessions
 		authTenantID: strings.TrimSpace(authTenantID),
 		publicOrigin: origin,
 		logger:       logger,
+		browser:      browser,
 		mux:          http.NewServeMux(),
 	}
 	handler.routes()
@@ -153,6 +160,10 @@ func NewHandler(accounts *useraccount.Service, tenants *tenant.Service, sessions
 }
 
 func (handler *Handler) routes() {
+	handler.mux.HandleFunc("GET /{$}", handler.workspace)
+	handler.mux.HandleFunc("GET /index.html", handler.workspace)
+	handler.mux.HandleFunc("GET /config-ui.yaml", handler.browserConfiguration)
+	handler.mux.HandleFunc("GET /assets/ledger/", handler.workspaceAsset)
 	handler.mux.HandleFunc("GET /healthz", handler.health)
 	handler.mux.HandleFunc("GET /api/user-account", handler.getUserAccount)
 	handler.mux.HandleFunc("PUT /api/user-account", handler.provisionUserAccount)
@@ -180,6 +191,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			Duration:      time.Since(startedAt),
 			UserAccountID: state.userAccountID,
 			ResourceID:    state.resourceID,
+			Error:         state.internalError,
 		})
 	}()
 	observed.Header().Set("Cache-Control", "private, no-store")
@@ -213,6 +225,7 @@ func (handler *Handler) authenticate(response http.ResponseWriter, request *http
 		return principal{}, requestID, false
 	}
 	if err != nil {
+		setRequestError(request, err)
 		writeError(response, http.StatusInternalServerError, "internal", "The request could not be completed.", requestID)
 		return principal{}, requestID, false
 	}
@@ -254,6 +267,7 @@ func (handler *Handler) provisionUserAccount(response http.ResponseWriter, reque
 	}
 	account, created, err := handler.accounts.Provision(request.Context(), actor.identity, requestID)
 	if err != nil {
+		setRequestError(request, err)
 		writeError(response, http.StatusInternalServerError, "internal", "The request could not be completed.", requestID)
 		return
 	}
@@ -283,6 +297,7 @@ func (handler *Handler) listTenants(response http.ResponseWriter, request *http.
 	}
 	items, err := handler.tenants.List(request.Context(), actor.account.ID(), cursor, limit+1)
 	if err != nil {
+		setRequestError(request, err)
 		writeError(response, http.StatusInternalServerError, "internal", "The request could not be completed.", requestID)
 		return
 	}
@@ -319,7 +334,7 @@ func (handler *Handler) createTenant(response http.ResponseWriter, request *http
 	}
 	item, created, err := handler.tenants.Create(request.Context(), actor.account.ID(), name, key, requestID)
 	if err != nil {
-		handler.writeTenantError(response, err, requestID)
+		handler.writeTenantError(response, request, err, requestID)
 		return
 	}
 	statusCode := http.StatusOK
@@ -342,7 +357,7 @@ func (handler *Handler) getTenant(response http.ResponseWriter, request *http.Re
 	}
 	item, err := handler.tenants.Get(request.Context(), actor.account.ID(), tenantID)
 	if err != nil {
-		handler.writeTenantError(response, err, requestID)
+		handler.writeTenantError(response, request, err, requestID)
 		return
 	}
 	setRequestResource(request, actor.account.ID().String(), item.ID().String())
@@ -356,7 +371,7 @@ func (handler *Handler) listCredentials(response http.ResponseWriter, request *h
 	}
 	items, err := handler.tenants.ListCredentials(request.Context(), actor.account.ID(), tenantID)
 	if err != nil {
-		handler.writeTenantError(response, err, requestID)
+		handler.writeTenantError(response, request, err, requestID)
 		return
 	}
 	document := credentialsDocument{Credentials: make([]credentialBody, 0, len(items))}
@@ -381,7 +396,7 @@ func (handler *Handler) createCredential(response http.ResponseWriter, request *
 	}
 	credential, secret, created, err := handler.tenants.CreateCredential(request.Context(), actor.account.ID(), tenantID, key, requestID)
 	if err != nil {
-		handler.writeTenantError(response, err, requestID)
+		handler.writeTenantError(response, request, err, requestID)
 		return
 	}
 	statusCode := http.StatusOK
@@ -405,7 +420,7 @@ func (handler *Handler) revokeCredential(response http.ResponseWriter, request *
 	}
 	credential, err := handler.tenants.RevokeCredential(request.Context(), actor.account.ID(), tenantID, credentialID, requestID)
 	if err != nil {
-		handler.writeTenantError(response, err, requestID)
+		handler.writeTenantError(response, request, err, requestID)
 		return
 	}
 	setRequestResource(request, actor.account.ID().String(), credential.ID().String())
@@ -433,13 +448,21 @@ func setRequestResource(request *http.Request, userAccountID string, resourceID 
 	state.resourceID = resourceID
 }
 
-func (handler *Handler) writeTenantError(response http.ResponseWriter, err error, requestID string) {
+func setRequestError(request *http.Request, err error) {
+	state, ok := request.Context().Value(requestStateKey{}).(*requestState)
+	if ok {
+		state.internalError = err
+	}
+}
+
+func (handler *Handler) writeTenantError(response http.ResponseWriter, request *http.Request, err error, requestID string) {
 	switch {
 	case errors.Is(err, tenant.ErrNotFound):
 		writeError(response, http.StatusNotFound, "tenant_not_found", "The tenant resource was not found.", requestID)
 	case errors.Is(err, tenant.ErrIdempotencyConflict):
 		writeError(response, http.StatusConflict, "idempotency_conflict", "The idempotency key was used for another request.", requestID)
 	default:
+		setRequestError(request, err)
 		writeError(response, http.StatusInternalServerError, "internal", "The request could not be completed.", requestID)
 	}
 }

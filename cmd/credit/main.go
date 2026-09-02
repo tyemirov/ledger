@@ -57,6 +57,15 @@ type runtimeConfig struct {
 		SessionCookieName string `mapstructure:"session_cookie_name"`
 		PublicOrigin      string `mapstructure:"public_origin"`
 	} `mapstructure:"auth"`
+	UI struct {
+		Description    string `mapstructure:"description"`
+		TAuthURL       string `mapstructure:"tauth_url"`
+		GoogleClientID string `mapstructure:"google_client_id"`
+		LoginPath      string `mapstructure:"login_path"`
+		LogoutPath     string `mapstructure:"logout_path"`
+		NoncePath      string `mapstructure:"nonce_path"`
+		SessionPath    string `mapstructure:"session_path"`
+	} `mapstructure:"ui"`
 }
 
 var (
@@ -144,7 +153,7 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 		return fmt.Errorf("parse config file: %w", err)
 	}
 
-	if err := v.Unmarshal(cfg); err != nil {
+	if err := v.UnmarshalExact(cfg); err != nil {
 		return fmt.Errorf("unmarshal config: %w", err)
 	}
 
@@ -163,6 +172,13 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 		"auth.tauth_tenant_id":     cfg.Auth.TAuthTenantID,
 		"auth.session_cookie_name": cfg.Auth.SessionCookieName,
 		"auth.public_origin":       cfg.Auth.PublicOrigin,
+		"ui.description":           cfg.UI.Description,
+		"ui.tauth_url":             cfg.UI.TAuthURL,
+		"ui.google_client_id":      cfg.UI.GoogleClientID,
+		"ui.login_path":            cfg.UI.LoginPath,
+		"ui.logout_path":           cfg.UI.LogoutPath,
+		"ui.nonce_path":            cfg.UI.NoncePath,
+		"ui.session_path":          cfg.UI.SessionPath,
 	} {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s is required in %q", field, configFile)
@@ -261,7 +277,15 @@ func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Lo
 		Issuer:     cfg.Auth.JWTIssuer,
 		CookieName: cfg.Auth.SessionCookieName,
 	})
-	httpHandler, _ := controlplane.NewHandler(accountService, tenantService, sessions, cfg.Auth.TAuthTenantID, cfg.Auth.PublicOrigin, opLogger)
+	httpHandler, _ := controlplane.NewHandler(accountService, tenantService, sessions, cfg.Auth.TAuthTenantID, cfg.Auth.PublicOrigin, controlplane.BrowserConfig{
+		Description:    cfg.UI.Description,
+		TAuthURL:       cfg.UI.TAuthURL,
+		GoogleClientID: cfg.UI.GoogleClientID,
+		LoginPath:      cfg.UI.LoginPath,
+		LogoutPath:     cfg.UI.LogoutPath,
+		NoncePath:      cfg.UI.NoncePath,
+		SessionPath:    cfg.UI.SessionPath,
+	}, opLogger)
 
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
@@ -449,6 +473,10 @@ func (logger *zapOperationLogger) LogControlRequest(entry controlplane.RequestLo
 	}
 	if entry.ResourceID != "" {
 		fields = append(fields, zap.String("resource_id", entry.ResourceID))
+	}
+	if entry.Error != nil {
+		logger.logger.Error("control.request", append(fields, zap.Error(entry.Error))...)
+		return
 	}
 	logger.logger.Info("control.request", fields...)
 }

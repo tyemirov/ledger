@@ -23,6 +23,7 @@ func TestOpenAPIContract(test *testing.T) {
 		test.Fatalf("OpenAPI version is %q", document.OpenAPI)
 	}
 	want := map[string][]string{
+		"/config-ui.yaml":                      {"get"},
 		"/healthz":                             {"get"},
 		"/api/user-account":                    {"get", "put"},
 		"/api/tenants":                         {"get", "post"},
