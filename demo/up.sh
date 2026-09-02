@@ -12,7 +12,7 @@ public_origin="http://localhost:8000"
 tauth_tenant_id="ledger-local"
 session_cookie_name="ledger_local_session"
 refresh_cookie_name="ledger_local_refresh"
-google_client_id="991677581607-r0dj8q6irjagipali0jpca7nfp8sfj9r.apps.googleusercontent.com"
+google_client_id="611549676198-d8800qv64voofseor1qod1euto5duivu.apps.googleusercontent.com"
 
 fail() {
   printf 'error: %s\n' "$1" >&2
