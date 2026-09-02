@@ -109,6 +109,57 @@ func TestLocalMakeUpBuildsCanonicalRuntime(testingContext *testing.T) {
 	}
 }
 
+func TestLocalMakeUpReportsBrowserURLAfterReadiness(testingContext *testing.T) {
+	repositoryRoot := locateRepositoryRoot(testingContext)
+	temporaryDirectory := testingContext.TempDir()
+	runtimeDirectory := filepath.Join(temporaryDirectory, "runtime")
+	fakeBinaryDirectory := filepath.Join(temporaryDirectory, "bin")
+	if err := os.MkdirAll(fakeBinaryDirectory, 0o700); err != nil {
+		testingContext.Fatalf("create fake binary directory: %v", err)
+	}
+	fakePrograms := map[string]string{
+		"docker": "#!/usr/bin/env bash\nset -euo pipefail\n",
+		"curl": `#!/usr/bin/env bash
+set -euo pipefail
+url="${!#}"
+if [[ " $* " == *" --write-out "* ]]; then
+  case "${url}" in
+    */healthz|*/config-ui.yaml|*/) printf '200' ;;
+    */auth/session) printf '204' ;;
+    */api/tenants*) printf '401' ;;
+    *) printf '500' ;;
+  esac
+  exit 0
+fi
+case "${url}" in
+  */) printf '%s' '<mpr-header data-config-url="/config-ui.yaml"></mpr-header><script data-mpr-ui-bundle-src="mpr-ui@latest/mpr-ui.js"></script>' ;;
+  */config-ui.yaml) printf '%s\n%s' 'tenantId: "ledger-local"' 'tauthUrl: "http://localhost:8000"' ;;
+esac
+`,
+	}
+	for name, contents := range fakePrograms {
+		if err := os.WriteFile(filepath.Join(fakeBinaryDirectory, name), []byte(contents), 0o700); err != nil {
+			testingContext.Fatalf("write fake %s: %v", name, err)
+		}
+	}
+
+	command := exec.Command("make", "up")
+	command.Dir = repositoryRoot
+	command.Env = environmentWith(map[string]string{
+		"LEDGER_LOCAL_RUNTIME_DIR": runtimeDirectory,
+		"LEDGER_LOCAL_TEST_MODE":   "1",
+		"PATH":                     fakeBinaryDirectory + string(os.PathListSeparator) + os.Getenv("PATH"),
+	})
+	output, err := command.CombinedOutput()
+	if err != nil {
+		testingContext.Fatalf("make up: %v\n%s", err, output)
+	}
+	completionSummary := "Ledger is ready.\nBrowser URL: http://localhost:8000/\ngRPC address: localhost:50051\n"
+	if !strings.Contains(string(output), completionSummary) {
+		testingContext.Fatalf("make up completion output does not contain the browser and gRPC addresses: %s", output)
+	}
+}
+
 func TestLocalMakeDownTargetsOwnedProjectAndPreservesState(testingContext *testing.T) {
 	repositoryRoot := locateRepositoryRoot(testingContext)
 	temporaryDirectory := testingContext.TempDir()
