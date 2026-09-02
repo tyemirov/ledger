@@ -1,3 +1,5 @@
+name: ledger-local
+
 services:
   ledger:
     build:
@@ -5,7 +7,7 @@ services:
       dockerfile: Dockerfile
     image: ledger-local:latest
     env_file:
-      - ./configs/.env.ledger
+      - ${LEDGER_LOCAL_LEDGER_ENV_FILE:?LEDGER_LOCAL_LEDGER_ENV_FILE is required}
     command: ["/srv/ledgerd", "--config", "/srv/config.yml"]
     volumes:
       - ledger_data:/srv/data
@@ -13,6 +15,8 @@ services:
     expose:
       - "50051"
       - "8080"
+    ports:
+      - "127.0.0.1:50051:50051"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz"]
       interval: 2s
@@ -24,15 +28,14 @@ services:
     image: ghcr.io/tyemirov/tauth:latest
     pull_policy: always
     env_file:
-      - ./configs/.env.tauth
+      - ${LEDGER_LOCAL_TAUTH_ENV_FILE:?LEDGER_LOCAL_TAUTH_ENV_FILE is required}
     volumes:
       - tauth_data:/data
       - ./configs/tauth.config.yaml:/config.yaml:ro
     expose:
       - "8080"
 
-  frontend-localhost:
-    profiles: [localhost]
+  frontend:
     image: ghcr.io/tyemirov/ghttp:latest
     pull_policy: always
     depends_on:
@@ -47,28 +50,6 @@ services:
       GHTTP_SERVE_RESPONSE_HEADERS: "/=Cache-Control:no-store"
     ports:
       - "127.0.0.1:8000:8000"
-
-  frontend-computercat:
-    profiles: [computercat]
-    image: ghcr.io/tyemirov/ghttp:latest
-    pull_policy: always
-    depends_on:
-      ledger:
-        condition: service_healthy
-      tauth:
-        condition: service_started
-    environment:
-      GHTTP_SERVE_PORT: "4443"
-      GHTTP_SERVE_DIRECTORY: "/tmp"
-      GHTTP_SERVE_TLS_CERT_FILE: "/certs/computercat-cert.pem"
-      GHTTP_SERVE_TLS_KEY_FILE: "/certs/computercat-key.pem"
-      GHTTP_SERVE_PROXIES: "/auth=http://tauth:8080,/me=http://tauth:8080,/=http://ledger:8080"
-      GHTTP_SERVE_RESPONSE_HEADERS: "/=Cache-Control:no-store"
-    ports:
-      - "4443:4443"
-    volumes:
-      - "${DEMO_TLS_CERT_FILE:-/media/share/Drive/exchange/certs/computercat/computercat-cert.pem}:/certs/computercat-cert.pem:ro"
-      - "${DEMO_TLS_KEY_FILE:-/media/share/Drive/exchange/certs/computercat/computercat-key.pem}:/certs/computercat-key.pem:ro"
 
 volumes:
   ledger_data:

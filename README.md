@@ -11,7 +11,7 @@ It is intentionally **application-agnostic** — you decide when and why credits
 ## Features
 
 * Append-only ledger with immutable entries
-* Atomic operations using PostgreSQL transactions
+* Atomic operations with PostgreSQL transactions
 * Idempotency keys to make operations safe to retry
 * Holds/reservations with later capture/release
 * Expiration support for promotional credits
@@ -87,7 +87,7 @@ Install dependencies:
 go mod tidy
 ```
 
-When targeting PostgreSQL, ensure the database exists and set `DATABASE_URL` accordingly.
+When you use PostgreSQL, make sure that the database exists and set `DATABASE_URL`.
 The service applies its schema automatically via GORM on startup (same as SQLite).
 
 Generate gRPC code (if you modify `.proto` files):
@@ -197,7 +197,7 @@ The mapping declares the complete legacy tenant set, each canonical tenant UUID 
 
 ## Usage
 
-Below are example calls using [`grpcurl`](https://github.com/fullstorydev/grpcurl).
+Below are example calls with [`grpcurl`](https://github.com/fullstorydev/grpcurl).
 
 Mutation RPCs return `entry_id` + `created_unix_utc` so clients can correlate requests with the persisted ledger entry without an extra `ListEntries` round-trip.
 
@@ -299,7 +299,7 @@ grpcurl -plaintext \
 
 ### Refund a debit (spend/capture)
 
-Refunds are first-class entries linked to an original debit entry; the ledger enforces that refunds cannot exceed the original debit amount.
+Refunds are first-class entries that link to an original debit entry. The ledger prevents refunds that exceed the original debit amount.
 
 ```bash
 grpcurl -plaintext \
@@ -402,33 +402,43 @@ make fmt   # verifies gofmt formatting
 make lint  # runs Go static checks and the checked browser-module compile
 make test  # executes go test with 100% coverage enforcement
 make ci    # runs format, lint, Go coverage, and browser acceptance checks
+make up    # builds and starts the verified localhost runtime
+make down  # stops the localhost runtime and preserves its data
 ```
-
-Docker Compose reads configuration from `.env.ledger`, so the container runtime matches the CLI flag/environment setup.
 
 ---
 
 ## Database Selection
 
-The CLI defaults to SQLite when `DATABASE_URL` is not set (file path via `DATABASE_URL=sqlite:///...`). The provided Docker Compose stack runs SQLite by default using the `DATABASE_URL` in `.env.ledger`.
+The CLI defaults to SQLite when `DATABASE_URL` is not set. Use `DATABASE_URL=sqlite:///...` to select a file path.
 
-To run against Postgres outside Compose, set `DATABASE_URL` to a Postgres DSN (for example `postgres://...`) and ensure the database exists. The server chooses the correct GORM driver based on the URL scheme.
+The local runtime uses SQLite volumes for Ledger and TAuth. The `make down` command preserves both volumes.
+
+To use Postgres outside Compose, set `DATABASE_URL` to a Postgres DSN, for example `postgres://...`. Make sure that the database exists.
+
+The server selects the correct GORM driver from the URL scheme.
 
 ---
 
 ## Local Workspace
 
-The `demo/` composition runs Ledger, TAuth, and one same-origin proxy. Ledger serves the same embedded workspace that the production binary serves. See `demo/README.md` for the required private local config and profile commands.
+Run `make up` from the repository root. The command builds Ledger from the current source and starts TAuth and the same-origin proxy.
+
+Open `http://localhost:8000/` for the Ledger workspace. Use `localhost:50051` for a local gRPC client.
+
+The command returns after it verifies the page, health route, browser config, TAuth session route, and protected control plane.
+
+Run `make down` to stop the local runtime. See `demo/README.md` for the complete local contract.
 
 ---
 
 ## Notes
 
-* **Amounts** are stored as integer cents to avoid floating point errors.
-  - `spend` entries store debits as negative `amount_cents`; refunds/grants are positive.
+* **Amounts** are stored as integer cents to prevent floating point errors.
+  - `spend` entries store debits as negative `amount_cents`. Refund and grant entries are positive.
 * **Idempotency keys** must be unique per account for each logical operation.
   Use UUIDs or other request-unique identifiers.
-  - If your client treats `duplicate_idempotency_key` as a no-op success, strongly namespace keys by operation to avoid collisions across entry types.
+  - If your client treats `duplicate_idempotency_key` as a no-op success, use operation namespaces to prevent key conflicts.
 * The service never overwrites balances — everything is computed from ledger entries.
 * For **permanent credits**, set `expires_at_unix_utc` to `0`. Use expiry only for explicitly time-limited promotions.
 

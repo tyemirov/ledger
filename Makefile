@@ -1,8 +1,8 @@
 GO_SOURCES := $(shell find . -name '*.go' -not -path "./vendor/*" -not -path "./.git/*" -not -path "*/.git/*")
 STATICCHECK_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1)
-UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1)
+UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1 | grep -v github.com/MarkoPoloResearchLab/ledger/tests/locallifecycle)
 PRODUCTION_PACKAGES := $(shell go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./...)
-INTEGRATION_TEST_PACKAGES :=
+INTEGRATION_TEST_PACKAGES := ./tests/locallifecycle
 DEADCODE_ENTRYPOINT_PACKAGES := ./cmd/credit
 NPM ?= npm
 FRONTEND_DIRECTORY := web
@@ -11,7 +11,7 @@ FRONTEND_DEPENDENCY_STAMP := $(PLAYWRIGHT_BROWSERS_PATH)/.ledger-frontend-depend
 
 export PLAYWRIGHT_BROWSERS_PATH
 
-.PHONY: fmt format check-format lint frontend-dependencies frontend-lint frontend-test test test-unit test-integration ci tools check-unused-packages build-cgo-off
+.PHONY: fmt format check-format lint frontend-dependencies frontend-lint frontend-test test test-unit test-integration test-local-lifecycle ci tools check-unused-packages build-cgo-off up down
 
 fmt: check-format
 
@@ -75,13 +75,24 @@ frontend-lint: frontend-dependencies
 frontend-test: frontend-dependencies
 	cd $(FRONTEND_DIRECTORY) && $(NPM) test
 
-test: test-unit frontend-test
+test: test-unit test-integration
 
 test-unit:
 	go test $(UNIT_TEST_PACKAGES) -coverprofile=coverage.out -covermode=count
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 100.0) { print "coverage below 100%"; exit 1 } }'
 
-test-integration: frontend-test
+test-integration: frontend-test test-local-lifecycle
+
+test-local-lifecycle:
+	bash -n demo/up.sh demo/down.sh
+	LEDGER_LOCAL_LEDGER_ENV_FILE=/dev/null LEDGER_LOCAL_TAUTH_ENV_FILE=/dev/null docker compose --file demo/docker-compose.yml --project-name ledger-local config --quiet
+	go test $(INTEGRATION_TEST_PACKAGES) -count=1
+
+up:
+	@./demo/up.sh
+
+down:
+	@./demo/down.sh
 
 ci: check-format lint test
 

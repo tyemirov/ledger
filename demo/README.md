@@ -1,38 +1,31 @@
 # Local Ledger Workspace
 
-The local stack runs Ledger, TAuth, and one same-origin `ghttp` entrypoint. Ledger serves the production workspace and control plane.
+The local runtime contains Ledger, TAuth, and one same-origin `ghttp` entrypoint. Ledger serves the current workspace and control plane.
 
 The proxy sends `/auth` and `/me` to TAuth. It sends all other paths to the Ledger HTTP listener.
 
-## Configuration
-
-Keep the local private values in `demo/configs/.env.ledger` and `demo/configs/.env.tauth`. The Ledger file must define these names:
-
-- `DATABASE_URL`
-- `LEDGER_PUBLIC_ORIGIN`
-- `TAUTH_GOOGLE_CLIENT_ID`
-- `TAUTH_JWT_ISSUER`
-- `TAUTH_JWT_SIGNING_KEY`
-- `TAUTH_SESSION_COOKIE_NAME`
-- `TAUTH_TENANT_ID`
-- `TAUTH_URL`
-
-Use the same TAuth tenant, signing key, cookie name, and Google client ID in both local services.
-
-For the `localhost` profile, use `http://localhost:8000` for `LEDGER_PUBLIC_ORIGIN` and `TAUTH_URL`.
+Ledger and TAuth use separate SQLite volumes. The local shutdown command preserves both volumes.
 
 ## Start
 
-Run one profile from `demo/`:
+Run this command from the repository root:
 
 ```bash
-./up.sh localhost
+make up
 ```
+
+The command builds Ledger from the current source. It generates one private local signing key in `.cache/ledger-local`.
+
+The command returns after all local readiness checks pass. Open `http://localhost:8000/` for the browser workspace.
+
+Use `localhost:50051` for a local gRPC client. Create a Ledger tenant and its credential in the browser workspace first.
+
+## Stop
+
+Run this command from the repository root:
 
 ```bash
-./up.sh computercat
+make down
 ```
 
-The `computercat` profile keeps the existing host TLS file contract. Run `./down.sh` to stop the stack.
-
-After sign-in, Ledger provisions one UserAccount. You can create tenants and separate application credentials from the workspace.
+The command stops only the `ledger-local` Compose project. It preserves the SQLite data and the local signing key.
