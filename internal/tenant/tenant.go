@@ -314,36 +314,39 @@ func (service *Service) RevokeCredential(ctx context.Context, ownerID useraccoun
 }
 
 func (service *Service) Authenticate(ctx context.Context, rawSecret string) (ID, error) {
-	credentialID, secretPart, err := parseCredential(rawSecret)
+	credentialID, digest, err := ParseCredentialSecret(rawSecret)
 	if err != nil {
 		return ID{}, err
 	}
 	stored, err := service.store.FindCredential(ctx, credentialID)
 	if err != nil {
-		return ID{}, ErrCredentialInvalid
+		if errors.Is(err, ErrCredentialInvalid) {
+			return ID{}, ErrCredentialInvalid
+		}
+		return ID{}, fmt.Errorf("tenant credential authenticate: %w", err)
 	}
 	if _, revoked := stored.Credential.RevokedAt(); revoked {
 		return ID{}, ErrCredentialRevoked
 	}
-	digest := sha256.Sum256([]byte(secretPart))
-	if len(stored.Digest) != sha256.Size || subtle.ConstantTimeCompare(stored.Digest, digest[:]) != 1 {
+	if len(stored.Digest) != sha256.Size || subtle.ConstantTimeCompare(stored.Digest, digest) != 1 {
 		return ID{}, ErrCredentialInvalid
 	}
 	return stored.Credential.TenantID(), nil
 }
 
-func parseCredential(raw string) (CredentialID, string, error) {
-	parts := strings.Split(raw, "_")
+func ParseCredentialSecret(raw string) (CredentialID, []byte, error) {
+	parts := strings.SplitN(raw, "_", 3)
 	if len(parts) != 3 || parts[0] != credentialPrefix || parts[2] == "" {
-		return CredentialID{}, "", ErrCredentialInvalid
+		return CredentialID{}, nil, ErrCredentialInvalid
 	}
 	decoded, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil || len(decoded) != credentialSecretSize {
-		return CredentialID{}, "", ErrCredentialInvalid
+		return CredentialID{}, nil, ErrCredentialInvalid
 	}
 	credentialID, err := NewCredentialID(parts[1])
 	if err != nil {
-		return CredentialID{}, "", ErrCredentialInvalid
+		return CredentialID{}, nil, ErrCredentialInvalid
 	}
-	return credentialID, parts[2], nil
+	digest := sha256.Sum256([]byte(parts[2]))
+	return credentialID, digest[:], nil
 }

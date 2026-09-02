@@ -419,7 +419,10 @@ func newAuthInterceptor(authenticator tenantAuthenticator) grpc.UnaryServerInter
 		providedSecret := strings.TrimPrefix(token, bearerPrefix)
 		authenticatedTenantID, err := authenticator.Authenticate(ctx, providedSecret)
 		if err != nil {
-			return nil, status.Error(codes.Unauthenticated, "invalid secret key")
+			if errors.Is(err, tenant.ErrCredentialInvalid) || errors.Is(err, tenant.ErrCredentialRevoked) {
+				return nil, status.Error(codes.Unauthenticated, "invalid secret key")
+			}
+			return nil, status.Error(codes.Internal, "tenant authentication failed")
 		}
 
 		return handler(tenant.WithAuthenticatedID(ctx, authenticatedTenantID), request)

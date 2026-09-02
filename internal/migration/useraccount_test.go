@@ -13,7 +13,6 @@ import (
 
 	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
 	"github.com/MarkoPoloResearchLab/ledger/internal/tenant"
-	"github.com/MarkoPoloResearchLab/ledger/internal/useraccount"
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -69,7 +68,7 @@ func validMapping() File {
 	return File{
 		LegacyTenantIDs: []string{"legacy-one", "legacy-two"},
 		Tenants: []TenantMapping{
-			{LegacyTenantID: "legacy-one", TenantID: migrationTenantOne, Name: "One", Owner: owner, CredentialID: migrationCredentialOne, CredentialSecret: migrationSecret(migrationCredentialOne, 1)},
+			{LegacyTenantID: "legacy-one", TenantID: migrationTenantOne, Name: "One", Owner: owner, CredentialID: migrationCredentialOne, CredentialSecret: migrationSecret(migrationCredentialOne, 255)},
 			{LegacyTenantID: "legacy-two", TenantID: migrationTenantTwo, Name: "Two", Owner: owner, CredentialID: migrationCredentialTwo, CredentialSecret: migrationSecret(migrationCredentialTwo, 2)},
 		},
 	}
@@ -89,7 +88,7 @@ tenants:
       auth_tenant_id: mprlab
       auth_user_id: owner
     credential_id: 0196f0ec-3e80-7a54-bd2b-56cfe90bf811
-    credential_secret: ` + migrationSecret(migrationCredentialOne, 1) + `
+    credential_secret: ` + migrationSecret(migrationCredentialOne, 255) + `
   - legacy_tenant_id: legacy-two
     tenant_id: 0196f0ec-3e80-7a54-bd2b-56cfe90bf802
     name: Two
@@ -114,6 +113,19 @@ tenants:
 	}
 	if database.Migrator().HasTable("accounts") || !database.Migrator().HasTable("ledger_accounts") {
 		test.Fatalf("account table was not renamed")
+	}
+	columnTypes, err := database.Migrator().ColumnTypes(&gormstore.LedgerAccount{})
+	if err != nil {
+		test.Fatalf("ledger account columns: %v", err)
+	}
+	foundTenantUUID := false
+	for _, columnType := range columnTypes {
+		if columnType.Name() == "tenant_id" && strings.EqualFold(columnType.DatabaseTypeName(), "uuid") {
+			foundTenantUUID = true
+		}
+	}
+	if !foundTenantUUID {
+		test.Fatalf("migrated tenant_id column is not UUID")
 	}
 	if !database.Migrator().HasConstraint(&gormstore.LedgerTenant{}, "Accounts") {
 		test.Fatalf("ledger account tenant constraint is missing")
@@ -140,7 +152,7 @@ tenants:
 	store := gormstore.New(database)
 	service, _ := tenant.NewDefaultService(store)
 	addressed, _ := tenant.NewID(migrationTenantOne)
-	if authenticatedID, err := service.Authenticate(context.Background(), migrationSecret(migrationCredentialOne, 1)); err != nil || authenticatedID != addressed {
+	if authenticatedID, err := service.Authenticate(context.Background(), migrationSecret(migrationCredentialOne, 255)); err != nil || authenticatedID != addressed {
 		test.Fatalf("migrated credential: %v", err)
 	}
 	if err := Apply(context.Background(), database, mapping); err == nil {
@@ -299,6 +311,11 @@ func TestMigrationApplyStageFailures(test *testing.T) {
 				test.Fatalf("register update callback: %v", err)
 			}
 		}},
+		{name: "account tenant type", install: func(test *testing.T, database *gorm.DB) {
+			if err := database.Exec(`CREATE TABLE ledger_accounts__temp (account_id text PRIMARY KEY)`).Error; err != nil {
+				test.Fatalf("create migration conflict table: %v", err)
+			}
+		}},
 	}
 	for _, testCase := range cases {
 		test.Run(testCase.name, func(test *testing.T) {
@@ -318,22 +335,7 @@ func TestMigrationApplyStageFailures(test *testing.T) {
 	}
 }
 
-func TestCredentialParserAndEventError(test *testing.T) {
-	for _, raw := range []string{
-		"bad",
-		"ledger_bad_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)),
-		"ledger_" + migrationCredentialOne + "_bad!",
-		"ledger_" + migrationCredentialOne + "_YQ",
-	} {
-		if _, _, err := parseCredential(raw); err == nil {
-			test.Fatalf("invalid credential parsed: %q", raw)
-		}
-	}
-	credentialID, digest, err := parseCredential(migrationSecret(migrationCredentialOne, 1))
-	if err != nil || credentialID.String() != migrationCredentialOne || len(digest) != 32 {
-		test.Fatalf("credential parse: %v", err)
-	}
-
+func TestControlEventError(test *testing.T) {
 	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		test.Fatalf("open: %v", err)
@@ -348,8 +350,4 @@ func TestCredentialParserAndEventError(test *testing.T) {
 		test.Fatalf("event without actor succeeded")
 	}
 
-	id, _ := useraccount.NewID(migrationAccountID)
-	if id.String() == "" || !errors.Is(tenant.ErrCredentialInvalid, tenant.ErrCredentialInvalid) {
-		test.Fatalf("sentinel sanity")
-	}
 }
