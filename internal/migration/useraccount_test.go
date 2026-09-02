@@ -40,6 +40,7 @@ func openLegacyDatabase(test *testing.T, tenants ...string) *gorm.DB {
 		`CREATE TABLE accounts (account_id text PRIMARY KEY, tenant_id text NOT NULL, user_id text NOT NULL, ledger_id text NOT NULL, created_at datetime NOT NULL)`,
 		`CREATE UNIQUE INDEX idx_accounts_tenant_user_ledger ON accounts(tenant_id, user_id, ledger_id)`,
 		`CREATE TABLE ledger_entries (entry_id text PRIMARY KEY, account_id text NOT NULL, type text NOT NULL, amount_cents integer NOT NULL, idempotency_key text NOT NULL, metadata blob NOT NULL, created_at datetime NOT NULL)`,
+		`CREATE TABLE reservations (account_id text NOT NULL, reservation_id text NOT NULL, amount_cents integer NOT NULL, status text NOT NULL, created_at datetime NOT NULL, updated_at datetime NOT NULL, PRIMARY KEY (account_id, reservation_id))`,
 	}
 	for _, statement := range statements {
 		if err := database.Exec(statement).Error; err != nil {
@@ -53,6 +54,9 @@ func openLegacyDatabase(test *testing.T, tenants ...string) *gorm.DB {
 		}
 		if err := database.Exec(`INSERT INTO ledger_entries(entry_id, account_id, type, amount_cents, idempotency_key, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, "entry-"+legacyTenantID, accountID, "grant", 100, "grant-1", []byte("{}"), time.Now().UTC()).Error; err != nil {
 			test.Fatalf("legacy entry: %v", err)
+		}
+		if err := database.Exec(`INSERT INTO reservations(account_id, reservation_id, amount_cents, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, accountID, "reservation-"+legacyTenantID, 25, "active", time.Now().UTC(), time.Now().UTC()).Error; err != nil {
+			test.Fatalf("legacy reservation: %v", err)
 		}
 	}
 	return database
@@ -130,6 +134,12 @@ tenants:
 	if !database.Migrator().HasConstraint(&gormstore.LedgerTenant{}, "Accounts") {
 		test.Fatalf("ledger account tenant constraint is missing")
 	}
+	if !database.Migrator().HasConstraint(&gormstore.LedgerAccount{}, "Entries") {
+		test.Fatalf("ledger entry account constraint is missing")
+	}
+	if !database.Migrator().HasConstraint(&gormstore.LedgerAccount{}, "Reservations") {
+		test.Fatalf("reservation account constraint is missing")
+	}
 	var accounts []gormstore.LedgerAccount
 	if err := database.Find(&accounts).Error; err != nil || len(accounts) != 1 || accounts[0].TenantID != migrationTenantOne {
 		test.Fatalf("migrated accounts: %v %+v", err, accounts)
@@ -137,6 +147,10 @@ tenants:
 	var entryCount int64
 	if err := database.Table("ledger_entries").Where("entry_id = ? AND amount_cents = ?", "entry-legacy-one", 100).Count(&entryCount).Error; err != nil || entryCount != 1 {
 		test.Fatalf("accounting history changed: count=%d err=%v", entryCount, err)
+	}
+	var reservationCount int64
+	if err := database.Table("reservations").Where("reservation_id = ? AND amount_cents = ?", "reservation-legacy-one", 25).Count(&reservationCount).Error; err != nil || reservationCount != 1 {
+		test.Fatalf("reservation history changed: count=%d err=%v", reservationCount, err)
 	}
 	for model, count := range map[any]int64{
 		&gormstore.UserAccount{}:      1,
@@ -253,10 +267,31 @@ func TestMigrationPreflightRejectsIncompleteMappings(test *testing.T) {
 	if _, err := preflight(context.Background(), noLegacy, validMapping()); err == nil {
 		test.Fatalf("database without legacy table accepted")
 	}
+	missingChildTable := openLegacyDatabase(test, "legacy-one")
+	if err := missingChildTable.Migrator().DropTable("ledger_entries"); err != nil {
+		test.Fatalf("drop legacy entries: %v", err)
+	}
+	if _, err := preflight(context.Background(), missingChildTable, validMapping()); err == nil {
+		test.Fatalf("database without legacy entries accepted")
+	}
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := preflight(canceled, database, validMapping()); err == nil {
 		test.Fatalf("canceled preflight succeeded")
+	}
+	for _, table := range []string{"ledger_entries", "reservations"} {
+		test.Run("orphaned "+table, func(test *testing.T) {
+			orphaned := openLegacyDatabase(test, "legacy-one")
+			if err := orphaned.Exec("UPDATE "+table+" SET account_id = ?", "missing-account").Error; err != nil {
+				test.Fatalf("create orphaned row: %v", err)
+			}
+			if err := Apply(context.Background(), orphaned, validMapping()); err == nil {
+				test.Fatalf("orphaned %s row was accepted", table)
+			}
+			if !orphaned.Migrator().HasTable("accounts") || orphaned.Migrator().HasTable("ledger_accounts") {
+				test.Fatalf("orphaned %s row caused schema mutation", table)
+			}
+		})
 	}
 }
 
@@ -314,6 +349,11 @@ func TestMigrationApplyStageFailures(test *testing.T) {
 		{name: "account tenant type", install: func(test *testing.T, database *gorm.DB) {
 			if err := database.Exec(`CREATE TABLE ledger_accounts__temp (account_id text PRIMARY KEY)`).Error; err != nil {
 				test.Fatalf("create migration conflict table: %v", err)
+			}
+		}},
+		{name: "child account constraint", install: func(test *testing.T, database *gorm.DB) {
+			if err := database.Exec(`CREATE TABLE ledger_entries__temp (entry_id text PRIMARY KEY)`).Error; err != nil {
+				test.Fatalf("create constraint conflict table: %v", err)
 			}
 		}},
 	}

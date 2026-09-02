@@ -410,8 +410,14 @@ func TestControlPlaneDependencyAndDatabaseErrors(test *testing.T) {
 	}
 	response, _ = harness.request(http.MethodGet, "/api/user-account", "", harness.cookieOne, false, nil)
 	assertStatus(test, response, http.StatusInternalServerError)
+	if harness.logger.logs[len(harness.logger.logs)-1].Error == nil {
+		test.Fatalf("user account lookup failure was not retained in the request log")
+	}
 	response, _ = harness.request(http.MethodPut, "/api/user-account", "", harness.cookieTwo, true, nil)
 	assertStatus(test, response, http.StatusInternalServerError)
+	if harness.logger.logs[len(harness.logger.logs)-1].Error == nil {
+		test.Fatalf("user account provision failure was not retained in the request log")
+	}
 }
 
 func TestControlPlaneWorkspaceAssetsAndConfiguration(test *testing.T) {
@@ -495,6 +501,9 @@ func TestControlPlaneTenantStorageErrors(test *testing.T) {
 		mutation := request.method == http.MethodPost || request.method == http.MethodDelete
 		response, _ = harness.request(request.method, request.path, request.body, harness.cookieOne, mutation, request.headers)
 		assertStatus(test, response, http.StatusInternalServerError)
+		if harness.logger.logs[len(harness.logger.logs)-1].Error == nil {
+			test.Fatalf("%s %s storage failure was not retained in the request log", request.method, request.path)
+		}
 	}
 }
 

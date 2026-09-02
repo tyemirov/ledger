@@ -12,6 +12,17 @@ import {
 } from "./client.js";
 
 const EMPTY = "";
+const RFC3339 = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/;
+
+/** @param {string} value @returns {bigint} */
+function timestampNanoseconds(value) {
+  const match = RFC3339.exec(value);
+  if (!match) throw new Error("ledger_tenant_created_at_invalid");
+  const milliseconds = Date.parse(`${match[1]}${match[3]}`);
+  if (!Number.isFinite(milliseconds)) throw new Error("ledger_tenant_created_at_invalid");
+  const fraction = (match[2] || "").padEnd(9, "0") || "0";
+  return BigInt(milliseconds) * 1_000_000n + BigInt(fraction);
+}
 
 /**
  * @template {object} State
@@ -198,7 +209,9 @@ function ledgerWorkspace() {
       const tenantsByID = new Map(this.tenants.map((item) => [item.id, item]));
       for (const item of items) tenantsByID.set(item.id, item);
       this.tenants = [...tenantsByID.values()].sort((left, right) => {
-        const createdAtOrder = left.created_at.localeCompare(right.created_at);
+        const leftCreatedAt = timestampNanoseconds(left.created_at);
+        const rightCreatedAt = timestampNanoseconds(right.created_at);
+        const createdAtOrder = leftCreatedAt < rightCreatedAt ? -1 : leftCreatedAt > rightCreatedAt ? 1 : 0;
         return createdAtOrder || left.id.localeCompare(right.id);
       });
     },

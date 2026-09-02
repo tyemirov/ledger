@@ -153,7 +153,19 @@ func applyPrepared(ctx context.Context, database *gorm.DB, prepared []preparedTe
 		if err := transaction.Migrator().AlterColumn(&gormstore.LedgerAccount{}, "TenantID"); err != nil {
 			return fmt.Errorf("migration alter ledger account tenant type: %w", err)
 		}
-		return transaction.Migrator().CreateConstraint(&gormstore.LedgerTenant{}, "Accounts")
+		for _, constraint := range []struct {
+			model any
+			name  string
+		}{
+			{model: &gormstore.LedgerTenant{}, name: "Accounts"},
+			{model: &gormstore.LedgerAccount{}, name: "Entries"},
+			{model: &gormstore.LedgerAccount{}, name: "Reservations"},
+		} {
+			if err := transaction.Migrator().CreateConstraint(constraint.model, constraint.name); err != nil {
+				return fmt.Errorf("migration create %s constraint: %w", constraint.name, err)
+			}
+		}
+		return nil
 	})
 }
 
@@ -163,6 +175,19 @@ func preflight(ctx context.Context, database *gorm.DB, mapping File) ([]prepared
 	}
 	if !database.Migrator().HasTable("accounts") || database.Migrator().HasTable("ledger_accounts") {
 		return nil, errors.New("migration requires accounts and forbids ledger_accounts")
+	}
+	for _, table := range []string{"ledger_entries", "reservations"} {
+		if !database.Migrator().HasTable(table) {
+			return nil, fmt.Errorf("migration requires %s", table)
+		}
+		var orphanCount int64
+		query := fmt.Sprintf("SELECT count(*) FROM %s AS child LEFT JOIN accounts AS parent ON parent.account_id = child.account_id WHERE parent.account_id IS NULL", table)
+		if err := database.WithContext(ctx).Raw(query).Scan(&orphanCount).Error; err != nil {
+			return nil, fmt.Errorf("migration inspect %s: %w", table, err)
+		}
+		if orphanCount != 0 {
+			return nil, fmt.Errorf("migration %s contains orphaned accounts", table)
+		}
 	}
 	expected := make(map[string]struct{}, len(mapping.LegacyTenantIDs))
 	for _, raw := range mapping.LegacyTenantIDs {

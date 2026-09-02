@@ -1,6 +1,6 @@
 // @ts-check
 
-import { API } from "./constants.js";
+import { API, MPR_UI } from "./constants.js";
 import { credentialDocument, credentialList, tenantDocument, tenantPage, userAccount } from "./contracts.js";
 
 export class LedgerClientError extends Error {
@@ -12,9 +12,17 @@ export class LedgerClientError extends Error {
   }
 }
 
+const MUTATION_REPLAY_POLICY = Object.freeze({ mutationReplay: "authorization-before-domain-work" });
+
 /** @param {string} path @param {RequestInit} init @returns {Promise<unknown>} */
 async function request(path, init) {
-  const response = await fetch(path, { credentials: "include", ...init });
+  const authHost = document.getElementById(MPR_UI.HEADER_ID);
+  if (!window.MPRUI || typeof window.MPRUI.authenticatedFetch !== "function" || !authHost) {
+    throw new Error("ledger_mpr_ui_authenticated_fetch_missing");
+  }
+  const method = String(init.method || "GET").toUpperCase();
+  const policy = ["GET", "HEAD", "OPTIONS"].includes(method) ? undefined : MUTATION_REPLAY_POLICY;
+  const response = await window.MPRUI.authenticatedFetch(authHost, path, init, policy);
   const value = await response.json();
   if (!response.ok) {
     const error = value && typeof value === "object" && "error" in value ? value.error : null;
