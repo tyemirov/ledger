@@ -633,6 +633,12 @@ func TestAuthInterceptor(test *testing.T) {
 			}
 		})
 	}
+
+	storageInterceptor := newAuthInterceptor(stubTenantAuthenticator{authenticateErr: errors.New("database unavailable")})
+	storageContext := metadata.NewIncomingContext(context.Background(), metadata.MD{"authorization": []string{"Bearer s1"}})
+	if _, err := storageInterceptor(storageContext, testIDRequest{tenantID: testRuntimeTenantID}, &grpc.UnaryServerInfo{}, handler); status.Code(err) != codes.Internal {
+		test.Fatalf("expected internal storage failure, got %v: %v", status.Code(err), err)
+	}
 }
 
 func TestLoadConfigErrorsOnInvalidYAML(test *testing.T) {
@@ -1230,11 +1236,15 @@ type testIDRequest struct {
 }
 
 type stubTenantAuthenticator struct {
-	tenantID string
-	secret   string
+	tenantID        string
+	secret          string
+	authenticateErr error
 }
 
 func (authenticator stubTenantAuthenticator) Authenticate(_ context.Context, secret string) (tenant.ID, error) {
+	if authenticator.authenticateErr != nil {
+		return tenant.ID{}, authenticator.authenticateErr
+	}
 	tenantID, _ := tenant.NewID(authenticator.tenantID)
 	if secret != authenticator.secret {
 		return tenant.ID{}, tenant.ErrCredentialInvalid

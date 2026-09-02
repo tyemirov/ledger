@@ -380,7 +380,10 @@ func (store *Store) RevokeCredential(ctx context.Context, ownerID useraccount.ID
 func (store *Store) FindCredential(ctx context.Context, credentialID tenant.CredentialID) (tenant.StoredCredential, error) {
 	var model TenantCredential
 	if err := store.db.WithContext(ctx).Where("credential_id = ?", credentialID.String()).Take(&model).Error; err != nil {
-		return tenant.StoredCredential{}, tenant.ErrCredentialInvalid
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return tenant.StoredCredential{}, tenant.ErrCredentialInvalid
+		}
+		return tenant.StoredCredential{}, fmt.Errorf("tenant_credential.find: %w", err)
 	}
 	credential, err := mapCredential(model)
 	if err != nil {

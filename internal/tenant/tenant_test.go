@@ -287,7 +287,10 @@ func TestTenantCredentialAuthentication(test *testing.T) {
 	credentialID, _ := NewCredentialID(credentialIDValue)
 	createdAt := time.Now().UTC()
 	credential, _ := NewCredential(credentialID, tenantID, createdAt, nil)
-	secretPart := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, credentialSecretSize))
+	secretPart := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{255}, credentialSecretSize))
+	if !strings.Contains(secretPart, "_") {
+		test.Fatalf("test credential does not contain a base64url underscore")
+	}
 	secret := "ledger_" + credentialIDValue + "_" + secretPart
 	digest := sha256.Sum256([]byte(secretPart))
 	store.storedCredential = StoredCredential{Credential: credential, Digest: digest[:]}
@@ -300,9 +303,15 @@ func TestTenantCredentialAuthentication(test *testing.T) {
 			test.Fatalf("expected invalid credential for %q, got %v", raw, err)
 		}
 	}
-	store.findErr = errors.New("database")
+	store.findErr = ErrCredentialInvalid
 	if _, err := service.Authenticate(context.Background(), secret); !errors.Is(err, ErrCredentialInvalid) {
-		test.Fatalf("store error must be opaque")
+		test.Fatalf("missing credential must fail authentication: %v", err)
+	}
+	for _, findError := range []error{errors.New("database"), context.Canceled} {
+		store.findErr = findError
+		if _, err := service.Authenticate(context.Background(), secret); err == nil || errors.Is(err, ErrCredentialInvalid) || !errors.Is(err, findError) {
+			test.Fatalf("store failure was not preserved: %v", err)
+		}
 	}
 	store.findErr = nil
 	revokedAt := createdAt.Add(time.Minute)

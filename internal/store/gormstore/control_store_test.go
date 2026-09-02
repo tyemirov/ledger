@@ -262,8 +262,8 @@ func TestControlStoreFailuresAndMapping(test *testing.T) {
 	if _, err := store.GetTenant(ctx, account.ID(), item.ID()); err == nil {
 		test.Fatalf("closed get tenant succeeded")
 	}
-	if _, err := store.FindCredential(ctx, credentialID); !errors.Is(err, tenant.ErrCredentialInvalid) {
-		test.Fatalf("closed credential lookup leaked error")
+	if _, err := store.FindCredential(ctx, credentialID); err == nil || errors.Is(err, tenant.ErrCredentialInvalid) {
+		test.Fatalf("closed credential lookup did not preserve the storage failure: %v", err)
 	}
 }
 

@@ -2,8 +2,6 @@ package migration
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -152,6 +150,9 @@ func applyPrepared(ctx context.Context, database *gorm.DB, prepared []preparedTe
 				return err
 			}
 		}
+		if err := transaction.Migrator().AlterColumn(&gormstore.LedgerAccount{}, "TenantID"); err != nil {
+			return fmt.Errorf("migration alter ledger account tenant type: %w", err)
+		}
 		return transaction.Migrator().CreateConstraint(&gormstore.LedgerTenant{}, "Accounts")
 	})
 }
@@ -237,7 +238,7 @@ func preflight(ctx context.Context, database *gorm.DB, mapping File) ([]prepared
 		}
 		item, _ := tenant.NewTenant(tenantID, ownerID, name, time.Unix(1, 0))
 
-		credentialID, digest, err := parseCredential(raw.CredentialSecret)
+		credentialID, digest, err := tenant.ParseCredentialSecret(raw.CredentialSecret)
 		if err != nil {
 			return nil, fmt.Errorf("migration credential for %q: %w", legacyID, err)
 		}
@@ -252,23 +253,6 @@ func preflight(ctx context.Context, database *gorm.DB, mapping File) ([]prepared
 		prepared = append(prepared, preparedTenant{legacyID: legacyID, tenant: item, owner: owner, credential: credential, credentialDigest: digest})
 	}
 	return prepared, nil
-}
-
-func parseCredential(raw string) (tenant.CredentialID, []byte, error) {
-	parts := strings.Split(strings.TrimSpace(raw), "_")
-	if len(parts) != 3 || parts[0] != "ledger" {
-		return tenant.CredentialID{}, nil, tenant.ErrCredentialInvalid
-	}
-	credentialID, err := tenant.NewCredentialID(parts[1])
-	if err != nil {
-		return tenant.CredentialID{}, nil, err
-	}
-	decoded, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil || len(decoded) != 32 {
-		return tenant.CredentialID{}, nil, tenant.ErrCredentialInvalid
-	}
-	digest := sha256.Sum256([]byte(parts[2]))
-	return credentialID, digest[:], nil
 }
 
 func createEvent(database *gorm.DB, actorID string, eventType string, resourceType string, resourceID string, createdAt time.Time) error {
