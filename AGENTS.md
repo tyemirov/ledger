@@ -103,6 +103,9 @@ Read these files before editing:
 - `.mprlab/AGENTS.FRONTEND.md`: browser frontend guidance.
 - `.mprlab/AGENTS.DOCKER.md`: Docker and container guidance.
 
+Always reference each issue by its ID, for example `B001` or `I027`.
+Never use an `ISSUES.md` file path, line number, or `path:line` syntax as an issue reference.
+
 Do not create `.mprlab/AGENTS.md`. Scoped guidance belongs in `.mprlab/AGENTS.*.md` files.
 If guidance conflicts, follow `.mprlab/POLICY.md` first, then root `AGENTS.md`, then the relevant scoped guide.
 <!-- END MPRLAB-GOVERNANCE -->

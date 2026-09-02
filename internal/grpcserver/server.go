@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
+	"github.com/MarkoPoloResearchLab/ledger/internal/tenant"
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -49,31 +50,28 @@ const (
 // CreditServiceServer exposes the credit ledger over gRPC.
 type CreditServiceServer struct {
 	creditv1.UnimplementedCreditServiceServer
-	creditService  *ledger.Service
-	allowedTenants map[string]struct{}
+	creditService *ledger.Service
 }
 
 // NewCreditServiceServer constructs a gRPC server for the ledger service.
-func NewCreditServiceServer(creditService *ledger.Service, allowedTenants []string) *CreditServiceServer {
-	tenantsMap := make(map[string]struct{}, len(allowedTenants))
-	for _, id := range allowedTenants {
-		tenantsMap[id] = struct{}{}
-	}
-	return &CreditServiceServer{
-		creditService:  creditService,
-		allowedTenants: tenantsMap,
-	}
+func NewCreditServiceServer(creditService *ledger.Service) *CreditServiceServer {
+	return &CreditServiceServer{creditService: creditService}
 }
 
-func (service *CreditServiceServer) validateTenant(tenantID string) error {
-	if _, ok := service.allowedTenants[tenantID]; !ok {
-		return status.Errorf(codes.PermissionDenied, "tenant %q is not authorized", tenantID)
+func (service *CreditServiceServer) validateTenant(ctx context.Context, rawTenantID string) error {
+	addressedTenantID, err := tenant.NewID(rawTenantID)
+	if err != nil {
+		return status.Error(codes.Unauthenticated, "invalid tenant")
+	}
+	authenticatedTenantID, ok := tenant.AuthenticatedID(ctx)
+	if !ok || authenticatedTenantID != addressedTenantID {
+		return status.Error(codes.PermissionDenied, "tenant is not authorized")
 	}
 	return nil
 }
 
 func (service *CreditServiceServer) GetBalance(ctx context.Context, request *creditv1.BalanceRequest) (*creditv1.BalanceResponse, error) {
-	if err := service.validateTenant(request.GetTenantId()); err != nil {
+	if err := service.validateTenant(ctx, request.GetTenantId()); err != nil {
 		return nil, err
 	}
 	userID, err := ledger.NewUserID(request.GetUserId())
@@ -84,10 +82,7 @@ func (service *CreditServiceServer) GetBalance(ctx context.Context, request *cre
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	tenantID, err := ledger.NewTenantID(request.GetTenantId())
-	if err != nil {
-		return nil, mapToGRPCError(err)
-	}
+	tenantID, _ := ledger.NewTenantID(request.GetTenantId())
 	balance, operationError := service.creditService.Balance(ctx, tenantID, userID, ledgerID)
 	if operationError != nil {
 		return nil, mapToGRPCError(operationError)
@@ -99,7 +94,7 @@ func (service *CreditServiceServer) GetBalance(ctx context.Context, request *cre
 }
 
 func (service *CreditServiceServer) Grant(ctx context.Context, request *creditv1.GrantRequest) (*creditv1.Empty, error) {
-	if err := service.validateTenant(request.GetTenantId()); err != nil {
+	if err := service.validateTenant(ctx, request.GetTenantId()); err != nil {
 		return nil, err
 	}
 	userID, err := ledger.NewUserID(request.GetUserId())
@@ -110,10 +105,7 @@ func (service *CreditServiceServer) Grant(ctx context.Context, request *creditv1
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	tenantID, err := ledger.NewTenantID(request.GetTenantId())
-	if err != nil {
-		return nil, mapToGRPCError(err)
-	}
+	tenantID, _ := ledger.NewTenantID(request.GetTenantId())
 	amount, err := ledger.NewPositiveAmountCents(request.GetAmountCents())
 	if err != nil {
 		return nil, mapToGRPCError(err)
@@ -134,7 +126,7 @@ func (service *CreditServiceServer) Grant(ctx context.Context, request *creditv1
 }
 
 func (service *CreditServiceServer) Reserve(ctx context.Context, request *creditv1.ReserveRequest) (*creditv1.Empty, error) {
-	if err := service.validateTenant(request.GetTenantId()); err != nil {
+	if err := service.validateTenant(ctx, request.GetTenantId()); err != nil {
 		return nil, err
 	}
 	userID, err := ledger.NewUserID(request.GetUserId())
@@ -145,10 +137,7 @@ func (service *CreditServiceServer) Reserve(ctx context.Context, request *credit
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	tenantID, err := ledger.NewTenantID(request.GetTenantId())
-	if err != nil {
-		return nil, mapToGRPCError(err)
-	}
+	tenantID, _ := ledger.NewTenantID(request.GetTenantId())
 	amount, err := ledger.NewPositiveAmountCents(request.GetAmountCents())
 	if err != nil {
 		return nil, mapToGRPCError(err)
@@ -173,7 +162,7 @@ func (service *CreditServiceServer) Reserve(ctx context.Context, request *credit
 }
 
 func (service *CreditServiceServer) Capture(ctx context.Context, request *creditv1.CaptureRequest) (*creditv1.Empty, error) {
-	if err := service.validateTenant(request.GetTenantId()); err != nil {
+	if err := service.validateTenant(ctx, request.GetTenantId()); err != nil {
 		return nil, err
 	}
 	userID, err := ledger.NewUserID(request.GetUserId())
@@ -184,10 +173,7 @@ func (service *CreditServiceServer) Capture(ctx context.Context, request *credit
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	tenantID, err := ledger.NewTenantID(request.GetTenantId())
-	if err != nil {
-		return nil, mapToGRPCError(err)
-	}
+	tenantID, _ := ledger.NewTenantID(request.GetTenantId())
 	reservationID, err := ledger.NewReservationID(request.GetReservationId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
@@ -212,7 +198,7 @@ func (service *CreditServiceServer) Capture(ctx context.Context, request *credit
 }
 
 func (service *CreditServiceServer) Release(ctx context.Context, request *creditv1.ReleaseRequest) (*creditv1.Empty, error) {
-	if err := service.validateTenant(request.GetTenantId()); err != nil {
+	if err := service.validateTenant(ctx, request.GetTenantId()); err != nil {
 		return nil, err
 	}
 	userID, err := ledger.NewUserID(request.GetUserId())
@@ -223,10 +209,7 @@ func (service *CreditServiceServer) Release(ctx context.Context, request *credit
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	tenantID, err := ledger.NewTenantID(request.GetTenantId())
-	if err != nil {
-		return nil, mapToGRPCError(err)
-	}
+	tenantID, _ := ledger.NewTenantID(request.GetTenantId())
 	reservationID, err := ledger.NewReservationID(request.GetReservationId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
@@ -247,7 +230,7 @@ func (service *CreditServiceServer) Release(ctx context.Context, request *credit
 }
 
 func (service *CreditServiceServer) Spend(ctx context.Context, request *creditv1.SpendRequest) (*creditv1.Empty, error) {
-	if err := service.validateTenant(request.GetTenantId()); err != nil {
+	if err := service.validateTenant(ctx, request.GetTenantId()); err != nil {
 		return nil, err
 	}
 	userID, err := ledger.NewUserID(request.GetUserId())
@@ -258,10 +241,7 @@ func (service *CreditServiceServer) Spend(ctx context.Context, request *creditv1
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	tenantID, err := ledger.NewTenantID(request.GetTenantId())
-	if err != nil {
-		return nil, mapToGRPCError(err)
-	}
+	tenantID, _ := ledger.NewTenantID(request.GetTenantId())
 	amount, err := ledger.NewPositiveAmountCents(request.GetAmountCents())
 	if err != nil {
 		return nil, mapToGRPCError(err)
@@ -282,7 +262,7 @@ func (service *CreditServiceServer) Spend(ctx context.Context, request *creditv1
 }
 
 func (service *CreditServiceServer) Refund(ctx context.Context, request *creditv1.RefundRequest) (*creditv1.RefundResponse, error) {
-	if err := service.validateTenant(request.GetTenantId()); err != nil {
+	if err := service.validateTenant(ctx, request.GetTenantId()); err != nil {
 		return nil, err
 	}
 	userID, err := ledger.NewUserID(request.GetUserId())
@@ -293,10 +273,7 @@ func (service *CreditServiceServer) Refund(ctx context.Context, request *creditv
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	tenantID, err := ledger.NewTenantID(request.GetTenantId())
-	if err != nil {
-		return nil, mapToGRPCError(err)
-	}
+	tenantID, _ := ledger.NewTenantID(request.GetTenantId())
 	amount, err := ledger.NewPositiveAmountCents(request.GetAmountCents())
 	if err != nil {
 		return nil, mapToGRPCError(err)
@@ -343,7 +320,7 @@ func (service *CreditServiceServer) Batch(ctx context.Context, request *creditv1
 		return nil, status.Error(codes.InvalidArgument, errorInvalidAccountContext)
 	}
 
-	if err := service.validateTenant(account.GetTenantId()); err != nil {
+	if err := service.validateTenant(ctx, account.GetTenantId()); err != nil {
 		return nil, err
 	}
 
@@ -355,10 +332,7 @@ func (service *CreditServiceServer) Batch(ctx context.Context, request *creditv1
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	tenantID, err := ledger.NewTenantID(account.GetTenantId())
-	if err != nil {
-		return nil, mapToGRPCError(err)
-	}
+	tenantID, _ := ledger.NewTenantID(account.GetTenantId())
 
 	rawOperations := request.GetOperations()
 	if len(rawOperations) > maxBatchOperations {
@@ -584,7 +558,7 @@ func (service *CreditServiceServer) Batch(ctx context.Context, request *creditv1
 }
 
 func (service *CreditServiceServer) ListEntries(ctx context.Context, request *creditv1.ListEntriesRequest) (*creditv1.ListEntriesResponse, error) {
-	if err := service.validateTenant(request.GetTenantId()); err != nil {
+	if err := service.validateTenant(ctx, request.GetTenantId()); err != nil {
 		return nil, err
 	}
 	userID, err := ledger.NewUserID(request.GetUserId())
@@ -595,10 +569,7 @@ func (service *CreditServiceServer) ListEntries(ctx context.Context, request *cr
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	tenantID, err := ledger.NewTenantID(request.GetTenantId())
-	if err != nil {
-		return nil, mapToGRPCError(err)
-	}
+	tenantID, _ := ledger.NewTenantID(request.GetTenantId())
 	limit, err := normalizeListLimit(request.GetLimit())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, errorInvalidListLimit)
@@ -671,7 +642,7 @@ func (service *CreditServiceServer) ListEntries(ctx context.Context, request *cr
 }
 
 func (service *CreditServiceServer) GetReservation(ctx context.Context, request *creditv1.GetReservationRequest) (*creditv1.GetReservationResponse, error) {
-	if err := service.validateTenant(request.GetTenantId()); err != nil {
+	if err := service.validateTenant(ctx, request.GetTenantId()); err != nil {
 		return nil, err
 	}
 	userID, err := ledger.NewUserID(request.GetUserId())
@@ -682,10 +653,7 @@ func (service *CreditServiceServer) GetReservation(ctx context.Context, request 
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	tenantID, err := ledger.NewTenantID(request.GetTenantId())
-	if err != nil {
-		return nil, mapToGRPCError(err)
-	}
+	tenantID, _ := ledger.NewTenantID(request.GetTenantId())
 	reservationID, err := ledger.NewReservationID(request.GetReservationId())
 	if err != nil {
 		return nil, mapToGRPCError(err)
@@ -699,7 +667,7 @@ func (service *CreditServiceServer) GetReservation(ctx context.Context, request 
 }
 
 func (service *CreditServiceServer) ListReservations(ctx context.Context, request *creditv1.ListReservationsRequest) (*creditv1.ListReservationsResponse, error) {
-	if err := service.validateTenant(request.GetTenantId()); err != nil {
+	if err := service.validateTenant(ctx, request.GetTenantId()); err != nil {
 		return nil, err
 	}
 	userID, err := ledger.NewUserID(request.GetUserId())
@@ -710,10 +678,7 @@ func (service *CreditServiceServer) ListReservations(ctx context.Context, reques
 	if err != nil {
 		return nil, mapToGRPCError(err)
 	}
-	tenantID, err := ledger.NewTenantID(request.GetTenantId())
-	if err != nil {
-		return nil, mapToGRPCError(err)
-	}
+	tenantID, _ := ledger.NewTenantID(request.GetTenantId())
 	limit, err := normalizeListLimit(request.GetLimit())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, errorInvalidListLimit)

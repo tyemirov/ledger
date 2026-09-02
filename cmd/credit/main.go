@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -15,12 +17,17 @@ import (
 	"time"
 
 	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
+	"github.com/MarkoPoloResearchLab/ledger/internal/controlplane"
 	"github.com/MarkoPoloResearchLab/ledger/internal/grpcserver"
+	"github.com/MarkoPoloResearchLab/ledger/internal/migration"
 	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
+	"github.com/MarkoPoloResearchLab/ledger/internal/tenant"
+	"github.com/MarkoPoloResearchLab/ledger/internal/useraccount"
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"github.com/glebarez/sqlite"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/tyemirov/tauth/pkg/sessionvalidator"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -33,21 +40,23 @@ import (
 
 const (
 	flagConfigFile    = "config"
+	flagMigrationMap  = "mapping"
 	defaultConfigFile = "config.yml"
 )
 
-type tenantConfig struct {
-	ID        string `mapstructure:"id"`
-	Name      string `mapstructure:"name"`
-	SecretKey string `mapstructure:"secret_key"`
-}
-
 type runtimeConfig struct {
 	Service struct {
-		DatabaseURL string `mapstructure:"database_url"`
-		ListenAddr  string `mapstructure:"listen_addr"`
+		DatabaseURL    string `mapstructure:"database_url"`
+		GRPCListenAddr string `mapstructure:"grpc_listen_addr"`
+		HTTPListenAddr string `mapstructure:"http_listen_addr"`
 	} `mapstructure:"service"`
-	Tenants []tenantConfig `mapstructure:"tenants"`
+	Auth struct {
+		JWTSigningKey     string `mapstructure:"jwt_signing_key"`
+		JWTIssuer         string `mapstructure:"jwt_issuer"`
+		TAuthTenantID     string `mapstructure:"tauth_tenant_id"`
+		SessionCookieName string `mapstructure:"session_cookie_name"`
+		PublicOrigin      string `mapstructure:"public_origin"`
+	} `mapstructure:"auth"`
 }
 
 var (
@@ -92,8 +101,23 @@ func newRootCommand() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().String(flagConfigFile, defaultConfigFile, "Path to mandatory configuration file")
+	cmd.AddCommand(newMigrationCommand(cfg))
 
 	return cmd
+}
+
+func newMigrationCommand(cfg *runtimeConfig) *cobra.Command {
+	command := &cobra.Command{
+		Use:   "migrate-user-accounts",
+		Short: "Migrate the legacy static tenant data once",
+		RunE: func(command *cobra.Command, _ []string) error {
+			mappingPath, _ := command.Flags().GetString(flagMigrationMap)
+			return runUserAccountMigration(command.Context(), cfg, mappingPath)
+		},
+	}
+	command.Flags().String(flagMigrationMap, "", "Path to the mode-0600 migration mapping")
+	_ = command.MarkFlagRequired(flagMigrationMap)
+	return command
 }
 
 func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
@@ -124,20 +148,24 @@ func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
 		return fmt.Errorf("unmarshal config: %w", err)
 	}
 
-	// Strict validation: DatabaseURL and ListenAddr must be provided in the config
 	if strings.TrimSpace(cfg.Service.DatabaseURL) == "" {
 		return fmt.Errorf("service.database_url is required in %q", configFile)
 	}
-	if strings.TrimSpace(cfg.Service.ListenAddr) == "" {
-		return fmt.Errorf("service.listen_addr is required in %q", configFile)
+	if strings.TrimSpace(cfg.Service.GRPCListenAddr) == "" {
+		return fmt.Errorf("service.grpc_listen_addr is required in %q", configFile)
 	}
-
-	for _, tenant := range cfg.Tenants {
-		if strings.TrimSpace(tenant.ID) == "" {
-			return fmt.Errorf("tenant id is required in %q", configFile)
-		}
-		if strings.TrimSpace(tenant.SecretKey) == "" {
-			return fmt.Errorf("tenant %q secret_key is required in %q", tenant.ID, configFile)
+	if strings.TrimSpace(cfg.Service.HTTPListenAddr) == "" {
+		return fmt.Errorf("service.http_listen_addr is required in %q", configFile)
+	}
+	for field, value := range map[string]string{
+		"auth.jwt_signing_key":     cfg.Auth.JWTSigningKey,
+		"auth.jwt_issuer":          cfg.Auth.JWTIssuer,
+		"auth.tauth_tenant_id":     cfg.Auth.TAuthTenantID,
+		"auth.session_cookie_name": cfg.Auth.SessionCookieName,
+		"auth.public_origin":       cfg.Auth.PublicOrigin,
+	} {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s is required in %q", field, configFile)
 		}
 	}
 
@@ -173,6 +201,22 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 	return runServerWithListen(ctx, cfg, logger, net.Listen)
 }
 
+func runUserAccountMigration(ctx context.Context, cfg *runtimeConfig, mappingPath string) error {
+	mapping, err := migration.Load(mappingPath)
+	if err != nil {
+		return err
+	}
+	database, cleanup, _, err := openDatabaseFunc(ctx, cfg.Service.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("database open: %w", err)
+	}
+	defer func() { _ = cleanup() }()
+	if err := migration.Apply(ctx, database, mapping); err != nil {
+		return err
+	}
+	return nil
+}
+
 func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Logger, listen listenFunc) error {
 	gormDB, cleanup, driver, err := openDatabaseFunc(ctx, cfg.Service.DatabaseURL)
 	if err != nil {
@@ -189,6 +233,8 @@ func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Lo
 	}
 
 	store := gormstore.New(gormDB)
+	accountService, _ := useraccount.NewDefaultService(store)
+	tenantService, _ := tenant.NewDefaultService(store)
 	clock := func() int64 { return time.Now().UTC().Unix() }
 	opLogger := &zapOperationLogger{logger: logger}
 	creditService, err := newServiceFunc(
@@ -200,34 +246,44 @@ func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Lo
 		return fmt.Errorf("ledger service init: %w", err)
 	}
 
-	lis, err := listen("tcp", cfg.Service.ListenAddr)
+	grpcListener, err := listen("tcp", cfg.Service.GRPCListenAddr)
 	if err != nil {
-		return fmt.Errorf("listen: %w", err)
+		return fmt.Errorf("grpc listen: %w", err)
+	}
+	httpListener, err := listen("tcp", cfg.Service.HTTPListenAddr)
+	if err != nil {
+		_ = grpcListener.Close()
+		return fmt.Errorf("http listen: %w", err)
 	}
 
-	tenantSecrets := make(map[string]string, len(cfg.Tenants))
-	tenantIDs := make([]string, 0, len(cfg.Tenants))
-	for _, tenant := range cfg.Tenants {
-		tenantSecrets[tenant.ID] = tenant.SecretKey
-		tenantIDs = append(tenantIDs, tenant.ID)
-	}
+	sessions, _ := sessionvalidator.New(sessionvalidator.Config{
+		SigningKey: []byte(cfg.Auth.JWTSigningKey),
+		Issuer:     cfg.Auth.JWTIssuer,
+		CookieName: cfg.Auth.SessionCookieName,
+	})
+	httpHandler, _ := controlplane.NewHandler(accountService, tenantService, sessions, cfg.Auth.TAuthTenantID, cfg.Auth.PublicOrigin, opLogger)
 
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			newLoggingInterceptor(logger),
-			newAuthInterceptor(tenantSecrets),
+			newAuthInterceptor(tenantService),
 		),
 	)
+	httpServer := &http.Server{Handler: httpHandler, ReadHeaderTimeout: 5 * time.Second}
 
-	creditv1.RegisterCreditServiceServer(grpcServer, grpcserver.NewCreditServiceServer(creditService, tenantIDs))
+	creditv1.RegisterCreditServiceServer(grpcServer, grpcserver.NewCreditServiceServer(creditService))
 
-	errCh := make(chan error, 1)
+	errCh := make(chan error, 2)
 	go func() {
-		logger.Info("gRPC server starting", zap.String("listen_addr", cfg.Service.ListenAddr))
-		errCh <- grpcServer.Serve(lis)
+		logger.Info("gRPC server starting", zap.String("listen_addr", cfg.Service.GRPCListenAddr))
+		errCh <- grpcServer.Serve(grpcListener)
+	}()
+	go func() {
+		logger.Info("HTTP server starting", zap.String("listen_addr", cfg.Service.HTTPListenAddr))
+		errCh <- httpServer.Serve(httpListener)
 	}()
 
-	return awaitServer(ctx, grpcServer, errCh, logger)
+	return awaitServers(ctx, grpcServer, httpServer, errCh, logger)
 }
 
 type userIDGetter interface {
@@ -238,25 +294,43 @@ type ledgerIDGetter interface {
 	GetLedgerId() string
 }
 
-func awaitServer(ctx context.Context, grpcServer *grpc.Server, errCh <-chan error, logger *zap.Logger) error {
+func awaitServers(ctx context.Context, grpcServer *grpc.Server, httpServer *http.Server, errCh <-chan error, logger *zap.Logger) error {
 	select {
 	case <-ctx.Done():
 		logger.Info("shutdown requested")
+		return shutdownServers(grpcServer, httpServer, errCh)
+	case serveError := <-errCh:
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(shutdownContext)
 		grpcServer.GracefulStop()
-		if serveErr := <-errCh; serveErr != nil && serveErr != grpc.ErrServerStopped {
-			return serveErr
-		}
-		return nil
-	case serveErr := <-errCh:
-		if serveErr == grpc.ErrServerStopped {
+		if errors.Is(serveError, http.ErrServerClosed) || serveError == grpc.ErrServerStopped {
 			return nil
 		}
-		return serveErr
+		return serveError
 	}
+}
+
+func shutdownServers(grpcServer *grpc.Server, httpServer *http.Server, errCh <-chan error) error {
+	shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	httpError := httpServer.Shutdown(shutdownContext)
+	grpcServer.GracefulStop()
+	for range 2 {
+		serveError := <-errCh
+		if serveError != nil && !errors.Is(serveError, http.ErrServerClosed) && serveError != grpc.ErrServerStopped {
+			return serveError
+		}
+	}
+	return httpError
 }
 
 type tenantIDGetter interface {
 	GetTenantId() string
+}
+
+type accountContextGetter interface {
+	GetAccount() *creditv1.AccountContext
 }
 
 func extractUserID(request interface{}) string {
@@ -278,24 +352,28 @@ func extractLedgerID(request interface{}) string {
 }
 
 func extractTenantID(request interface{}) string {
-	getter, ok := request.(tenantIDGetter)
-	if !ok {
-		return ""
+	if getter, ok := request.(tenantIDGetter); ok {
+		return strings.TrimSpace(getter.GetTenantId())
 	}
-	tenantID := strings.TrimSpace(getter.GetTenantId())
-	return tenantID
+	if getter, ok := request.(accountContextGetter); ok && getter.GetAccount() != nil {
+		return strings.TrimSpace(getter.GetAccount().GetTenantId())
+	}
+	return ""
 }
 
-func newAuthInterceptor(tenantSecrets map[string]string) grpc.UnaryServerInterceptor {
+type tenantAuthenticator interface {
+	Authenticate(context.Context, string) (tenant.ID, error)
+}
+
+func newAuthInterceptor(authenticator tenantAuthenticator) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, request interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		tenantID := extractTenantID(request)
-		if tenantID == "" {
+		rawTenantID := extractTenantID(request)
+		if rawTenantID == "" {
 			return nil, status.Error(codes.Unauthenticated, "missing tenant_id")
 		}
-
-		expectedSecret, ok := tenantSecrets[tenantID]
-		if !ok {
-			return nil, status.Errorf(codes.PermissionDenied, "tenant %q is not authorized", tenantID)
+		_, err := tenant.NewID(rawTenantID)
+		if err != nil {
+			return nil, status.Error(codes.Unauthenticated, "invalid tenant_id")
 		}
 
 		md, ok := metadata.FromIncomingContext(ctx)
@@ -315,11 +393,15 @@ func newAuthInterceptor(tenantSecrets map[string]string) grpc.UnaryServerInterce
 		}
 
 		providedSecret := strings.TrimPrefix(token, bearerPrefix)
-		if providedSecret != expectedSecret {
-			return nil, status.Error(codes.Unauthenticated, "invalid secret key")
+		authenticatedTenantID, err := authenticator.Authenticate(ctx, providedSecret)
+		if err != nil {
+			if errors.Is(err, tenant.ErrCredentialInvalid) || errors.Is(err, tenant.ErrCredentialRevoked) {
+				return nil, status.Error(codes.Unauthenticated, "invalid secret key")
+			}
+			return nil, status.Error(codes.Internal, "tenant authentication failed")
 		}
 
-		return handler(ctx, request)
+		return handler(tenant.WithAuthenticatedID(ctx, authenticatedTenantID), request)
 	}
 }
 
@@ -356,6 +438,21 @@ type zapOperationLogger struct {
 	logger *zap.Logger
 }
 
+func (logger *zapOperationLogger) LogControlRequest(entry controlplane.RequestLog) {
+	fields := []zap.Field{
+		zap.String("operation", entry.Operation),
+		zap.Int("status_code", entry.StatusCode),
+		zap.Duration("duration", entry.Duration),
+	}
+	if entry.UserAccountID != "" {
+		fields = append(fields, zap.String("user_account_id", entry.UserAccountID))
+	}
+	if entry.ResourceID != "" {
+		fields = append(fields, zap.String("resource_id", entry.ResourceID))
+	}
+	logger.logger.Info("control.request", fields...)
+}
+
 func (logger *zapOperationLogger) LogOperation(_ context.Context, entry ledger.OperationLog) {
 	if logger == nil || logger.logger == nil {
 		return
@@ -389,12 +486,6 @@ func (logger *zapOperationLogger) LogOperation(_ context.Context, entry ledger.O
 		if reservation := entry.ReservationID.String(); reservation != "" {
 			fields = append(fields, zap.String("reservation_id", reservation))
 		}
-	}
-	if key := entry.IdempotencyKey.String(); key != "" {
-		fields = append(fields, zap.String("idempotency_key", key))
-	}
-	if metadata := entry.Metadata.String(); metadata != "" && metadata != "{}" {
-		fields = append(fields, zap.String("metadata", metadata))
 	}
 	if entry.Error != nil {
 		fields = append(fields, zap.Error(entry.Error))
@@ -510,11 +601,14 @@ func normalizeSQLitePath(path string) (string, error) {
 }
 
 func prepareSchema(db *gorm.DB, driver string) error {
+	if db == nil || db.Config == nil || db.Dialector == nil {
+		return errors.New("database handle is invalid")
+	}
+	if db.Migrator().HasTable("accounts") {
+		return errors.New("legacy accounts table requires the user-account migration")
+	}
 	if driver == "sqlite" {
-		sqlDB, err := db.DB()
-		if err != nil {
-			return fmt.Errorf("sql database: %w", err)
-		}
+		sqlDB, _ := db.DB()
 		sqlDB.SetMaxOpenConns(1)
 		sqlDB.SetMaxIdleConns(1)
 
@@ -528,7 +622,16 @@ func prepareSchema(db *gorm.DB, driver string) error {
 			return fmt.Errorf("pragma foreign_keys: %w", err)
 		}
 	}
-	if err := db.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}, &gormstore.Reservation{}); err != nil {
+	if err := db.AutoMigrate(
+		&gormstore.UserAccount{},
+		&gormstore.LedgerTenant{},
+		&gormstore.TenantCredential{},
+		&gormstore.IdempotencyRecord{},
+		&gormstore.ControlEvent{},
+		&gormstore.LedgerAccount{},
+		&gormstore.LedgerEntry{},
+		&gormstore.Reservation{},
+	); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
 	return nil

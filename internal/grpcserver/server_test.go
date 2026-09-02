@@ -9,12 +9,26 @@ import (
 
 	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
 	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
+	"github.com/MarkoPoloResearchLab/ledger/internal/tenant"
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"github.com/glebarez/sqlite"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"gorm.io/gorm"
 )
+
+const (
+	testTenantID      = "0196f0ec-3e80-7a54-bd2b-56cfe90bf801"
+	testOtherTenantID = "0196f0ec-3e80-7a54-bd2b-56cfe90bf802"
+)
+
+func authorizedContext() context.Context {
+	tenantID, err := tenant.NewID(testTenantID)
+	if err != nil {
+		panic(err)
+	}
+	return tenant.WithAuthenticatedID(context.Background(), tenantID)
+}
 
 func TestNormalizeListLimit(test *testing.T) {
 	test.Parallel()
@@ -143,13 +157,13 @@ func TestCreditServiceServerTenantValidation(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"authorized-tenant"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 
 	_, err = server.GetBalance(ctx, &creditv1.BalanceRequest{
 		UserId:   "user",
-		TenantId: "unauthorized",
+		TenantId: testOtherTenantID,
 		LedgerId: "default",
 	})
 
@@ -164,11 +178,11 @@ func TestCreditServiceServerFlow(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	balanceResponse, err := server.GetBalance(ctx, &creditv1.BalanceRequest{
@@ -485,11 +499,11 @@ func TestCreditServiceServerReservationIntrospection(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
@@ -675,8 +689,8 @@ func TestCreditServiceServerReservationIntrospectionValidationErrors(test *testi
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
-	ctx := context.Background()
+	server := NewCreditServiceServer(creditService)
+	ctx := authorizedContext()
 
 	testCases := []struct {
 		name        string
@@ -689,7 +703,7 @@ func TestCreditServiceServerReservationIntrospectionValidationErrors(test *testi
 			invoke: func() error {
 				_, err := server.GetReservation(ctx, &creditv1.GetReservationRequest{
 					UserId:        " ",
-					TenantId:      "default",
+					TenantId:      testTenantID,
 					LedgerId:      "default",
 					ReservationId: "order-1",
 				})
@@ -703,7 +717,7 @@ func TestCreditServiceServerReservationIntrospectionValidationErrors(test *testi
 			invoke: func() error {
 				_, err := server.GetReservation(ctx, &creditv1.GetReservationRequest{
 					UserId:        "user-123",
-					TenantId:      "default",
+					TenantId:      testTenantID,
 					LedgerId:      " ",
 					ReservationId: "order-1",
 				})
@@ -717,21 +731,21 @@ func TestCreditServiceServerReservationIntrospectionValidationErrors(test *testi
 			invoke: func() error {
 				_, err := server.GetReservation(ctx, &creditv1.GetReservationRequest{
 					UserId:        "user-123",
-					TenantId:      "unauthorized",
+					TenantId:      testOtherTenantID,
 					LedgerId:      "default",
 					ReservationId: "order-1",
 				})
 				return err
 			},
 			wantCode:    codes.PermissionDenied,
-			wantMessage: "tenant \"unauthorized\" is not authorized",
+			wantMessage: "tenant is not authorized",
 		},
 		{
 			name: "get reservation invalid reservation id",
 			invoke: func() error {
 				_, err := server.GetReservation(ctx, &creditv1.GetReservationRequest{
 					UserId:        "user-123",
-					TenantId:      "default",
+					TenantId:      testTenantID,
 					LedgerId:      "default",
 					ReservationId: " ",
 				})
@@ -745,7 +759,7 @@ func TestCreditServiceServerReservationIntrospectionValidationErrors(test *testi
 			invoke: func() error {
 				_, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
 					UserId:   " ",
-					TenantId: "default",
+					TenantId: testTenantID,
 					LedgerId: "default",
 				})
 				return err
@@ -758,7 +772,7 @@ func TestCreditServiceServerReservationIntrospectionValidationErrors(test *testi
 			invoke: func() error {
 				_, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
 					UserId:   "user-123",
-					TenantId: "default",
+					TenantId: testTenantID,
 					LedgerId: " ",
 				})
 				return err
@@ -771,20 +785,20 @@ func TestCreditServiceServerReservationIntrospectionValidationErrors(test *testi
 			invoke: func() error {
 				_, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
 					UserId:   "user-123",
-					TenantId: "unauthorized",
+					TenantId: testOtherTenantID,
 					LedgerId: "default",
 				})
 				return err
 			},
 			wantCode:    codes.PermissionDenied,
-			wantMessage: "tenant \"unauthorized\" is not authorized",
+			wantMessage: "tenant is not authorized",
 		},
 		{
 			name: "list reservations invalid limit",
 			invoke: func() error {
 				_, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
 					UserId:   "user-123",
-					TenantId: "default",
+					TenantId: testTenantID,
 					LedgerId: "default",
 					Limit:    maxListEntriesLimit + 1,
 				})
@@ -798,7 +812,7 @@ func TestCreditServiceServerReservationIntrospectionValidationErrors(test *testi
 			invoke: func() error {
 				_, err := server.ListReservations(ctx, &creditv1.ListReservationsRequest{
 					UserId:   "user-123",
-					TenantId: "default",
+					TenantId: testTenantID,
 					LedgerId: "default",
 					Statuses: []string{"not-a-status"},
 				})
@@ -830,11 +844,11 @@ func TestCreditServiceServerGetReservationUnknownReservation(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	_, err = server.GetReservation(context.Background(), &creditv1.GetReservationRequest{
+	_, err = server.GetReservation(authorizedContext(), &creditv1.GetReservationRequest{
 		UserId:        "user-123",
-		TenantId:      "default",
+		TenantId:      testTenantID,
 		LedgerId:      "default",
 		ReservationId: "order-unknown",
 	})
@@ -852,11 +866,11 @@ func TestCreditServiceServerRefundSpendFlow(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
@@ -937,11 +951,11 @@ func TestCreditServiceServerRefundByOriginalIdempotencyKeyFlow(test *testing.T) 
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
@@ -1003,11 +1017,11 @@ func TestCreditServiceServerRefundValidationInvalidOriginalEntryID(test *testing
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
+	_, err = server.Refund(authorizedContext(), &creditv1.RefundRequest{
 		UserId:         "user",
-		TenantId:       "default",
+		TenantId:       testTenantID,
 		LedgerId:       "default",
 		Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: " "},
 		AmountCents:    1,
@@ -1028,11 +1042,11 @@ func TestCreditServiceServerRefundValidationInvalidOriginalIdempotencyKey(test *
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
+	_, err = server.Refund(authorizedContext(), &creditv1.RefundRequest{
 		UserId:         "user",
-		TenantId:       "default",
+		TenantId:       testTenantID,
 		LedgerId:       "default",
 		Original:       &creditv1.RefundRequest_OriginalIdempotencyKey{OriginalIdempotencyKey: " "},
 		AmountCents:    1,
@@ -1053,11 +1067,11 @@ func TestCreditServiceServerRefundUnknownEntryRejected(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
+	_, err = server.Refund(authorizedContext(), &creditv1.RefundRequest{
 		UserId:         "user",
-		TenantId:       "default",
+		TenantId:       testTenantID,
 		LedgerId:       "default",
 		Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "missing-entry"},
 		AmountCents:    1,
@@ -1078,11 +1092,11 @@ func TestCreditServiceServerRefundRejectsNonDebitOriginal(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	grantResponse, err := server.Grant(ctx, &creditv1.GrantRequest{
@@ -1120,11 +1134,11 @@ func TestCreditServiceServerRefundCaptureDebitFlow(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
@@ -1192,11 +1206,11 @@ func TestCreditServiceServerRefundOverRefundRejected(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
@@ -1255,11 +1269,11 @@ func TestCreditServiceServerRefundDuplicateIdempotencyNoop(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
@@ -1333,11 +1347,11 @@ func TestCreditServiceServerRefundValidationMissingOriginal(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
+	_, err = server.Refund(authorizedContext(), &creditv1.RefundRequest{
 		UserId:         "user",
-		TenantId:       "default",
+		TenantId:       testTenantID,
 		LedgerId:       "default",
 		AmountCents:    1,
 		IdempotencyKey: "refund-1",
@@ -1357,8 +1371,8 @@ func TestCreditServiceServerRefundValidationErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
-	ctx := context.Background()
+	server := NewCreditServiceServer(creditService)
+	ctx := authorizedContext()
 
 	testCases := []struct {
 		name        string
@@ -1371,7 +1385,7 @@ func TestCreditServiceServerRefundValidationErrors(test *testing.T) {
 			invoke: func() error {
 				_, err := server.Refund(ctx, &creditv1.RefundRequest{
 					UserId:         "",
-					TenantId:       "default",
+					TenantId:       testTenantID,
 					LedgerId:       "default",
 					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
 					AmountCents:    1,
@@ -1388,7 +1402,7 @@ func TestCreditServiceServerRefundValidationErrors(test *testing.T) {
 			invoke: func() error {
 				_, err := server.Refund(ctx, &creditv1.RefundRequest{
 					UserId:         "user",
-					TenantId:       "default",
+					TenantId:       testTenantID,
 					LedgerId:       "",
 					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
 					AmountCents:    1,
@@ -1405,7 +1419,7 @@ func TestCreditServiceServerRefundValidationErrors(test *testing.T) {
 			invoke: func() error {
 				_, err := server.Refund(ctx, &creditv1.RefundRequest{
 					UserId:         "user",
-					TenantId:       "unauthorized",
+					TenantId:       testOtherTenantID,
 					LedgerId:       "default",
 					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
 					AmountCents:    1,
@@ -1415,14 +1429,14 @@ func TestCreditServiceServerRefundValidationErrors(test *testing.T) {
 				return err
 			},
 			wantCode:    codes.PermissionDenied,
-			wantMessage: "tenant \"unauthorized\" is not authorized",
+			wantMessage: "tenant is not authorized",
 		},
 		{
 			name: "invalid amount",
 			invoke: func() error {
 				_, err := server.Refund(ctx, &creditv1.RefundRequest{
 					UserId:         "user",
-					TenantId:       "default",
+					TenantId:       testTenantID,
 					LedgerId:       "default",
 					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
 					AmountCents:    0,
@@ -1439,7 +1453,7 @@ func TestCreditServiceServerRefundValidationErrors(test *testing.T) {
 			invoke: func() error {
 				_, err := server.Refund(ctx, &creditv1.RefundRequest{
 					UserId:         "user",
-					TenantId:       "default",
+					TenantId:       testTenantID,
 					LedgerId:       "default",
 					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
 					AmountCents:    1,
@@ -1456,7 +1470,7 @@ func TestCreditServiceServerRefundValidationErrors(test *testing.T) {
 			invoke: func() error {
 				_, err := server.Refund(ctx, &creditv1.RefundRequest{
 					UserId:         "user",
-					TenantId:       "default",
+					TenantId:       testTenantID,
 					LedgerId:       "default",
 					Original:       &creditv1.RefundRequest_OriginalEntryId{OriginalEntryId: "entry-1"},
 					AmountCents:    1,
@@ -1490,8 +1504,8 @@ func TestCreditServiceServerBatchValidationErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
-	ctx := context.Background()
+	server := NewCreditServiceServer(creditService)
+	ctx := authorizedContext()
 
 	_, err = server.Batch(ctx, &creditv1.BatchRequest{})
 	if status.Code(err) != codes.InvalidArgument {
@@ -1502,7 +1516,7 @@ func TestCreditServiceServerBatchValidationErrors(test *testing.T) {
 	}
 
 	_, err = server.Batch(ctx, &creditv1.BatchRequest{
-		Account:    &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"},
+		Account:    &creditv1.AccountContext{UserId: "user", TenantId: testTenantID, LedgerId: "default"},
 		Operations: []*creditv1.BatchOperation{{OperationId: "   ", Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{AmountCents: 1, IdempotencyKey: "idem", MetadataJson: "{}"}}}},
 	})
 	if status.Code(err) != codes.InvalidArgument {
@@ -1513,7 +1527,7 @@ func TestCreditServiceServerBatchValidationErrors(test *testing.T) {
 	}
 
 	_, err = server.Batch(ctx, &creditv1.BatchRequest{
-		Account:    &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"},
+		Account:    &creditv1.AccountContext{UserId: "user", TenantId: testTenantID, LedgerId: "default"},
 		Operations: []*creditv1.BatchOperation{{OperationId: "op-1"}},
 	})
 	if status.Code(err) != codes.InvalidArgument {
@@ -1524,7 +1538,7 @@ func TestCreditServiceServerBatchValidationErrors(test *testing.T) {
 	}
 
 	_, err = server.Batch(ctx, &creditv1.BatchRequest{
-		Account:    &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"},
+		Account:    &creditv1.AccountContext{UserId: "user", TenantId: testTenantID, LedgerId: "default"},
 		Operations: []*creditv1.BatchOperation{{OperationId: "op-1", Operation: &creditv1.BatchOperation_Grant{Grant: nil}}},
 	})
 	if status.Code(err) != codes.InvalidArgument {
@@ -1541,8 +1555,8 @@ func TestCreditServiceServerBatchAccountContextValidation(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
-	ctx := context.Background()
+	server := NewCreditServiceServer(creditService)
+	ctx := authorizedContext()
 
 	testCases := []struct {
 		name        string
@@ -1550,9 +1564,9 @@ func TestCreditServiceServerBatchAccountContextValidation(test *testing.T) {
 		wantCode    codes.Code
 		wantMessage string
 	}{
-		{name: "invalid user id", account: &creditv1.AccountContext{UserId: "", TenantId: "default", LedgerId: "default"}, wantCode: codes.InvalidArgument, wantMessage: errorInvalidUserID},
-		{name: "invalid ledger id", account: &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: ""}, wantCode: codes.InvalidArgument, wantMessage: errorInvalidLedgerID},
-		{name: "invalid tenant id", account: &creditv1.AccountContext{UserId: "user", TenantId: "unauthorized", LedgerId: "default"}, wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized"},
+		{name: "invalid user id", account: &creditv1.AccountContext{UserId: "", TenantId: testTenantID, LedgerId: "default"}, wantCode: codes.InvalidArgument, wantMessage: errorInvalidUserID},
+		{name: "invalid ledger id", account: &creditv1.AccountContext{UserId: "user", TenantId: testTenantID, LedgerId: ""}, wantCode: codes.InvalidArgument, wantMessage: errorInvalidLedgerID},
+		{name: "invalid tenant id", account: &creditv1.AccountContext{UserId: "user", TenantId: testOtherTenantID, LedgerId: "default"}, wantCode: codes.PermissionDenied, wantMessage: "tenant is not authorized"},
 	}
 	for _, testCase := range testCases {
 		testCase := testCase
@@ -1578,9 +1592,9 @@ func TestCreditServiceServerBatchOperationValidationErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
-	ctx := context.Background()
-	account := &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"}
+	server := NewCreditServiceServer(creditService)
+	ctx := authorizedContext()
+	account := &creditv1.AccountContext{UserId: "user", TenantId: testTenantID, LedgerId: "default"}
 
 	testCases := []struct {
 		name        string
@@ -1708,9 +1722,9 @@ func TestCreditServiceServerBatchMapsServiceErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("service init: %v", err)
 	}
-	server := NewCreditServiceServer(service, []string{"default"})
-	_, err = server.Batch(context.Background(), &creditv1.BatchRequest{
-		Account: &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"},
+	server := NewCreditServiceServer(service)
+	_, err = server.Batch(authorizedContext(), &creditv1.BatchRequest{
+		Account: &creditv1.AccountContext{UserId: "user", TenantId: testTenantID, LedgerId: "default"},
 		Operations: []*creditv1.BatchOperation{
 			{OperationId: "grant-1", Operation: &creditv1.BatchOperation_Grant{Grant: &creditv1.BatchGrantOp{AmountCents: 1, IdempotencyKey: "grant-1", MetadataJson: "{}"}}},
 		},
@@ -1729,11 +1743,11 @@ func TestCreditServiceServerBatchSupportsReserveCaptureAndRelease(test *testing.
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
@@ -1813,11 +1827,11 @@ func TestCreditServiceServerBatchSupportsRefundByOriginalIdempotencyKey(test *te
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
@@ -1879,11 +1893,11 @@ func TestCreditServiceServerBatchSupportsRefundByOriginalEntryID(test *testing.T
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
@@ -1952,11 +1966,11 @@ func TestCreditServiceServerBatchRefundRejectsIdempotencyKeyConflictWithNonRefun
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
@@ -2025,11 +2039,11 @@ func TestCreditServiceServerBatchRefundOverRefundRejected(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
@@ -2101,11 +2115,11 @@ func TestCreditServiceServerListEntriesAppliesFilters(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	if _, err := server.Grant(ctx, &creditv1.GrantRequest{
@@ -2174,11 +2188,11 @@ func TestCreditServiceServerBatchBestEffortReturnsPerItemResults(test *testing.T
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
@@ -2282,11 +2296,11 @@ func TestCreditServiceServerBatchTreatsDuplicateIdempotencyAsSuccess(test *testi
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	batchRequest := &creditv1.BatchRequest{
@@ -2361,11 +2375,11 @@ func TestCreditServiceServerBatchAtomicRollsBackAllMutations(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	batchResponse, err := server.Batch(ctx, &creditv1.BatchRequest{
@@ -2432,11 +2446,11 @@ func TestCreditServiceServerBatchSupportsLargeBatches(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
+	server := NewCreditServiceServer(creditService)
 
-	ctx := context.Background()
+	ctx := authorizedContext()
 	userID := "user-123"
-	tenantID := "default"
+	tenantID := testTenantID
 	ledgerID := "default"
 
 	operations := make([]*creditv1.BatchOperation, 0, maxBatchOperations)
@@ -2514,7 +2528,7 @@ func newSQLiteLedgerService(test *testing.T) (*ledger.Service, error) {
 		return nil, err
 	}
 	test.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&gormstore.Account{}, &gormstore.LedgerEntry{}, &gormstore.Reservation{}); err != nil {
+	if err := db.AutoMigrate(&gormstore.LedgerAccount{}, &gormstore.LedgerEntry{}, &gormstore.Reservation{}); err != nil {
 		return nil, err
 	}
 	store := gormstore.New(db)
@@ -2528,8 +2542,8 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
-	ctx := context.Background()
+	server := NewCreditServiceServer(creditService)
+	ctx := authorizedContext()
 
 	testCases := []struct {
 		name        string
@@ -2540,7 +2554,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 		{
 			name: "get balance invalid user id",
 			invoke: func() error {
-				_, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: "", TenantId: "default", LedgerId: "default"})
+				_, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: "", TenantId: testTenantID, LedgerId: "default"})
 				return err
 			},
 			wantCode: codes.InvalidArgument, wantMessage: errorInvalidUserID,
@@ -2548,7 +2562,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 		{
 			name: "get balance invalid ledger id",
 			invoke: func() error {
-				_, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: "user", TenantId: "default", LedgerId: ""})
+				_, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: "user", TenantId: testTenantID, LedgerId: ""})
 				return err
 			},
 			wantCode: codes.InvalidArgument, wantMessage: errorInvalidLedgerID,
@@ -2556,16 +2570,16 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 		{
 			name: "get balance invalid tenant id",
 			invoke: func() error {
-				_, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: "user", TenantId: "unauthorized", LedgerId: "default"})
+				_, err := server.GetBalance(ctx, &creditv1.BalanceRequest{UserId: "user", TenantId: testOtherTenantID, LedgerId: "default"})
 				return err
 			},
-			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
+			wantCode: codes.PermissionDenied, wantMessage: "tenant is not authorized",
 		},
 		{
 			name: "grant invalid idempotency key",
 			invoke: func() error {
 				_, err := server.Grant(ctx, &creditv1.GrantRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", AmountCents: 100, IdempotencyKey: "", MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", AmountCents: 100, IdempotencyKey: "", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2575,7 +2589,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "grant invalid metadata",
 			invoke: func() error {
 				_, err := server.Grant(ctx, &creditv1.GrantRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", AmountCents: 100, IdempotencyKey: "grant-1", MetadataJson: "{",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", AmountCents: 100, IdempotencyKey: "grant-1", MetadataJson: "{",
 				})
 				return err
 			},
@@ -2585,7 +2599,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "reserve invalid reservation id",
 			invoke: func() error {
 				_, err := server.Reserve(ctx, &creditv1.ReserveRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", AmountCents: 100, ReservationId: "", IdempotencyKey: "reserve-1", MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", AmountCents: 100, ReservationId: "", IdempotencyKey: "reserve-1", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2595,7 +2609,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "capture invalid reservation id",
 			invoke: func() error {
 				_, err := server.Capture(ctx, &creditv1.CaptureRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", ReservationId: "", IdempotencyKey: "capture-1", AmountCents: 100, MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", ReservationId: "", IdempotencyKey: "capture-1", AmountCents: 100, MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2605,7 +2619,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "capture invalid idempotency key",
 			invoke: func() error {
 				_, err := server.Capture(ctx, &creditv1.CaptureRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "", AmountCents: 100, MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "", AmountCents: 100, MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2615,7 +2629,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "release invalid metadata",
 			invoke: func() error {
 				_, err := server.Release(ctx, &creditv1.ReleaseRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "release-1", MetadataJson: "{",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "release-1", MetadataJson: "{",
 				})
 				return err
 			},
@@ -2625,7 +2639,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "spend invalid amount",
 			invoke: func() error {
 				_, err := server.Spend(ctx, &creditv1.SpendRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", AmountCents: 0, IdempotencyKey: "spend-1", MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", AmountCents: 0, IdempotencyKey: "spend-1", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2635,7 +2649,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "grant invalid user id",
 			invoke: func() error {
 				_, err := server.Grant(ctx, &creditv1.GrantRequest{
-					UserId: "", TenantId: "default", LedgerId: "default", AmountCents: 100, IdempotencyKey: "grant-1", MetadataJson: "{}",
+					UserId: "", TenantId: testTenantID, LedgerId: "default", AmountCents: 100, IdempotencyKey: "grant-1", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2645,7 +2659,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "grant invalid ledger id",
 			invoke: func() error {
 				_, err := server.Grant(ctx, &creditv1.GrantRequest{
-					UserId: "user", TenantId: "default", LedgerId: "", AmountCents: 100, IdempotencyKey: "grant-1", MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "", AmountCents: 100, IdempotencyKey: "grant-1", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2655,17 +2669,17 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "grant invalid tenant id",
 			invoke: func() error {
 				_, err := server.Grant(ctx, &creditv1.GrantRequest{
-					UserId: "user", TenantId: "unauthorized", LedgerId: "default", AmountCents: 100, IdempotencyKey: "grant-1", MetadataJson: "{}",
+					UserId: "user", TenantId: testOtherTenantID, LedgerId: "default", AmountCents: 100, IdempotencyKey: "grant-1", MetadataJson: "{}",
 				})
 				return err
 			},
-			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
+			wantCode: codes.PermissionDenied, wantMessage: "tenant is not authorized",
 		},
 		{
 			name: "reserve invalid user id",
 			invoke: func() error {
 				_, err := server.Reserve(ctx, &creditv1.ReserveRequest{
-					UserId: "", TenantId: "default", LedgerId: "default", AmountCents: 100, ReservationId: "order-1", IdempotencyKey: "reserve-1", MetadataJson: "{}",
+					UserId: "", TenantId: testTenantID, LedgerId: "default", AmountCents: 100, ReservationId: "order-1", IdempotencyKey: "reserve-1", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2675,7 +2689,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "reserve invalid ledger id",
 			invoke: func() error {
 				_, err := server.Reserve(ctx, &creditv1.ReserveRequest{
-					UserId: "user", TenantId: "default", LedgerId: "", AmountCents: 100, ReservationId: "order-1", IdempotencyKey: "reserve-1", MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "", AmountCents: 100, ReservationId: "order-1", IdempotencyKey: "reserve-1", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2685,17 +2699,17 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "reserve invalid tenant id",
 			invoke: func() error {
 				_, err := server.Reserve(ctx, &creditv1.ReserveRequest{
-					UserId: "user", TenantId: "unauthorized", LedgerId: "default", AmountCents: 100, ReservationId: "order-1", IdempotencyKey: "reserve-1", MetadataJson: "{}",
+					UserId: "user", TenantId: testOtherTenantID, LedgerId: "default", AmountCents: 100, ReservationId: "order-1", IdempotencyKey: "reserve-1", MetadataJson: "{}",
 				})
 				return err
 			},
-			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
+			wantCode: codes.PermissionDenied, wantMessage: "tenant is not authorized",
 		},
 		{
 			name: "reserve invalid amount",
 			invoke: func() error {
 				_, err := server.Reserve(ctx, &creditv1.ReserveRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", AmountCents: 0, ReservationId: "order-1", IdempotencyKey: "reserve-1", MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", AmountCents: 0, ReservationId: "order-1", IdempotencyKey: "reserve-1", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2705,7 +2719,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "reserve invalid idempotency key",
 			invoke: func() error {
 				_, err := server.Reserve(ctx, &creditv1.ReserveRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", AmountCents: 100, ReservationId: "order-1", IdempotencyKey: "", MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", AmountCents: 100, ReservationId: "order-1", IdempotencyKey: "", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2715,7 +2729,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "reserve invalid metadata",
 			invoke: func() error {
 				_, err := server.Reserve(ctx, &creditv1.ReserveRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", AmountCents: 100, ReservationId: "order-1", IdempotencyKey: "reserve-1", MetadataJson: "{",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", AmountCents: 100, ReservationId: "order-1", IdempotencyKey: "reserve-1", MetadataJson: "{",
 				})
 				return err
 			},
@@ -2725,7 +2739,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "capture invalid user id",
 			invoke: func() error {
 				_, err := server.Capture(ctx, &creditv1.CaptureRequest{
-					UserId: "", TenantId: "default", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 100, MetadataJson: "{}",
+					UserId: "", TenantId: testTenantID, LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 100, MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2735,7 +2749,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "capture invalid ledger id",
 			invoke: func() error {
 				_, err := server.Capture(ctx, &creditv1.CaptureRequest{
-					UserId: "user", TenantId: "default", LedgerId: "", ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 100, MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "", ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 100, MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2745,17 +2759,17 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "capture invalid tenant id",
 			invoke: func() error {
 				_, err := server.Capture(ctx, &creditv1.CaptureRequest{
-					UserId: "user", TenantId: "unauthorized", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 100, MetadataJson: "{}",
+					UserId: "user", TenantId: testOtherTenantID, LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 100, MetadataJson: "{}",
 				})
 				return err
 			},
-			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
+			wantCode: codes.PermissionDenied, wantMessage: "tenant is not authorized",
 		},
 		{
 			name: "capture invalid amount",
 			invoke: func() error {
 				_, err := server.Capture(ctx, &creditv1.CaptureRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 0, MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 0, MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2765,7 +2779,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "capture invalid metadata",
 			invoke: func() error {
 				_, err := server.Capture(ctx, &creditv1.CaptureRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 100, MetadataJson: "{",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "capture-1", AmountCents: 100, MetadataJson: "{",
 				})
 				return err
 			},
@@ -2775,7 +2789,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "release invalid user id",
 			invoke: func() error {
 				_, err := server.Release(ctx, &creditv1.ReleaseRequest{
-					UserId: "", TenantId: "default", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "release-1", MetadataJson: "{}",
+					UserId: "", TenantId: testTenantID, LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "release-1", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2785,7 +2799,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "release invalid ledger id",
 			invoke: func() error {
 				_, err := server.Release(ctx, &creditv1.ReleaseRequest{
-					UserId: "user", TenantId: "default", LedgerId: "", ReservationId: "order-1", IdempotencyKey: "release-1", MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "", ReservationId: "order-1", IdempotencyKey: "release-1", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2795,17 +2809,17 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "release invalid tenant id",
 			invoke: func() error {
 				_, err := server.Release(ctx, &creditv1.ReleaseRequest{
-					UserId: "user", TenantId: "unauthorized", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "release-1", MetadataJson: "{}",
+					UserId: "user", TenantId: testOtherTenantID, LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "release-1", MetadataJson: "{}",
 				})
 				return err
 			},
-			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
+			wantCode: codes.PermissionDenied, wantMessage: "tenant is not authorized",
 		},
 		{
 			name: "release invalid reservation id",
 			invoke: func() error {
 				_, err := server.Release(ctx, &creditv1.ReleaseRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", ReservationId: "", IdempotencyKey: "release-1", MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", ReservationId: "", IdempotencyKey: "release-1", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2815,7 +2829,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "release invalid idempotency key",
 			invoke: func() error {
 				_, err := server.Release(ctx, &creditv1.ReleaseRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "", MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", ReservationId: "order-1", IdempotencyKey: "", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2825,7 +2839,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "spend invalid user id",
 			invoke: func() error {
 				_, err := server.Spend(ctx, &creditv1.SpendRequest{
-					UserId: "", TenantId: "default", LedgerId: "default", AmountCents: 100, IdempotencyKey: "spend-1", MetadataJson: "{}",
+					UserId: "", TenantId: testTenantID, LedgerId: "default", AmountCents: 100, IdempotencyKey: "spend-1", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2835,7 +2849,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "spend invalid ledger id",
 			invoke: func() error {
 				_, err := server.Spend(ctx, &creditv1.SpendRequest{
-					UserId: "user", TenantId: "default", LedgerId: "", AmountCents: 100, IdempotencyKey: "spend-1", MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "", AmountCents: 100, IdempotencyKey: "spend-1", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2845,17 +2859,17 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "spend invalid tenant id",
 			invoke: func() error {
 				_, err := server.Spend(ctx, &creditv1.SpendRequest{
-					UserId: "user", TenantId: "unauthorized", LedgerId: "default", AmountCents: 100, IdempotencyKey: "spend-1", MetadataJson: "{}",
+					UserId: "user", TenantId: testOtherTenantID, LedgerId: "default", AmountCents: 100, IdempotencyKey: "spend-1", MetadataJson: "{}",
 				})
 				return err
 			},
-			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
+			wantCode: codes.PermissionDenied, wantMessage: "tenant is not authorized",
 		},
 		{
 			name: "spend invalid idempotency key",
 			invoke: func() error {
 				_, err := server.Spend(ctx, &creditv1.SpendRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", AmountCents: 100, IdempotencyKey: "", MetadataJson: "{}",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", AmountCents: 100, IdempotencyKey: "", MetadataJson: "{}",
 				})
 				return err
 			},
@@ -2865,7 +2879,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "spend invalid metadata",
 			invoke: func() error {
 				_, err := server.Spend(ctx, &creditv1.SpendRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", AmountCents: 100, IdempotencyKey: "spend-1", MetadataJson: "{",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", AmountCents: 100, IdempotencyKey: "spend-1", MetadataJson: "{",
 				})
 				return err
 			},
@@ -2875,7 +2889,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "list entries invalid user id",
 			invoke: func() error {
 				_, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
-					UserId: "", TenantId: "default", LedgerId: "default", BeforeUnixUtc: 0, Limit: 1,
+					UserId: "", TenantId: testTenantID, LedgerId: "default", BeforeUnixUtc: 0, Limit: 1,
 				})
 				return err
 			},
@@ -2885,7 +2899,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "list entries invalid ledger id",
 			invoke: func() error {
 				_, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
-					UserId: "user", TenantId: "default", LedgerId: "", BeforeUnixUtc: 0, Limit: 1,
+					UserId: "user", TenantId: testTenantID, LedgerId: "", BeforeUnixUtc: 0, Limit: 1,
 				})
 				return err
 			},
@@ -2895,17 +2909,17 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "list entries invalid tenant id",
 			invoke: func() error {
 				_, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
-					UserId: "user", TenantId: "unauthorized", LedgerId: "default", BeforeUnixUtc: 0, Limit: 1,
+					UserId: "user", TenantId: testOtherTenantID, LedgerId: "default", BeforeUnixUtc: 0, Limit: 1,
 				})
 				return err
 			},
-			wantCode: codes.PermissionDenied, wantMessage: "tenant \"unauthorized\" is not authorized",
+			wantCode: codes.PermissionDenied, wantMessage: "tenant is not authorized",
 		},
 		{
 			name: "list entries invalid entry type",
 			invoke: func() error {
 				_, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", BeforeUnixUtc: 0, Limit: 1, Types: []string{"not-a-type"},
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", BeforeUnixUtc: 0, Limit: 1, Types: []string{"not-a-type"},
 				})
 				return err
 			},
@@ -2915,7 +2929,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "list entries invalid reservation id",
 			invoke: func() error {
 				_, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", BeforeUnixUtc: 0, Limit: 1, ReservationId: "   ",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", BeforeUnixUtc: 0, Limit: 1, ReservationId: "   ",
 				})
 				return err
 			},
@@ -2925,7 +2939,7 @@ func TestCreditServiceServerValidationErrors(test *testing.T) {
 			name: "list entries invalid idempotency key prefix",
 			invoke: func() error {
 				_, err := server.ListEntries(ctx, &creditv1.ListEntriesRequest{
-					UserId: "user", TenantId: "default", LedgerId: "default", BeforeUnixUtc: 0, Limit: 1, IdempotencyKeyPrefix: "   ",
+					UserId: "user", TenantId: testTenantID, LedgerId: "default", BeforeUnixUtc: 0, Limit: 1, IdempotencyKeyPrefix: "   ",
 				})
 				return err
 			},
@@ -2959,9 +2973,9 @@ func TestGetBalanceMapsServiceErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("service init: %v", err)
 	}
-	server := NewCreditServiceServer(service, []string{"default"})
-	_, err = server.GetBalance(context.Background(), &creditv1.BalanceRequest{
-		UserId: "user", TenantId: "default", LedgerId: "default",
+	server := NewCreditServiceServer(service)
+	_, err = server.GetBalance(authorizedContext(), &creditv1.BalanceRequest{
+		UserId: "user", TenantId: testTenantID, LedgerId: "default",
 	})
 	if status.Code(err) != codes.Internal {
 		test.Fatalf("expected internal, got %v", status.Code(err))
@@ -3035,8 +3049,8 @@ func TestNewTenantIDErrorPathInEveryHandler(test *testing.T) {
 	}
 	// A whitespace-only tenant passes validateTenant (map lookup with " ") but
 	// NewTenantID trims it to "" and returns ErrInvalidTenantID.
-	server := NewCreditServiceServer(creditService, []string{" "})
-	ctx := context.Background()
+	server := NewCreditServiceServer(creditService)
+	ctx := authorizedContext()
 
 	testCases := []struct {
 		name   string
@@ -3151,11 +3165,11 @@ func TestNewTenantIDErrorPathInEveryHandler(test *testing.T) {
 		test.Run(testCase.name, func(test *testing.T) {
 			test.Parallel()
 			err := testCase.invoke()
-			if status.Code(err) != codes.InvalidArgument {
-				test.Fatalf("expected InvalidArgument, got %v", status.Code(err))
+			if status.Code(err) != codes.Unauthenticated {
+				test.Fatalf("expected Unauthenticated, got %v", status.Code(err))
 			}
-			if status.Convert(err).Message() != errorInvalidTenantID {
-				test.Fatalf("expected %q, got %q", errorInvalidTenantID, status.Convert(err).Message())
+			if status.Convert(err).Message() != "invalid tenant" {
+				test.Fatalf("expected invalid tenant, got %q", status.Convert(err).Message())
 			}
 		})
 	}
@@ -3167,9 +3181,9 @@ func TestListEntriesNormalizeListLimitError(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
-	_, err = server.ListEntries(context.Background(), &creditv1.ListEntriesRequest{
-		UserId: "user", TenantId: "default", LedgerId: "default", Limit: maxListEntriesLimit + 1,
+	server := NewCreditServiceServer(creditService)
+	_, err = server.ListEntries(authorizedContext(), &creditv1.ListEntriesRequest{
+		UserId: "user", TenantId: testTenantID, LedgerId: "default", Limit: maxListEntriesLimit + 1,
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		test.Fatalf("expected InvalidArgument, got %v", status.Code(err))
@@ -3185,9 +3199,9 @@ func TestBatchOperationNilPayloadErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
-	ctx := context.Background()
-	account := &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"}
+	server := NewCreditServiceServer(creditService)
+	ctx := authorizedContext()
+	account := &creditv1.AccountContext{UserId: "user", TenantId: testTenantID, LedgerId: "default"}
 
 	testCases := []struct {
 		name      string
@@ -3239,9 +3253,9 @@ func TestBatchOperationFieldValidationErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("new ledger service: %v", err)
 	}
-	server := NewCreditServiceServer(creditService, []string{"default"})
-	ctx := context.Background()
-	account := &creditv1.AccountContext{UserId: "user", TenantId: "default", LedgerId: "default"}
+	server := NewCreditServiceServer(creditService)
+	ctx := authorizedContext()
+	account := &creditv1.AccountContext{UserId: "user", TenantId: testTenantID, LedgerId: "default"}
 
 	testCases := []struct {
 		name        string
@@ -3325,10 +3339,10 @@ func TestRefundByOriginalIdempotencyKeyMapsServiceErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("service init: %v", err)
 	}
-	server := NewCreditServiceServer(service, []string{"default"})
-	_, err = server.Refund(context.Background(), &creditv1.RefundRequest{
+	server := NewCreditServiceServer(service)
+	_, err = server.Refund(authorizedContext(), &creditv1.RefundRequest{
 		UserId:         "user",
-		TenantId:       "default",
+		TenantId:       testTenantID,
 		LedgerId:       "default",
 		Original:       &creditv1.RefundRequest_OriginalIdempotencyKey{OriginalIdempotencyKey: "original-key"},
 		AmountCents:    1,
@@ -3347,9 +3361,9 @@ func TestListEntriesMapsServiceErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("service init: %v", err)
 	}
-	server := NewCreditServiceServer(service, []string{"default"})
-	_, err = server.ListEntries(context.Background(), &creditv1.ListEntriesRequest{
-		UserId: "user", TenantId: "default", LedgerId: "default", Limit: 1,
+	server := NewCreditServiceServer(service)
+	_, err = server.ListEntries(authorizedContext(), &creditv1.ListEntriesRequest{
+		UserId: "user", TenantId: testTenantID, LedgerId: "default", Limit: 1,
 	})
 	if status.Code(err) != codes.Internal {
 		test.Fatalf("expected Internal, got %v", status.Code(err))
@@ -3363,9 +3377,9 @@ func TestListReservationsMapsServiceErrors(test *testing.T) {
 	if err != nil {
 		test.Fatalf("service init: %v", err)
 	}
-	server := NewCreditServiceServer(service, []string{"default"})
-	_, err = server.ListReservations(context.Background(), &creditv1.ListReservationsRequest{
-		UserId: "user", TenantId: "default", LedgerId: "default",
+	server := NewCreditServiceServer(service)
+	_, err = server.ListReservations(authorizedContext(), &creditv1.ListReservationsRequest{
+		UserId: "user", TenantId: testTenantID, LedgerId: "default",
 	})
 	if status.Code(err) != codes.Internal {
 		test.Fatalf("expected Internal, got %v", status.Code(err))

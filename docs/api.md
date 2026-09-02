@@ -19,21 +19,23 @@ Idempotency keys are enforced **per account**.
 Every gRPC request must include the `authorization` metadata header:
 
 ```
-authorization: Bearer <tenant_secret_key>
+authorization: Bearer <tenant_credential>
 ```
 
-The server extracts `tenant_id` from the request body, looks up the corresponding `secret_key` in the tenant configuration (`config.yml`), and validates the Bearer token.
+The server extracts `tenant_id` from the request body and verifies the Bearer credential against the stored digest for that tenant. `Batch` uses `account.tenant_id`. Every handler also compares the authenticated tenant with the addressed tenant.
 
 | Failure reason          | gRPC code          | Message                            |
 | ----------------------- | ------------------ | ---------------------------------- |
 | Missing `tenant_id`     | `Unauthenticated`  | `missing tenant_id`               |
-| Unknown tenant          | `PermissionDenied` | `tenant "<id>" is not authorized` |
+| Tenant mismatch         | `PermissionDenied` | `tenant is not authorized`        |
 | Missing metadata        | `Unauthenticated`  | `missing metadata`                |
 | Missing `authorization` | `Unauthenticated`  | `missing authorization header`    |
 | Wrong format            | `Unauthenticated`  | `invalid authorization header format` |
 | Wrong secret            | `Unauthenticated`  | `invalid secret key`              |
 
-Tenant secrets are configured per tenant in `config.yml` and support environment variable expansion (e.g., `${MY_SECRET:-fallback}`).
+An authenticated UserAccount owner creates and revokes credentials through the Ledger HTTP control plane. A credential secret is returned once. Ledger stores only its SHA-256 digest.
+
+The HTTP control plane contract is defined in `api/control/v1/openapi.yaml`.
 
 ## Data Model
 
@@ -252,4 +254,3 @@ Unary and batch per-item errors use stable string codes that map to gRPC status 
 - `refund_exceeds_debit` (`FailedPrecondition`)
 
 For batch operations, `rolled_back` indicates an operation was undone due to `atomic=true` behavior.
-

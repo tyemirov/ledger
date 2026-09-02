@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +18,9 @@ import (
 	"time"
 
 	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
+	"github.com/MarkoPoloResearchLab/ledger/internal/controlplane"
 	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
+	"github.com/MarkoPoloResearchLab/ledger/internal/tenant"
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"github.com/glebarez/sqlite"
 	"github.com/spf13/viper"
@@ -28,6 +34,11 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"gorm.io/gorm"
+)
+
+const (
+	testRuntimeTenantID = "0196f0ec-3e80-7a54-bd2b-56cfe90bf801"
+	testRuntimeOrigin   = "https://ledger.example.test"
 )
 
 func TestResolveDriver(test *testing.T) {
@@ -92,7 +103,8 @@ func TestLoadConfigErrorsWhenRequiredFieldsMissing(test *testing.T) {
 	configFile := filepath.Join(tempDir, "invalid.yml")
 	content := `
 service:
-  listen_addr: ":50051"
+  grpc_listen_addr: ":50051"
+  http_listen_addr: ":8080"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -108,17 +120,15 @@ service:
 	}
 }
 
-func TestLoadConfigErrorsWhenTenantSecretMissing(test *testing.T) {
+func TestLoadConfigErrorsWhenAuthMissing(test *testing.T) {
 	viper.Reset()
 	tempDir := test.TempDir()
 	configFile := filepath.Join(tempDir, "invalid_tenant.yml")
 	content := `
 service:
   database_url: "sqlite://test.db"
-  listen_addr: ":50051"
-tenants:
-  - id: "t1"
-    name: "Tenant 1"
+  grpc_listen_addr: ":50051"
+  http_listen_addr: ":8080"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -130,21 +140,24 @@ tenants:
 	_ = cmd.Flags().Set(flagConfigFile, configFile)
 
 	if err := loadConfig(cmd, cfg); err == nil {
-		test.Fatalf("expected error for missing tenant secret_key, got nil")
+		test.Fatalf("expected error for missing auth, got nil")
 	}
 }
 
-func TestLoadConfigErrorsWhenTenantIDMissing(test *testing.T) {
+func TestLoadConfigErrorsWhenPublicOriginMissing(test *testing.T) {
 	viper.Reset()
 	tempDir := test.TempDir()
 	configFile := filepath.Join(tempDir, "invalid_tenant_id.yml")
 	content := `
 service:
   database_url: "sqlite://test.db"
-  listen_addr: ":50051"
-tenants:
-  - name: "Tenant 1"
-    secret_key: "s1"
+  grpc_listen_addr: ":50051"
+  http_listen_addr: ":8080"
+auth:
+  jwt_signing_key: "secret"
+  jwt_issuer: "tauth"
+  tauth_tenant_id: "mprlab"
+  session_cookie_name: "app_session"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -156,7 +169,7 @@ tenants:
 	_ = cmd.Flags().Set(flagConfigFile, configFile)
 
 	if err := loadConfig(cmd, cfg); err == nil {
-		test.Fatalf("expected error for missing tenant id, got nil")
+		test.Fatalf("expected error for missing public origin, got nil")
 	}
 }
 
@@ -167,11 +180,14 @@ func TestLoadConfigWithFileAndExpansion(test *testing.T) {
 	content := `
 service:
   database_url: "${TEST_DB_URL}"
-  listen_addr: ":8888"
-tenants:
-  - id: "t1"
-    name: "Tenant 1"
-    secret_key: "s1"
+  grpc_listen_addr: ":8888"
+  http_listen_addr: ":8080"
+auth:
+  jwt_signing_key: "secret"
+  jwt_issuer: "tauth"
+  tauth_tenant_id: "mprlab"
+  session_cookie_name: "app_session"
+  public_origin: "https://ledger.example.test"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -191,11 +207,11 @@ tenants:
 	if cfg.Service.DatabaseURL != "sqlite://test.db" {
 		test.Fatalf("expected expanded database url, got %q", cfg.Service.DatabaseURL)
 	}
-	if cfg.Service.ListenAddr != ":8888" {
-		test.Fatalf("expected listen addr :8888, got %q", cfg.Service.ListenAddr)
+	if cfg.Service.GRPCListenAddr != ":8888" {
+		test.Fatalf("expected gRPC listen addr :8888, got %q", cfg.Service.GRPCListenAddr)
 	}
-	if len(cfg.Tenants) != 1 || cfg.Tenants[0].ID != "t1" {
-		test.Fatalf("expected 1 tenant with ID t1, got %v", cfg.Tenants)
+	if cfg.Auth.PublicOrigin != testRuntimeOrigin {
+		test.Fatalf("expected public origin, got %q", cfg.Auth.PublicOrigin)
 	}
 }
 
@@ -206,11 +222,14 @@ func TestLoadConfigWithDefaultExpansion(test *testing.T) {
 	content := `
 service:
   database_url: "${TEST_DB_URL:-sqlite://default.db}"
-  listen_addr: "${TEST_LISTEN_ADDR:-:9999}"
-tenants:
-  - id: "t1"
-    name: "Tenant 1"
-    secret_key: "${TEST_TENANT_SECRET:-default-secret}"
+  grpc_listen_addr: "${TEST_LISTEN_ADDR:-:9999}"
+  http_listen_addr: ":8080"
+auth:
+  jwt_signing_key: "${TEST_SIGNING_KEY:-default-secret}"
+  jwt_issuer: "tauth"
+  tauth_tenant_id: "mprlab"
+  session_cookie_name: "app_session"
+  public_origin: "https://ledger.example.test"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -228,11 +247,11 @@ tenants:
 	if cfg.Service.DatabaseURL != "sqlite://default.db" {
 		test.Fatalf("expected default database url, got %q", cfg.Service.DatabaseURL)
 	}
-	if cfg.Service.ListenAddr != ":9999" {
-		test.Fatalf("expected default listen addr, got %q", cfg.Service.ListenAddr)
+	if cfg.Service.GRPCListenAddr != ":9999" {
+		test.Fatalf("expected default listen addr, got %q", cfg.Service.GRPCListenAddr)
 	}
-	if len(cfg.Tenants) != 1 || cfg.Tenants[0].SecretKey != "default-secret" {
-		test.Fatalf("expected default tenant secret, got %v", cfg.Tenants)
+	if cfg.Auth.JWTSigningKey != "default-secret" {
+		test.Fatalf("expected default signing key, got %q", cfg.Auth.JWTSigningKey)
 	}
 }
 
@@ -243,11 +262,14 @@ func TestLoadConfigDefaultExpansionUsesEnvironmentOverride(test *testing.T) {
 	content := `
 service:
   database_url: "${TEST_DB_URL:-sqlite://default.db}"
-  listen_addr: "${TEST_LISTEN_ADDR:-:9999}"
-tenants:
-  - id: "t1"
-    name: "Tenant 1"
-    secret_key: "${TEST_TENANT_SECRET:-default-secret}"
+  grpc_listen_addr: "${TEST_LISTEN_ADDR:-:9999}"
+  http_listen_addr: ":8080"
+auth:
+  jwt_signing_key: "${TEST_SIGNING_KEY:-default-secret}"
+  jwt_issuer: "tauth"
+  tauth_tenant_id: "mprlab"
+  session_cookie_name: "app_session"
+  public_origin: "https://ledger.example.test"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -255,7 +277,7 @@ tenants:
 
 	test.Setenv("TEST_DB_URL", "sqlite://override.db")
 	test.Setenv("TEST_LISTEN_ADDR", ":7777")
-	test.Setenv("TEST_TENANT_SECRET", "override-secret")
+	test.Setenv("TEST_SIGNING_KEY", "override-secret")
 
 	cfg := &runtimeConfig{}
 	cmd := newRootCommand()
@@ -269,11 +291,11 @@ tenants:
 	if cfg.Service.DatabaseURL != "sqlite://override.db" {
 		test.Fatalf("expected overridden database url, got %q", cfg.Service.DatabaseURL)
 	}
-	if cfg.Service.ListenAddr != ":7777" {
-		test.Fatalf("expected overridden listen addr, got %q", cfg.Service.ListenAddr)
+	if cfg.Service.GRPCListenAddr != ":7777" {
+		test.Fatalf("expected overridden listen addr, got %q", cfg.Service.GRPCListenAddr)
 	}
-	if len(cfg.Tenants) != 1 || cfg.Tenants[0].SecretKey != "override-secret" {
-		test.Fatalf("expected overridden tenant secret, got %v", cfg.Tenants)
+	if cfg.Auth.JWTSigningKey != "override-secret" {
+		test.Fatalf("expected overridden signing key, got %q", cfg.Auth.JWTSigningKey)
 	}
 }
 
@@ -449,7 +471,7 @@ func TestPrepareSchemaSQLiteEnablesForeignKeys(test *testing.T) {
 	if err := prepareSchema(db, "postgres"); err != nil {
 		test.Fatalf("prepare schema (postgres driver): %v", err)
 	}
-	if !db.Migrator().HasTable(&gormstore.Account{}) {
+	if !db.Migrator().HasTable(&gormstore.LedgerAccount{}) {
 		test.Fatalf("expected accounts table")
 	}
 	if foreignKeysEnabled := readSQLiteForeignKeys(test, db); foreignKeysEnabled {
@@ -461,6 +483,19 @@ func TestPrepareSchemaSQLiteEnablesForeignKeys(test *testing.T) {
 	}
 	if !readSQLiteForeignKeys(test, db) {
 		test.Fatalf("expected foreign keys enabled")
+	}
+}
+
+func TestPrepareSchemaRejectsLegacyAccounts(test *testing.T) {
+	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		test.Fatalf("open: %v", err)
+	}
+	if err := database.Exec(`CREATE TABLE accounts (account_id text PRIMARY KEY)`).Error; err != nil {
+		test.Fatalf("create legacy accounts: %v", err)
+	}
+	if err := prepareSchema(database, "sqlite"); err == nil || !strings.Contains(err.Error(), "migration") {
+		test.Fatalf("expected migration requirement, got %v", err)
 	}
 }
 
@@ -502,6 +537,13 @@ func TestExtractIDs(test *testing.T) {
 	if got := extractUserID(struct{}{}); got != "" {
 		test.Fatalf("expected empty user id, got %q", got)
 	}
+	batch := &creditv1.BatchRequest{Account: &creditv1.AccountContext{TenantId: " batch-tenant "}}
+	if got := extractTenantID(batch); got != "batch-tenant" {
+		test.Fatalf("expected nested batch tenant, got %q", got)
+	}
+	if got := extractTenantID(&creditv1.BatchRequest{}); got != "" {
+		test.Fatalf("expected empty nested tenant, got %q", got)
+	}
 }
 
 func TestZapOperationLoggerIsNilSafe(test *testing.T) {
@@ -513,11 +555,16 @@ func TestZapOperationLoggerIsNilSafe(test *testing.T) {
 }
 
 func TestAuthInterceptor(test *testing.T) {
-	tenantSecrets := map[string]string{
-		"t1": "s1",
-	}
-	interceptor := newAuthInterceptor(tenantSecrets)
+	interceptor := newAuthInterceptor(stubTenantAuthenticator{tenantID: testRuntimeTenantID, secret: "s1"})
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		authenticatedID, ok := tenant.AuthenticatedID(ctx)
+		if !ok {
+			return nil, errors.New("authenticated tenant missing")
+		}
+		addressedID, _ := tenant.NewID(extractTenantID(req))
+		if authenticatedID != addressedID {
+			return nil, status.Error(codes.PermissionDenied, "tenant is not authorized")
+		}
 		return "ok", nil
 	}
 
@@ -533,38 +580,44 @@ func TestAuthInterceptor(test *testing.T) {
 			wantCode: codes.Unauthenticated,
 		},
 		{
-			name:     "unauthorized tenant",
+			name:     "invalid tenant id",
 			request:  testIDRequest{tenantID: "unknown"},
-			wantCode: codes.PermissionDenied,
+			wantCode: codes.Unauthenticated,
 		},
 		{
 			name:     "missing metadata",
-			request:  testIDRequest{tenantID: "t1"},
+			request:  testIDRequest{tenantID: testRuntimeTenantID},
 			wantCode: codes.Unauthenticated,
 		},
 		{
 			name:     "missing authorization header",
-			request:  testIDRequest{tenantID: "t1"},
+			request:  testIDRequest{tenantID: testRuntimeTenantID},
 			metadata: metadata.MD{"foo": []string{"bar"}},
 			wantCode: codes.Unauthenticated,
 		},
 		{
 			name:     "invalid authorization header format",
-			request:  testIDRequest{tenantID: "t1"},
+			request:  testIDRequest{tenantID: testRuntimeTenantID},
 			metadata: metadata.MD{"authorization": []string{"Basic s1"}},
 			wantCode: codes.Unauthenticated,
 		},
 		{
 			name:     "invalid secret key",
-			request:  testIDRequest{tenantID: "t1"},
+			request:  testIDRequest{tenantID: testRuntimeTenantID},
 			metadata: metadata.MD{"authorization": []string{"Bearer wrong"}},
 			wantCode: codes.Unauthenticated,
 		},
 		{
 			name:     "success",
-			request:  testIDRequest{tenantID: "t1"},
+			request:  testIDRequest{tenantID: testRuntimeTenantID},
 			metadata: metadata.MD{"authorization": []string{"Bearer s1"}},
 			wantCode: codes.OK,
+		},
+		{
+			name:     "tenant mismatch",
+			request:  testIDRequest{tenantID: "0196f0ec-3e80-7a54-bd2b-56cfe90bf899"},
+			metadata: metadata.MD{"authorization": []string{"Bearer s1"}},
+			wantCode: codes.PermissionDenied,
 		},
 	}
 
@@ -579,6 +632,12 @@ func TestAuthInterceptor(test *testing.T) {
 				test.Fatalf("expected code %v, got %v: %v", testCase.wantCode, status.Code(err), err)
 			}
 		})
+	}
+
+	storageInterceptor := newAuthInterceptor(stubTenantAuthenticator{authenticateErr: errors.New("database unavailable")})
+	storageContext := metadata.NewIncomingContext(context.Background(), metadata.MD{"authorization": []string{"Bearer s1"}})
+	if _, err := storageInterceptor(storageContext, testIDRequest{tenantID: testRuntimeTenantID}, &grpc.UnaryServerInfo{}, handler); status.Code(err) != codes.Internal {
+		test.Fatalf("expected internal storage failure, got %v: %v", status.Code(err), err)
 	}
 }
 
@@ -600,14 +659,28 @@ func TestLoadConfigErrorsOnInvalidYAML(test *testing.T) {
 
 func TestRunServerWithListenReturnsErrorOnListenFailure(test *testing.T) {
 	logger := zap.NewNop()
-	cfg := &runtimeConfig{}
-	cfg.Service.DatabaseURL = "sqlite://:memory:"
-	cfg.Service.ListenAddr = ":1"
+	cfg := configuredRuntime("sqlite://:memory:", ":1", ":2")
 	err := runServerWithListen(context.Background(), cfg, logger, func(n, a string) (net.Listener, error) {
 		return nil, errors.New("listen failed")
 	})
 	if err == nil || !strings.Contains(err.Error(), "listen failed") {
 		test.Fatalf("expected listen failure, got %v", err)
+	}
+}
+
+func TestRunServerWithListenReturnsErrorOnHTTPListenFailure(test *testing.T) {
+	logger := zap.NewNop()
+	cfg := configuredRuntime("sqlite://:memory:", "127.0.0.1:0", "127.0.0.1:0")
+	callCount := 0
+	err := runServerWithListen(context.Background(), cfg, logger, func(network string, address string) (net.Listener, error) {
+		callCount++
+		if callCount == 2 {
+			return nil, errors.New("http listen failed")
+		}
+		return net.Listen(network, address)
+	})
+	if err == nil || !strings.Contains(err.Error(), "http listen failed") {
+		test.Fatalf("expected HTTP listen failure, got %v", err)
 	}
 }
 
@@ -667,7 +740,6 @@ func TestRunServerErrorsOnLoggerInit(test *testing.T) {
 
 	cfg := &runtimeConfig{}
 	cfg.Service.DatabaseURL = "sqlite://:memory:"
-	cfg.Service.ListenAddr = ":0"
 
 	err := runServer(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), "logger init") {
@@ -691,11 +763,8 @@ func TestRunServerSucceedsAndSyncsLogger(test *testing.T) {
 	tempDir := test.TempDir()
 	sqlitePath := filepath.Join(tempDir, "ledger.db")
 	listenAddress := reserveLocalAddress(test)
-
-	cfg := &runtimeConfig{}
-	cfg.Service.DatabaseURL = "sqlite://" + sqlitePath
-	cfg.Service.ListenAddr = listenAddress
-	cfg.Tenants = []tenantConfig{{ID: "default", Name: "Default", SecretKey: "secret"}}
+	httpAddress := reserveLocalAddress(test)
+	cfg := configuredRuntime("sqlite://"+sqlitePath, listenAddress, httpAddress)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -725,8 +794,8 @@ func TestRunServerSucceedsAndSyncsLogger(test *testing.T) {
 }
 
 func TestAuthInterceptorMissingMetadata(test *testing.T) {
-	interceptor := newAuthInterceptor(map[string]string{"t1": "s1"})
-	_, err := interceptor(context.Background(), testIDRequest{tenantID: "t1"}, &grpc.UnaryServerInfo{}, nil)
+	interceptor := newAuthInterceptor(stubTenantAuthenticator{tenantID: testRuntimeTenantID, secret: "s1"})
+	_, err := interceptor(context.Background(), testIDRequest{tenantID: testRuntimeTenantID}, &grpc.UnaryServerInfo{}, nil)
 	if status.Code(err) != codes.Unauthenticated {
 		test.Fatalf("expected unauthenticated, got %v", status.Code(err))
 	}
@@ -793,6 +862,11 @@ func TestZapOperationLoggerEmitsInfoAndError(test *testing.T) {
 	core, observedLogs := observer.New(zapcore.DebugLevel)
 	logger := zap.New(core)
 	operationLogger := &zapOperationLogger{logger: logger}
+	operationLogger.LogControlRequest(controlplane.RequestLog{Operation: "GET /api/tenants", StatusCode: http.StatusOK})
+	operationLogger.LogControlRequest(controlplane.RequestLog{Operation: "GET /api/tenants/id", StatusCode: http.StatusOK, UserAccountID: "account", ResourceID: "tenant"})
+	if observedLogs.FilterMessage("control.request").Len() != 2 {
+		test.Fatalf("expected control request logs")
+	}
 
 	reservationID, err := ledger.NewReservationID("order-1")
 	if err != nil {
@@ -850,16 +924,10 @@ func TestZapOperationLoggerEmitsInfoAndError(test *testing.T) {
 func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 	tempDir := test.TempDir()
 	sqlitePath := filepath.Join(tempDir, "ledger.db")
-
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		test.Fatalf("listen: %v", err)
-	}
-
-	cfg := &runtimeConfig{}
-	cfg.Service.DatabaseURL = "sqlite://" + sqlitePath
-	cfg.Service.ListenAddr = listener.Addr().String()
-	cfg.Tenants = []tenantConfig{{ID: "default", Name: "Default", SecretKey: "test-secret"}}
+	grpcAddress := reserveLocalAddress(test)
+	httpAddress := reserveLocalAddress(test)
+	cfg := configuredRuntime("sqlite://"+sqlitePath, grpcAddress, httpAddress)
+	tenantSecret := seedRuntimeTenant(test, sqlitePath)
 
 	core, observedLogs := observer.New(zapcore.DebugLevel)
 	logger := zap.New(core)
@@ -867,29 +935,35 @@ func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	serverResultCh := make(chan error, 1)
 	go func() {
-		serverResultCh <- runServerWithListen(ctx, cfg, logger, func(network string, address string) (net.Listener, error) {
-			return listener, nil
-		})
+		serverResultCh <- runServerWithListen(ctx, cfg, logger, net.Listen)
 	}()
 
-	conn := waitForGRPCServer(test, cfg.Service.ListenAddr)
+	conn := waitForGRPCServer(test, cfg.Service.GRPCListenAddr)
 	client := creditv1.NewCreditServiceClient(conn)
 
 	requestContext, cancelRequests := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelRequests()
 
 	// Add authentication header
-	requestContext = metadata.NewOutgoingContext(requestContext, metadata.Pairs("authorization", "Bearer test-secret"))
+	requestContext = metadata.NewOutgoingContext(requestContext, metadata.Pairs("authorization", "Bearer "+tenantSecret))
 
-	if _, err := client.GetBalance(requestContext, &creditv1.BalanceRequest{UserId: " user-123 ", TenantId: "default", LedgerId: " default "}); err != nil {
+	if _, err := client.GetBalance(requestContext, &creditv1.BalanceRequest{UserId: " user-123 ", TenantId: testRuntimeTenantID, LedgerId: " default "}); err != nil {
 		_ = conn.Close()
 		cancel()
 		test.Fatalf("get balance: %v", err)
 	}
 
+	if _, err := client.GetBalance(requestContext, &creditv1.BalanceRequest{
+		UserId: "user-123", TenantId: "0196f0ec-3e80-7a54-bd2b-56cfe90bf899", LedgerId: "default",
+	}); status.Code(err) != codes.PermissionDenied {
+		_ = conn.Close()
+		cancel()
+		test.Fatalf("expected tenant mismatch denial, got %v", status.Code(err))
+	}
+
 	if _, err := client.Grant(requestContext, &creditv1.GrantRequest{
 		UserId:         "user-123",
-		TenantId:       "default",
+		TenantId:       testRuntimeTenantID,
 		LedgerId:       "default",
 		AmountCents:    1000,
 		IdempotencyKey: "grant-1",
@@ -900,9 +974,9 @@ func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 		test.Fatalf("grant: %v", err)
 	}
 
-	_, err = client.Grant(requestContext, &creditv1.GrantRequest{
+	_, err := client.Grant(requestContext, &creditv1.GrantRequest{
 		UserId:         "user-123",
-		TenantId:       "default",
+		TenantId:       testRuntimeTenantID,
 		LedgerId:       "default",
 		AmountCents:    1000,
 		IdempotencyKey: "grant-1",
@@ -916,7 +990,7 @@ func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 
 	if _, err := client.Reserve(requestContext, &creditv1.ReserveRequest{
 		UserId:         "user-123",
-		TenantId:       "default",
+		TenantId:       testRuntimeTenantID,
 		LedgerId:       "default",
 		AmountCents:    200,
 		ReservationId:  "order-1",
@@ -930,7 +1004,7 @@ func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 
 	if _, err := client.Release(requestContext, &creditv1.ReleaseRequest{
 		UserId:         "user-123",
-		TenantId:       "default",
+		TenantId:       testRuntimeTenantID,
 		LedgerId:       "default",
 		ReservationId:  "order-1",
 		IdempotencyKey: "release-1",
@@ -943,7 +1017,7 @@ func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 
 	_, err = client.Reserve(requestContext, &creditv1.ReserveRequest{
 		UserId:         "user-123",
-		TenantId:       "default",
+		TenantId:       testRuntimeTenantID,
 		LedgerId:       "default",
 		AmountCents:    200,
 		ReservationId:  "order-1",
@@ -958,7 +1032,7 @@ func TestRunServerWithListenHandlesRequestsAndShutdown(test *testing.T) {
 
 	_, err = client.Spend(requestContext, &creditv1.SpendRequest{
 		UserId:         "user-123",
-		TenantId:       "default",
+		TenantId:       testRuntimeTenantID,
 		LedgerId:       "default",
 		AmountCents:    9999,
 		IdempotencyKey: "spend-1",
@@ -992,17 +1066,21 @@ func TestRootCommandPreRunAndRun(test *testing.T) {
 	tempDir := test.TempDir()
 	sqlitePath := filepath.Join(tempDir, "ledger.db")
 	listenAddress := reserveLocalAddress(test)
+	httpAddress := reserveLocalAddress(test)
 
 	configFile := filepath.Join(tempDir, "config.yml")
 	content := fmt.Sprintf(`
 service:
   database_url: "sqlite://%s"
-  listen_addr: "%s"
-tenants:
-  - id: "default"
-    name: "Default"
-    secret_key: "default-secret"
-`, sqlitePath, listenAddress)
+  grpc_listen_addr: "%s"
+  http_listen_addr: "%s"
+auth:
+  jwt_signing_key: "test-signing-key"
+  jwt_issuer: "tauth"
+  tauth_tenant_id: "mprlab"
+  session_cookie_name: "app_session"
+  public_origin: "https://ledger.example.test"
+`, sqlitePath, listenAddress, httpAddress)
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
 	}
@@ -1155,6 +1233,78 @@ type testIDRequest struct {
 	userID   string
 	ledgerID string
 	tenantID string
+}
+
+type stubTenantAuthenticator struct {
+	tenantID        string
+	secret          string
+	authenticateErr error
+}
+
+func (authenticator stubTenantAuthenticator) Authenticate(_ context.Context, secret string) (tenant.ID, error) {
+	if authenticator.authenticateErr != nil {
+		return tenant.ID{}, authenticator.authenticateErr
+	}
+	tenantID, _ := tenant.NewID(authenticator.tenantID)
+	if secret != authenticator.secret {
+		return tenant.ID{}, tenant.ErrCredentialInvalid
+	}
+	return tenantID, nil
+}
+
+func configuredRuntime(databaseURL string, grpcAddress string, httpAddress string) *runtimeConfig {
+	configuration := &runtimeConfig{}
+	configuration.Service.DatabaseURL = databaseURL
+	configuration.Service.GRPCListenAddr = grpcAddress
+	configuration.Service.HTTPListenAddr = httpAddress
+	configuration.Auth.JWTSigningKey = "test-signing-key"
+	configuration.Auth.JWTIssuer = "tauth"
+	configuration.Auth.TAuthTenantID = "mprlab"
+	configuration.Auth.SessionCookieName = "app_session"
+	configuration.Auth.PublicOrigin = testRuntimeOrigin
+	return configuration
+}
+
+func seedRuntimeTenant(test *testing.T, sqlitePath string) string {
+	test.Helper()
+	database, err := gorm.Open(sqlite.Open(sqlitePath), &gorm.Config{})
+	if err != nil {
+		test.Fatalf("open seed database: %v", err)
+	}
+	if err := prepareSchema(database, "sqlite"); err != nil {
+		test.Fatalf("prepare seed database: %v", err)
+	}
+	createdAt := time.Now().UTC()
+	userAccountID := "0196f0ec-3e80-7a54-bd2b-56cfe90bf810"
+	credentialID := "0196f0ec-3e80-7a54-bd2b-56cfe90bf811"
+	secretPart := base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdefghijklmnopqrstuv"))
+	digest := sha256.Sum256([]byte(secretPart))
+	if err := database.Create(&gormstore.UserAccount{
+		UserAccountID: userAccountID,
+		AuthIssuer:    "tauth",
+		AuthTenantID:  "mprlab",
+		AuthUserID:    "test-user",
+		CreatedAt:     createdAt,
+	}).Error; err != nil {
+		test.Fatalf("seed user account: %v", err)
+	}
+	if err := database.Create(&gormstore.LedgerTenant{
+		TenantID:           testRuntimeTenantID,
+		OwnerUserAccountID: userAccountID,
+		Name:               "Test tenant",
+		CreatedAt:          createdAt,
+	}).Error; err != nil {
+		test.Fatalf("seed tenant: %v", err)
+	}
+	if err := database.Create(&gormstore.TenantCredential{
+		CredentialID: credentialID,
+		TenantID:     testRuntimeTenantID,
+		SecretDigest: digest[:],
+		CreatedAt:    createdAt,
+	}).Error; err != nil {
+		test.Fatalf("seed credential: %v", err)
+	}
+	return "ledger_" + credentialID + "_" + secretPart
 }
 
 func (req testIDRequest) GetUserId() string {
@@ -1316,6 +1466,92 @@ service:
 	}
 }
 
+func TestLoadConfigErrorsWhenHTTPListenAddrMissing(test *testing.T) {
+	viper.Reset()
+	configFile := filepath.Join(test.TempDir(), "no_http_listen.yml")
+	content := `
+service:
+  database_url: "sqlite://test.db"
+  grpc_listen_addr: ":50051"
+`
+	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
+		test.Fatalf("write config: %v", err)
+	}
+	cfg := &runtimeConfig{}
+	cmd := newRootCommand()
+	cmd.Flags().String(flagConfigFile, configFile, "config")
+	_ = cmd.Flags().Set(flagConfigFile, configFile)
+	if err := loadConfig(cmd, cfg); err == nil || !strings.Contains(err.Error(), "http_listen_addr") {
+		test.Fatalf("expected HTTP listen error, got %v", err)
+	}
+}
+
+func TestRunUserAccountMigration(test *testing.T) {
+	if err := runUserAccountMigration(context.Background(), &runtimeConfig{}, filepath.Join(test.TempDir(), "missing")); err == nil {
+		test.Fatalf("missing mapping succeeded")
+	}
+	mappingPath := filepath.Join(test.TempDir(), "mapping.yml")
+	credentialID := "0196f0ec-3e80-7a54-bd2b-56cfe90bf811"
+	secretPart := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
+	content := `legacy_tenant_ids: [legacy]
+tenants:
+  - legacy_tenant_id: legacy
+    tenant_id: 0196f0ec-3e80-7a54-bd2b-56cfe90bf801
+    name: Migrated
+    owner:
+      user_account_id: 0196f0ec-3e80-7a54-bd2b-56cfe90bf810
+      auth_issuer: tauth
+      auth_tenant_id: mprlab
+      auth_user_id: owner
+    credential_id: ` + credentialID + `
+    credential_secret: ledger_` + credentialID + `_` + secretPart + "\n"
+	if err := os.WriteFile(mappingPath, []byte(content), 0o600); err != nil {
+		test.Fatalf("write mapping: %v", err)
+	}
+	badDatabaseConfig := configuredRuntime("http://%zz", ":1", ":2")
+	if err := runUserAccountMigration(context.Background(), badDatabaseConfig, mappingPath); err == nil || !strings.Contains(err.Error(), "database open") {
+		test.Fatalf("expected database open error, got %v", err)
+	}
+
+	emptyDatabasePath := filepath.Join(test.TempDir(), "empty.db")
+	emptyConfig := configuredRuntime("sqlite://"+emptyDatabasePath, ":1", ":2")
+	if err := runUserAccountMigration(context.Background(), emptyConfig, mappingPath); err == nil {
+		test.Fatalf("migration without legacy schema succeeded")
+	}
+
+	databasePath := filepath.Join(test.TempDir(), "legacy.db")
+	database, err := gorm.Open(sqlite.Open(databasePath), &gorm.Config{})
+	if err != nil {
+		test.Fatalf("open legacy database: %v", err)
+	}
+	if err := database.Exec(`CREATE TABLE accounts (account_id text PRIMARY KEY, tenant_id text NOT NULL, user_id text NOT NULL, ledger_id text NOT NULL, created_at datetime NOT NULL)`).Error; err != nil {
+		test.Fatalf("create legacy accounts: %v", err)
+	}
+	if err := database.Exec(`INSERT INTO accounts(account_id, tenant_id, user_id, ledger_id, created_at) VALUES (?, ?, ?, ?, ?)`, "0196f0ec-3e80-7a54-bd2b-56cfe90bf900", "legacy", "user", "default", time.Now().UTC()).Error; err != nil {
+		test.Fatalf("insert legacy account: %v", err)
+	}
+	sqlDatabase, _ := database.DB()
+	_ = sqlDatabase.Close()
+	configuration := configuredRuntime("sqlite://"+databasePath, ":1", ":2")
+	if err := runUserAccountMigration(context.Background(), configuration, mappingPath); err != nil {
+		test.Fatalf("run migration: %v", err)
+	}
+	verified, cleanup, _, err := openDatabase(context.Background(), configuration.Service.DatabaseURL)
+	if err != nil {
+		test.Fatalf("reopen migrated database: %v", err)
+	}
+	defer func() { _ = cleanup() }()
+	if !verified.Migrator().HasTable("ledger_accounts") || verified.Migrator().HasTable("accounts") {
+		test.Fatalf("migration did not rename accounts")
+	}
+
+	command := newMigrationCommand(configuration)
+	_ = command.Flags().Set(flagMigrationMap, filepath.Join(test.TempDir(), "missing"))
+	if err := command.RunE(command, nil); err == nil {
+		test.Fatalf("migration command ignored mapping error")
+	}
+}
+
 func TestRunServerWithListenLogsCleanupError(test *testing.T) {
 	originalOpenDB := openDatabaseFunc
 	test.Cleanup(func() { openDatabaseFunc = originalOpenDB })
@@ -1337,10 +1573,7 @@ func TestRunServerWithListenLogsCleanupError(test *testing.T) {
 		return db, failingCleanup, driver, nil
 	}
 
-	cfg := &runtimeConfig{}
-	cfg.Service.DatabaseURL = "sqlite://:memory:"
-	cfg.Service.ListenAddr = reserveLocalAddress(test)
-	cfg.Tenants = []tenantConfig{{ID: "default", Name: "Default", SecretKey: "secret"}}
+	cfg := configuredRuntime("sqlite://:memory:", reserveLocalAddress(test), reserveLocalAddress(test))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	serverDone := make(chan error, 1)
@@ -1348,7 +1581,7 @@ func TestRunServerWithListenLogsCleanupError(test *testing.T) {
 		serverDone <- runServerWithListen(ctx, cfg, logger, net.Listen)
 	}()
 
-	conn := waitForGRPCServer(test, cfg.Service.ListenAddr)
+	conn := waitForGRPCServer(test, cfg.Service.GRPCListenAddr)
 	_ = conn.Close()
 	cancel()
 
@@ -1374,9 +1607,7 @@ func TestRunServerWithListenPrepareSchemaErrorAfterDBOpen(test *testing.T) {
 	core, _ := observer.New(zapcore.DebugLevel)
 	logger := zap.New(core)
 
-	cfg := &runtimeConfig{}
-	cfg.Service.DatabaseURL = "sqlite://:memory:"
-	cfg.Service.ListenAddr = reserveLocalAddress(test)
+	cfg := configuredRuntime("sqlite://:memory:", reserveLocalAddress(test), reserveLocalAddress(test))
 
 	err := runServerWithListen(context.Background(), cfg, logger, net.Listen)
 	if !errors.Is(err, schemaErr) {
@@ -1396,9 +1627,7 @@ func TestRunServerWithListenNewServiceError(test *testing.T) {
 	core, _ := observer.New(zapcore.DebugLevel)
 	logger := zap.New(core)
 
-	cfg := &runtimeConfig{}
-	cfg.Service.DatabaseURL = "sqlite://:memory:"
-	cfg.Service.ListenAddr = reserveLocalAddress(test)
+	cfg := configuredRuntime("sqlite://:memory:", reserveLocalAddress(test), reserveLocalAddress(test))
 
 	err := runServerWithListen(context.Background(), cfg, logger, net.Listen)
 	if err == nil || !strings.Contains(err.Error(), "ledger service init") {
@@ -1413,10 +1642,7 @@ func TestRunServerWithListenServeErrorNotServerStopped(test *testing.T) {
 	core, _ := observer.New(zapcore.DebugLevel)
 	logger := zap.New(core)
 
-	cfg := &runtimeConfig{}
-	cfg.Service.DatabaseURL = "sqlite://" + sqlitePath
-	cfg.Service.ListenAddr = reserveLocalAddress(test)
-	cfg.Tenants = []tenantConfig{{ID: "default", Name: "Default", SecretKey: "secret"}}
+	cfg := configuredRuntime("sqlite://"+sqlitePath, reserveLocalAddress(test), reserveLocalAddress(test))
 
 	// Provide a listener that is already closed, causing Serve to fail immediately
 	// with an error that is NOT ErrServerStopped.
@@ -1623,10 +1849,7 @@ func TestRunServerWithListenServeErrorNotServerStoppedViaErrCh(test *testing.T) 
 	core, _ := observer.New(zapcore.DebugLevel)
 	logger := zap.New(core)
 
-	cfg := &runtimeConfig{}
-	cfg.Service.DatabaseURL = "sqlite://" + sqlitePath
-	cfg.Service.ListenAddr = reserveLocalAddress(test)
-	cfg.Tenants = []tenantConfig{{ID: "default", Name: "Default", SecretKey: "secret"}}
+	cfg := configuredRuntime("sqlite://"+sqlitePath, reserveLocalAddress(test), reserveLocalAddress(test))
 
 	// Use a listener wrapper that closes the listener after a short delay,
 	// simulating the gRPC server stopping itself.
@@ -1642,6 +1865,23 @@ func TestRunServerWithListenServeErrorNotServerStoppedViaErrCh(test *testing.T) 
 	if err == nil {
 		test.Fatalf("expected serve error from closed listener")
 	}
+}
+
+func TestAwaitServersErrorPaths(test *testing.T) {
+	logger := zap.NewNop()
+	errCh := make(chan error, 2)
+	errCh <- errors.New("forced serve error")
+	errCh <- http.ErrServerClosed
+	if err := shutdownServers(grpc.NewServer(), &http.Server{}, errCh); err == nil || !strings.Contains(err.Error(), "forced serve error") {
+		test.Fatalf("expected shutdown serve error, got %v", err)
+	}
+
+	errCh = make(chan error, 1)
+	errCh <- http.ErrServerClosed
+	if err := awaitServers(context.Background(), grpc.NewServer(), &http.Server{}, errCh, logger); err != nil {
+		test.Fatalf("expected normal server close, got %v", err)
+	}
+
 }
 
 // autoCloseListener wraps a net.Listener and closes it after a delay.
@@ -1678,95 +1918,6 @@ func (minimalConnPool) QueryRowContext(_ context.Context, _ string, _ ...interfa
 	return nil
 }
 
-func TestAwaitServerShutdownWithServeError(test *testing.T) {
-	core, _ := observer.New(zapcore.DebugLevel)
-	logger := zap.New(core)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	grpcServer := grpc.NewServer()
-	errCh := make(chan error, 1)
-	// Send the error in a goroutine after GracefulStop returns so ctx.Done wins the select.
-	go func() {
-		// GracefulStop is called synchronously inside awaitServer after ctx.Done fires.
-		// A small sleep ensures that the select picks ctx.Done, not errCh.
-		time.Sleep(10 * time.Millisecond)
-		errCh <- errors.New("serve failed badly")
-	}()
-
-	err := awaitServer(ctx, grpcServer, errCh, logger)
-	if err == nil || !strings.Contains(err.Error(), "serve failed badly") {
-		test.Fatalf("expected serve error, got: %v", err)
-	}
-}
-
-func TestAwaitServerShutdownWithErrServerStopped(test *testing.T) {
-	// Cover line 215-218: ctx.Done fires, then serveErr is ErrServerStopped -> return nil
-	core, _ := observer.New(zapcore.DebugLevel)
-	logger := zap.New(core)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	grpcServer := grpc.NewServer()
-	errCh := make(chan error, 1)
-	errCh <- grpc.ErrServerStopped
-
-	err := awaitServer(ctx, grpcServer, errCh, logger)
-	if err != nil {
-		test.Fatalf("expected nil, got: %v", err)
-	}
-}
-
-func TestAwaitServerShutdownWithNilServeError(test *testing.T) {
-	// Cover line 215-218: ctx.Done fires, then serveErr is nil -> return nil
-	core, _ := observer.New(zapcore.DebugLevel)
-	logger := zap.New(core)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	grpcServer := grpc.NewServer()
-	errCh := make(chan error, 1)
-	errCh <- nil
-
-	err := awaitServer(ctx, grpcServer, errCh, logger)
-	if err != nil {
-		test.Fatalf("expected nil, got: %v", err)
-	}
-}
-
-func TestAwaitServerErrServerStoppedFromErrCh(test *testing.T) {
-	// Cover line 220-222: errCh fires with ErrServerStopped without ctx.Done
-	core, _ := observer.New(zapcore.DebugLevel)
-	logger := zap.New(core)
-
-	grpcServer := grpc.NewServer()
-	errCh := make(chan error, 1)
-	errCh <- grpc.ErrServerStopped
-
-	err := awaitServer(context.Background(), grpcServer, errCh, logger)
-	if err != nil {
-		test.Fatalf("expected nil for ErrServerStopped, got: %v", err)
-	}
-}
-
-func TestAwaitServerOtherErrorFromErrCh(test *testing.T) {
-	// Cover line 223: errCh fires with non-ErrServerStopped error
-	core, _ := observer.New(zapcore.DebugLevel)
-	logger := zap.New(core)
-
-	grpcServer := grpc.NewServer()
-	errCh := make(chan error, 1)
-	errCh <- errors.New("listener accept failed")
-
-	err := awaitServer(context.Background(), grpcServer, errCh, logger)
-	if err == nil || !strings.Contains(err.Error(), "listener accept failed") {
-		test.Fatalf("expected listener error, got: %v", err)
-	}
-}
-
 func TestOpenDatabaseSQLDBError(test *testing.T) {
 	// Cover line 401-403: db.DB() returns error after successful gorm.Open.
 	// We inject a custom gormOpenFunc to create a gorm.DB whose ConnPool does not
@@ -1799,8 +1950,8 @@ func TestPrepareSchemaDBError(test *testing.T) {
 	if err == nil {
 		test.Fatalf("expected sql database error")
 	}
-	if !strings.Contains(err.Error(), "sql database") {
-		test.Fatalf("expected sql database error, got: %v", err)
+	if !strings.Contains(err.Error(), "database handle is invalid") {
+		test.Fatalf("expected invalid database handle error, got: %v", err)
 	}
 }
 

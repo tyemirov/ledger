@@ -164,10 +164,12 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 
 	privateResource := requireResource(testingContext, manifest.Resources, "private_values", "private")
 	expectedBindings := map[string]string{
-		"database-url":                "DATABASE_URL",
-		"hecate-tenant-secret":        "HECATE_TENANT_SECRET",
-		"namesignal-tenant-secret":    "NAMESIGNAL_TENANT_SECRET",
-		"poodlescanner-tenant-secret": "POODLESCANNER_TENANT_SECRET",
+		"database-url":              "DATABASE_URL",
+		"ledger-public-origin":      "LEDGER_PUBLIC_ORIGIN",
+		"tauth-jwt-issuer":          "TAUTH_JWT_ISSUER",
+		"tauth-jwt-signing-key":     "TAUTH_JWT_SIGNING_KEY",
+		"tauth-session-cookie-name": "TAUTH_SESSION_COOKIE_NAME",
+		"tauth-tenant-id":           "TAUTH_TENANT_ID",
 	}
 	if !reflect.DeepEqual(privateResource.Bindings, expectedBindings) {
 		testingContext.Fatalf("unexpected private bindings: %#v", privateResource.Bindings)
@@ -198,10 +200,12 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 		testingContext.Fatalf("unexpected Ledger service declaration: %#v", ledgerService)
 	}
 	expectedEnvironment := map[string]environmentBinding{
-		"DATABASE_URL":                {Resource: "private", Output: "database-url"},
-		"HECATE_TENANT_SECRET":        {Resource: "private", Output: "hecate-tenant-secret"},
-		"NAMESIGNAL_TENANT_SECRET":    {Resource: "private", Output: "namesignal-tenant-secret"},
-		"POODLESCANNER_TENANT_SECRET": {Resource: "private", Output: "poodlescanner-tenant-secret"},
+		"DATABASE_URL":              {Resource: "private", Output: "database-url"},
+		"LEDGER_PUBLIC_ORIGIN":      {Resource: "private", Output: "ledger-public-origin"},
+		"TAUTH_JWT_ISSUER":          {Resource: "private", Output: "tauth-jwt-issuer"},
+		"TAUTH_JWT_SIGNING_KEY":     {Resource: "private", Output: "tauth-jwt-signing-key"},
+		"TAUTH_SESSION_COOKIE_NAME": {Resource: "private", Output: "tauth-session-cookie-name"},
+		"TAUTH_TENANT_ID":           {Resource: "private", Output: "tauth-tenant-id"},
 	}
 	if !reflect.DeepEqual(ledgerService.Environment, expectedEnvironment) {
 		testingContext.Fatalf("unexpected service environment: %#v", ledgerService.Environment)
@@ -212,7 +216,7 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	if !reflect.DeepEqual(ledgerService.Mounts, []volumeMount{{Volume: "data", Target: "/srv/data", ReadOnly: false}}) {
 		testingContext.Fatalf("unexpected volume mounts: %#v", ledgerService.Mounts)
 	}
-	if !reflect.DeepEqual(ledgerService.Ports, []servicePort{{ContainerPort: 50051}}) {
+	if !reflect.DeepEqual(ledgerService.Ports, []servicePort{{ContainerPort: 50051}, {ContainerPort: 8080}}) {
 		testingContext.Fatalf("unexpected service ports: %#v", ledgerService.Ports)
 	}
 	if !reflect.DeepEqual(composeResource.Volumes, []retainedVolume{{ID: "data", Name: "ledger-data", Retention: "retain"}}) {

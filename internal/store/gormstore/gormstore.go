@@ -56,7 +56,7 @@ func (store *Store) WithTx(ctx context.Context, fn func(ctx context.Context, txS
 }
 
 func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.TenantID, userID ledger.UserID, ledgerID ledger.LedgerID) (ledger.AccountID, error) {
-	var account Account
+	var account LedgerAccount
 	err := store.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "tenant_id"}, {Name: "user_id"}, {Name: "ledger_id"}},
@@ -66,7 +66,7 @@ func (store *Store) GetOrCreateAccountID(ctx context.Context, tenantID ledger.Te
 				"ledger_id": clause.Expr{SQL: "excluded.ledger_id"},
 			}),
 		}).
-		FirstOrCreate(&account, Account{TenantID: tenantID.String(), UserID: userID.String(), LedgerID: ledgerID.String()}).Error
+		FirstOrCreate(&account, LedgerAccount{TenantID: tenantID.String(), UserID: userID.String(), LedgerID: ledgerID.String()}).Error
 	if err != nil {
 		return ledger.AccountID{}, wrapStoreError(errorSubjectAccount, errorCodeLookup, err)
 	}
