@@ -10,9 +10,9 @@ import path from "node:path";
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 const alpineModule = await readFile(path.join(import.meta.dirname, "../node_modules/alpinejs/dist/module.esm.js"), "utf8");
 const tenantOne = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf801", name: "Primary", created_at: "2026-09-01T20:01:00Z" });
-const tenantTwo = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf802", name: "Sandbox", created_at: "2026-09-01T20:02:00Z" });
+const tenantTwo = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf802", name: "Sandbox", created_at: "2026-09-01T20:02:00.1Z" });
 const tenantThree = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf803", name: "Analytics", created_at: "2026-09-01T20:03:00Z" });
-const tenantFour = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf804", name: "Archive", created_at: "2026-09-01T20:02:00Z" });
+const tenantFour = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf804", name: "Archive", created_at: "2026-09-01T20:02:00.11Z" });
 const credentialOne = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf811", tenant_id: tenantOne.id, created_at: "2026-09-01T20:04:00Z" });
 const credentialTwo = Object.freeze({ id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf812", tenant_id: tenantThree.id, created_at: "2026-09-01T20:05:00Z" });
 const generatedSecret = `ledger_${credentialTwo.id}_MDEyMzQ1Njc4OWFiY2RlZmdoaWprbG1ub3BxcnN0dXY`;
@@ -68,7 +68,7 @@ test.beforeEach(async ({ page }) => {
   await page.route("https://accounts.google.com/gsi/client", (route) => route.fulfill({ contentType: "text/javascript", body: "" }));
   await page.route("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui-config.js", (route) => route.fulfill({
     contentType: "text/javascript",
-    body: `window.MPRUI={whenAutoOrchestrationReady:()=>new Promise((resolve)=>{const ready=()=>{const header=document.getElementById("ledger-header");if(!header.hasAttribute("data-mpr-auth-status"))header.setAttribute("data-mpr-auth-status","unauthenticated");resolve();};if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",ready,{once:true});else ready();})};`,
+    body: `window.__ledgerAuthenticatedFetchCalls=[];window.MPRUI={whenAutoOrchestrationReady:()=>new Promise((resolve)=>{const ready=()=>{const header=document.getElementById("ledger-header");if(!header.hasAttribute("data-mpr-auth-status"))header.setAttribute("data-mpr-auth-status","unauthenticated");resolve();};if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",ready,{once:true});else ready();}),authenticatedFetch:(authHost,input,init={},policy)=>{window.__ledgerAuthenticatedFetchCalls.push({authHostID:authHost.id,input:String(input),method:init.method||"GET",headers:Object.fromEntries(new Headers(init.headers||{})),body:init.body??null,policy:policy||null});return fetch(input,{credentials:"include",...init});}};`,
   }));
 });
 
@@ -94,10 +94,36 @@ test("uses the canonical MPR shell and sends no protected request before authent
   expect(configuration).toContain(`- "${baseURL}"`);
 });
 
+test("fails closed when the shared authenticated request path is unavailable", async ({ page }) => {
+  let protectedRequests = 0;
+  await page.route(`${baseURL}/api/**`, (route) => {
+    protectedRequests += 1;
+    return route.abort();
+  });
+  await page.goto(baseURL);
+  await page.evaluate(() => {
+    Reflect.deleteProperty(window.MPRUI, "authenticatedFetch");
+    const header = document.getElementById("ledger-header");
+    header?.setAttribute("data-mpr-auth-status", "authenticated");
+    document.dispatchEvent(new CustomEvent("mpr-ui:auth:authenticated"));
+  });
+  await expect(page.getByText("Ledger could not load the workspace.")).toBeVisible();
+  expect(protectedRequests).toBe(0);
+});
+
 test("aligns the public shell controls on shared vertical edges", async ({ page }) => {
   await page.unroute("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css");
   await page.unroute("https://cdn.jsdelivr.net/npm/js-yaml@5.4.1/dist/browser/js-yaml.umd.min.js");
   await page.unroute("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui-config.js");
+  await page.route(`${baseURL}/api/**`, (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === "PUT" && url.pathname === "/api/user-account") {
+      return json(route, { user_account: { id: "0196f0ec-3e80-7a54-bd2b-56cfe90bf810", created_at: "2026-09-01T20:00:00Z" } });
+    }
+    if (request.method() === "GET" && url.pathname === "/api/tenants") return json(route, { tenants: [] });
+    return json(route, { error: { code: "not_found", message: "Not found", request_id: "request" } }, 404);
+  });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(baseURL);
   await expect.poll(() => page.evaluate(() => Boolean(customElements.get("mpr-header") && customElements.get("mpr-footer")))).toBe(true);
@@ -269,6 +295,12 @@ test("manages tenants and one-time credentials through the authenticated workspa
   await expect(revokeButton).toHaveText("Revoked");
   await expect(revokeButton).toHaveAttribute("aria-disabled", "true");
   await expect(revokeButton).toBeFocused();
+  const authenticatedFetchCalls = await page.evaluate(() => Reflect.get(window, "__ledgerAuthenticatedFetchCalls"));
+  expect(authenticatedFetchCalls.every((call) => call.authHostID === "ledger-header")).toBe(true);
+  expect(authenticatedFetchCalls.filter((call) => ["PUT", "POST", "DELETE"].includes(call.method)).every((call) => call.policy?.mutationReplay === "authorization-before-domain-work")).toBe(true);
+  expect(authenticatedFetchCalls.filter((call) => call.method === "GET").every((call) => call.policy === null)).toBe(true);
+  expect(authenticatedFetchCalls.find((call) => call.method === "POST" && call.input === "/api/tenants")?.body).toBe(JSON.stringify({ name: "Analytics" }));
+  expect(authenticatedFetchCalls.find((call) => call.method === "POST" && call.input.endsWith("/credentials"))?.body).toBe("{}");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".mobile-tenant-control")).toBeVisible();
