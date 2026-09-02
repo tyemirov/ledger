@@ -13,6 +13,23 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## BugFixes
 
+- [x] [B002] (P1) Make every production theme-switcher quadrant functional.
+  Goal:
+  Each quadrant of the square footer control selects its distinct Ledger theme mode.
+  Requirements:
+  - Use the established default-light, sunrise-light, default-dark, and forest-dark mode order.
+  - Keep the header, footer, and Ledger workspace on one shared theme configuration.
+  - Apply each mode to both the document and body surfaces.
+  - Keep every application control readable in each palette.
+  Validation:
+  - Click each quadrant through the real browser entry point.
+  - Verify each quadrant selects its expected theme, palette, active position, and workspace surface.
+  - Run the repository frontend checks and `make ci`.
+  Resolution:
+  - The production header and footer now share the established four-mode configuration.
+  - Ledger-owned semantic tokens now render default-light, sunrise-light, default-dark, and forest-dark palettes.
+  - Browser coverage verifies all four quadrant hit areas and resulting workspace surfaces.
+
 - [x] [B001] (P1) Authenticate the tenant in a batch request.
   Goal:
   The public `Batch` RPC rejects each request before its handler can read the nested tenant ID.
