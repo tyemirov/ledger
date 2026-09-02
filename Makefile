@@ -75,13 +75,15 @@ frontend-lint: frontend-dependencies
 frontend-test: frontend-dependencies
 	cd $(FRONTEND_DIRECTORY) && $(NPM) test
 
-test: test-unit
+test: test-unit frontend-test
 
 test-unit:
 	go test $(UNIT_TEST_PACKAGES) -coverprofile=coverage.out -covermode=count
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 100.0) { print "coverage below 100%"; exit 1 } }'
 
-ci: check-format lint test-unit frontend-test
+test-integration: frontend-test
+
+ci: check-format lint test
 
 tools:
 	@command -v staticcheck >/dev/null 2>&1 || go install honnef.co/go/tools/cmd/staticcheck@latest
