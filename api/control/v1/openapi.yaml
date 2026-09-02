@@ -1,0 +1,463 @@
+openapi: 3.1.0
+info:
+  title: Ledger control plane
+  version: 1.0.0
+  description: TAuth-protected UserAccount, tenant, and credential resources.
+servers:
+  - url: /
+security:
+  - tauthSession: []
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: The process is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthDocument"
+  /api/user-account:
+    get:
+      operationId: getUserAccount
+      responses:
+        "200":
+          description: The current UserAccount.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserAccountDocument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/UserAccountNotFound"
+    put:
+      operationId: provisionUserAccount
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/CSRF"
+      responses:
+        "200":
+          description: The existing UserAccount.
+          headers:
+            Location:
+              schema:
+                type: string
+                const: /api/user-account
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserAccountDocument"
+        "201":
+          description: The new UserAccount.
+          headers:
+            Location:
+              schema:
+                type: string
+                const: /api/user-account
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserAccountDocument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/MutationRejected"
+  /api/tenants:
+    get:
+      operationId: listTenants
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: One canonical page of owned tenants.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantsDocument"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/UserAccountNotFound"
+    post:
+      operationId: createTenant
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/CSRF"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantInput"
+      responses:
+        "200":
+          $ref: "#/components/responses/TenantResult"
+        "201":
+          $ref: "#/components/responses/TenantResult"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/MutationRejected"
+        "409":
+          $ref: "#/components/responses/IdempotencyConflict"
+        "415":
+          $ref: "#/components/responses/ContentTypeInvalid"
+  /api/tenants/{tenant_id}:
+    parameters:
+      - $ref: "#/components/parameters/TenantID"
+    get:
+      operationId: getTenant
+      responses:
+        "200":
+          description: The owned tenant.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantDocument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/TenantNotFound"
+  /api/tenants/{tenant_id}/credentials:
+    parameters:
+      - $ref: "#/components/parameters/TenantID"
+    get:
+      operationId: listTenantCredentials
+      responses:
+        "200":
+          description: Credential metadata in canonical creation order.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialsDocument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/TenantNotFound"
+    post:
+      operationId: createTenantCredential
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/CSRF"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "200":
+          $ref: "#/components/responses/CredentialResult"
+        "201":
+          $ref: "#/components/responses/CredentialResult"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/MutationRejected"
+        "404":
+          $ref: "#/components/responses/TenantNotFound"
+        "409":
+          $ref: "#/components/responses/IdempotencyConflict"
+        "415":
+          $ref: "#/components/responses/ContentTypeInvalid"
+  /api/tenants/{tenant_id}/credentials/{credential_id}:
+    parameters:
+      - $ref: "#/components/parameters/TenantID"
+      - $ref: "#/components/parameters/CredentialID"
+    delete:
+      operationId: revokeTenantCredential
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/CSRF"
+      responses:
+        "200":
+          description: The revoked credential metadata.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialDocument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/MutationRejected"
+        "404":
+          $ref: "#/components/responses/TenantNotFound"
+components:
+  securitySchemes:
+    tauthSession:
+      type: apiKey
+      in: cookie
+      name: configured-by-ledger
+      description: The cookie name is an application deployment setting.
+  parameters:
+    Origin:
+      name: Origin
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Must equal the configured public origin.
+    CSRF:
+      name: X-Ledger-CSRF
+      in: header
+      required: true
+      schema:
+        type: string
+        const: "1"
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+    TenantID:
+      name: tenant_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CredentialID:
+      name: credential_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  headers:
+    RequestID:
+      schema:
+        type: string
+  responses:
+    TenantResult:
+      description: The created or replayed tenant.
+      headers:
+        Location:
+          schema:
+            type: string
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TenantDocument"
+    CredentialResult:
+      description: The created credential or replayed credential metadata. Only a new credential contains `secret`.
+      headers:
+        Location:
+          schema:
+            type: string
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CredentialDocument"
+    InvalidRequest:
+      description: A request field, cursor, limit, JSON body, or idempotency key is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorDocument"
+    Unauthenticated:
+      description: The TAuth session is missing, invalid, expired, or for another TAuth tenant.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorDocument"
+    MutationRejected:
+      description: The origin or cross-site request header is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorDocument"
+    UserAccountNotFound:
+      description: The authenticated identity has not provisioned a UserAccount.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorDocument"
+    TenantNotFound:
+      description: The tenant or credential is absent or belongs to another UserAccount.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorDocument"
+    IdempotencyConflict:
+      description: The idempotency key identifies a different canonical request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorDocument"
+    ContentTypeInvalid:
+      description: Content-Type is not application/json.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorDocument"
+  schemas:
+    HealthDocument:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    UserAccount:
+      type: object
+      additionalProperties: false
+      required: [id, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+    UserAccountDocument:
+      type: object
+      additionalProperties: false
+      required: [user_account]
+      properties:
+        user_account:
+          $ref: "#/components/schemas/UserAccount"
+    Tenant:
+      type: object
+      additionalProperties: false
+      required: [id, name, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        created_at:
+          type: string
+          format: date-time
+    TenantDocument:
+      type: object
+      additionalProperties: false
+      required: [tenant]
+      properties:
+        tenant:
+          $ref: "#/components/schemas/Tenant"
+    TenantsDocument:
+      type: object
+      additionalProperties: false
+      required: [tenants]
+      properties:
+        tenants:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tenant"
+        next_cursor:
+          type: string
+    CreateTenantInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+    Credential:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        secret:
+          type: string
+          description: Returned once for a new credential. Never returned by a read or replay.
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+    CredentialDocument:
+      type: object
+      additionalProperties: false
+      required: [credential]
+      properties:
+        credential:
+          $ref: "#/components/schemas/Credential"
+    CredentialsDocument:
+      type: object
+      additionalProperties: false
+      required: [credentials]
+      properties:
+        credentials:
+          type: array
+          items:
+            $ref: "#/components/schemas/Credential"
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+    ErrorDocument:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"

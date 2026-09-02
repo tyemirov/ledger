@@ -13,6 +13,23 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## BugFixes
 
+- [x] [B001] (P1) Authenticate the tenant in a batch request.
+  Goal:
+  The public `Batch` RPC rejects each request before its handler can read the nested tenant ID.
+  Requirements:
+  - Read the tenant ID from `BatchRequest.account` at the authentication boundary.
+  - Use one tenant identity contract for all `CreditService` RPCs.
+  - Accept a batch request only when its tenant credential matches its tenant ID.
+  - Reject each missing, unknown, or mismatched tenant credential.
+  Validation:
+  - Send batch requests through the real `ledgerd` gRPC entrypoint.
+  - Verify a valid batch request changes the addressed Ledger account.
+  - Verify tenant A cannot use tenant B credentials or data.
+  Resolution:
+  - The shared authentication boundary reads `BatchRequest.account.tenant_id`.
+  - Persistent credentials authenticate the nested tenant before the handler runs.
+  - Every handler compares the authenticated tenant with its addressed tenant.
+
 ## Improvements
 
 - [x] [I024] (P0) Use the permanent versionless selected application manifest.
@@ -240,5 +257,165 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## Features
 
+- [ ] [F001] (P1) {F002} Add the authenticated Ledger workspace.
+  Goal:
+  An authenticated user can provision one UserAccount and manage any number of owned Ledger tenants in one secure browser workspace.
+  Requirements:
+  - Start implementation after F002 provides the UserAccount, tenant, credential, TAuth, and public route contracts.
+  - Replace the current wallet demo browser surface with the production Ledger workspace.
+  - Delete the direct `tauth.js` loader, manual TAuth attributes, and application session restoration code.
+  - Delete the obsolete wallet action controls from the browser surface.
+  - Keep all accounting mutations on the private gRPC data plane.
+  - Use checked ES modules and Alpine for the workspace state.
+  - Keep one validated workspace state owner for UserAccount, tenant collection, selected tenant, and credentials.
+  - Keep route paths, event names, status values, and user messages in canonical constants or backend representations.
+  - Load each MPR Lab browser library through its literal `@latest` tag.
+  - Use `/config-ui.yaml` as the only browser authentication input.
+  - Mount `mpr-header`, `mpr-user`, and `mpr-footer` through the documented `mpr-ui` contract.
+  - Use the selected profile for the exact TAuth origin, tenant, cookie, provider, and route values.
+  - Keep local browser authentication on the same origin through the repository proxy.
+  - Do not call TAuth endpoints or inspect cookies, tokens, claims, browser storage, or `mpr-ui` internals.
+  - Use `mpr-user` as the only displayed TAuth profile and session control.
+  - Do not duplicate TAuth profile fields in a Ledger account dialog.
+  - Request protected workspace data only after `mpr-ui:auth:authenticated`.
+  - Cancel pending workspace requests and clear protected state after `mpr-ui:auth:unauthenticated`.
+  - Treat protected API failures as workspace failures after `mpr-ui` reports authentication.
+  - Validate the TAuth session at the Ledger HTTP boundary for each protected resource request.
+  - Provision the current UserAccount through the canonical P001 operation after authentication.
+  - Do not send a browser user ID, owner ID, email address, or TAuth tenant ID in provisioning requests.
+  - Release the shared authentication transition only after the first authenticated workspace render.
+  - Wait for `MPRUI.whenAutoOrchestrationReady()` before an immediate transition completion event.
+  - Show restrained loading, empty, error, and retry states for each workspace resource.
+  - Use one selected Ledger tenant for all tenant-specific data and actions.
+  - Preserve the selected tenant in the browser URL with its opaque tenant ID.
+  - Do not add separate tenant selectors for different panels.
+  - Do not provide an `All tenants` scope for credential or mutation controls.
+  - Organize the selected tenant into `Overview`, `Credentials`, and `Integration` sections.
+  - Require a human-readable tenant name in the approved P001 tenant representation.
+  - Show the tenant name as the primary label and the opaque tenant ID as metadata.
+  - Show a first-tenant creation action when the owned tenant collection is empty.
+  - Keep a compact tenant creation action available after the first tenant exists.
+  - Submit only the approved tenant creation fields and a generated idempotency key.
+  - Never submit the owner identity from a browser field.
+  - Show tenant creation progress without blocking unrelated tenant reads.
+  - Select a newly created tenant only after the server returns its canonical representation.
+  - Render the tenant collection as dense rows in canonical server order.
+  - Use the server cursor for explicit collection pagination.
+  - Do not load the complete tenant collection into one unbounded browser request.
+  - Reject a stale tenant response after authentication, selection, or collection state changes.
+  - Show the selected tenant name, tenant ID, creation time, and credential summary.
+  - Do not show tenant rename, transfer, closure, or deletion actions in this issue.
+  - Create a tenant credential only through a separate explicit action.
+  - Do not return a tenant credential from the tenant creation operation.
+  - Show a new credential secret only once after successful creation.
+  - Keep the new credential secret only in memory while its disclosure panel is open.
+  - Clear the secret after panel closure, navigation, tenant selection, authentication loss, or page exit.
+  - Never put a raw or masked secret in a URL, browser storage, log, metric, attribute, or accessible name.
+  - Provide explicit copy and confirmation controls before the one-time secret panel closes.
+  - List credential identifiers, creation times, and current revocation states without secret values.
+  - Permit multiple active credentials so a user can rotate a client without service interruption.
+  - Require an exact tenant and an explicit confirmation before credential revocation.
+  - Do not revoke an old credential automatically when the user creates a new credential.
+  - Reject a stale credential response after authentication or tenant selection changes.
+  - Show a copyable gRPC integration example with environment variable placeholders.
+  - Keep the raw credential out of the integration example.
+  - Link the integration example to the current Ledger API and Go library documentation.
+  - Use a centered 1180-pixel shell with a 210-pixel tenant rail on wide screens.
+  - Collapse the tenant rail into one compact tenant control below tablet widths.
+  - Use solid MPR charcoal surfaces, thin borders, compact controls, and semantic accent colors.
+  - Use six-pixel panel radii and restrained spacing for tenant rows and credential panels.
+  - Use accent colors only for selection, status, primary actions, warnings, and errors.
+  - Do not use a hero section, gradient surface, glass effect, oversized heading, or generic dashboard card grid.
+  - Keep the same dense information order on desktop and narrow screens.
+  - Collapse secondary metadata before the primary tenant identity or action controls.
+  - Prevent horizontal page overflow at each supported viewport.
+  - Use semantic navigation, sections, forms, lists, dialogs, buttons, and status regions.
+  - Do not target internal `mpr-ui` classes from Ledger styles.
+  - Preserve visible focus, logical focus order, keyboard operation, and accessible control names.
+  - Move focus into each opened dialog and return focus to its opening control.
+  - Make an inactive dialog surface unavailable to keyboard and accessibility APIs.
+  - Use short status transitions and remove nonessential motion for `prefers-reduced-motion`.
+  - Serve the workspace, `/config-ui.yaml`, and control plane from Ledger-owned deployment resources.
+  - Keep the private gRPC capability separate from the public browser route.
+  - Declare the public route, health check, configuration, and required private values in the Ledger manifest.
+  - Keep each Ledger-specific route and setting out of the generic gateway contract.
+  - Use the exact selected deployment profile without an inferred production hostname.
+  Deliverables:
+  - Add the production Ledger browser entry point, checked modules, semantic markup, and MPR style tokens.
+  - Add the canonical `mpr-ui` bootstrap and the app-owned `/config-ui.yaml` representation.
+  - Add a validated browser client for the approved UserAccount, tenant, and credential resources.
+  - Add the authenticated UserAccount startup and workspace readiness flow.
+  - Add tenant creation, selection, pagination, detail, and stale-response isolation.
+  - Add one-time credential disclosure, copy, listing, creation, and revocation flows.
+  - Add the tenant integration panel with current gRPC and Go library guidance.
+  - Remove the obsolete wallet demo UI and its direct TAuth integration path.
+  - Update the local composition and selected deployment manifest for the browser route.
+  - Update the OpenAPI document, browser types, user documentation, and deployment documentation together.
+  - Add Playwright coverage through the real browser entry point and real HTTP server.
+  Validation:
+  - Prove the page uses `/config-ui.yaml`, `mpr-ui-config.js`, and literal `mpr-ui@latest` assets.
+  - Prove the page contains no direct `tauth.js` loader or manual TAuth authentication attributes.
+  - Prove an unauthenticated browser sends no protected workspace request.
+  - Prove each protected HTTP resource rejects a missing or invalid TAuth session with `401`.
+  - Complete a real `mpr-ui` and TAuth browser login without injected cookies.
+  - Prove the first authenticated load provisions one UserAccount and releases the transition after render.
+  - Prove a restored TAuth session opens the same UserAccount without a second application authentication path.
+  - Create multiple named tenants and verify their canonical order, selection, URL state, and pagination.
+  - Prove a second UserAccount cannot list, read, select, or change the first UserAccount tenants.
+  - Prove tenant creation retries return one tenant and conflicting idempotency use returns the canonical error.
+  - Prove stale tenant and credential responses cannot change the selected tenant workspace.
+  - Prove one-time credential disclosure clears at each specified state boundary.
+  - Prove secrets stay out of URLs, storage, logs, metrics, attributes, accessible names, and integration examples.
+  - Prove credential creation does not revoke an existing credential.
+  - Prove credential revocation requires the exact tenant and explicit confirmation.
+  - Prove keyboard navigation, dialog focus, live status, visible focus, and reduced motion.
+  - Inspect the real workspace at 1280, 900, and 390 pixels.
+  - Prove the inspected viewports have no horizontal page overflow.
+  - Run the repository frontend checks and `make ci` after the last application change.
+  - Record source CI, release, publication, deployment, runtime, and public browser acceptance as separate results.
+  - Verify the public frontend, browser authentication, backend authorization, and authenticated workspace after deployment.
+
+- [x] [F002] (P1) {P001,B001} Implement the UserAccount backend architecture.
+  Goal:
+  An authenticated person can provision one UserAccount and manage any number of owned Ledger tenants through a secure control plane.
+  Requirements:
+  - Use the approved P001 identity, ownership, storage, API, authorization, concurrency, credential, and migration contracts.
+  - Keep browser identity in TAuth and accounting operations on private gRPC.
+  - Remove static tenant configuration and plaintext tenant secrets.
+  - Reject a legacy database until the bounded migration succeeds.
+  Validation:
+  - Exercise the HTTP control plane with a real server, real database, and signed TAuth cookies.
+  - Exercise persistent tenant credentials through the real gRPC entrypoint.
+  - Verify owner isolation, idempotency, one-time secret disclosure, credential revocation, and `Batch` authentication.
+  - Migrate a real legacy fixture and retain its accounting history.
+  - Run `make ci` after the last backend change.
+  Resolution:
+  - Ledger now stores UserAccounts, owner-scoped tenants, credential digests, idempotency decisions, and append-only control events.
+  - One process serves the TAuth-protected HTTP control plane and credential-protected gRPC data plane on separate listeners.
+  - The mode-0600 migration validates the complete owner mapping before mutation and rejects a rerun.
+  - Static tenant configuration and plaintext tenant authentication are removed.
+
 ## Planning
 *do not implement yet*
+
+- [x] [P001] (P1) Define the UserAccount backend architecture.
+  Goal:
+  Define how an authenticated person owns and manages any number of Ledger tenants.
+  Requirements:
+  - Separate UserAccount, Ledger tenant, TAuth tenant, and Ledger account concepts.
+  - Define identity, ownership, storage, API, authorization, concurrency, and migration boundaries.
+  - Keep TAuth and `mpr-ui` as the browser authentication authority.
+  - Keep the existing gRPC accounting surface as the private data plane.
+  - Record each unconfirmed product choice as an open decision.
+  Deliverables:
+  - Add `docs/user-account-backend-design.md` as the canonical backend design.
+  - Identify independent implementation slices without authorizing implementation.
+  - List the decisions that require product or operator input.
+  Validation:
+  - Run the language checker on each changed technical document.
+  - Run the Governor repository check.
+  - Run `git diff --check`.
+  Resolution:
+  - `docs/user-account-backend-design.md` defines the canonical UserAccount, tenant, credential, API, authorization, audit, and migration boundaries.
+  - The design selects explicit provisioning, owner-only named tenants, separate revocable credentials, exact-origin mutation protection, and one process with two listeners.
+  - The exact hosted TAuth profile and production owner mapping remain required operator inputs.

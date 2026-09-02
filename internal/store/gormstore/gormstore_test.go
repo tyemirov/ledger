@@ -703,7 +703,7 @@ func TestStoreGetOrCreateAccountIDRejectsInvalidAccountID(test *testing.T) {
 	db := newSQLiteDB(test)
 	store := New(db)
 
-	account := Account{
+	account := LedgerAccount{
 		AccountID: " ",
 		TenantID:  mustTenantID(test).String(),
 		UserID:    mustUserID(test).String(),
@@ -1841,7 +1841,7 @@ func newSQLiteDB(test *testing.T) *gorm.DB {
 		test.Fatalf("sql db: %v", err)
 	}
 	test.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&Account{}, &LedgerEntry{}, &Reservation{}); err != nil {
+	if err := db.AutoMigrate(&LedgerAccount{}, &LedgerEntry{}, &Reservation{}); err != nil {
 		test.Fatalf("auto migrate: %v", err)
 	}
 	return db

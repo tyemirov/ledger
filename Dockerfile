@@ -1,5 +1,5 @@
 # build stage
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS build
 
@@ -22,6 +22,5 @@ FROM alpine:3.21
 WORKDIR /srv
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/ledgerd /srv/ledgerd
-ENV GRPC_LISTEN_ADDR=:50051
 USER root
 CMD ["/srv/ledgerd"]

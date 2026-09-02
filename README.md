@@ -44,12 +44,12 @@ It is intentionally **application-agnostic** — you decide when and why credits
 Every gRPC request must include an `authorization` metadata header carrying the per-tenant Bearer token:
 
 ```
-authorization: Bearer <tenant_secret_key>
+authorization: Bearer <tenant_credential>
 ```
 
-The server extracts `tenant_id` from the request body, looks up the matching `secret_key` in `config.yml`, and verifies the token. Requests that fail authentication receive a gRPC `Unauthenticated` code; requests for an unknown tenant receive `PermissionDenied`.
+The server extracts `tenant_id` from the request body and verifies a stored, revocable credential digest. The credential must belong to the addressed tenant. The same rule applies to the nested account in `Batch`.
 
-Deploy the gRPC port on a private interface or cluster-internal network and front it with an HTTP gateway for end-user session validation. The per-tenant secret key authenticates **service-to-service** traffic between your gateway and the ledger.
+Deploy the gRPC port on a private interface or cluster-internal network. A UserAccount owner creates tenant credentials through the authenticated HTTP control plane. The control plane validates the TAuth session on every protected request.
 
 ### Library vs. service
 
@@ -63,7 +63,7 @@ See:
 
 ## Requirements
 
-* Go 1.25+
+* Go 1.26+
 * SQLite (default file-based runtime) or PostgreSQL 13+ if you supply a Postgres `DATABASE_URL`
 * `protoc` with Go plugins (`protoc-gen-go`, `protoc-gen-go-grpc`)
 
@@ -105,38 +105,34 @@ The service reads `config.yml` (override with `--config <path>`). Environment va
 ```yaml
 service:
   database_url: "${DATABASE_URL:-sqlite:///tmp/ledger.db}"
-  listen_addr: "${GRPC_LISTEN_ADDR:-:50051}"
+  grpc_listen_addr: ":50051"
+  http_listen_addr: ":8080"
 
-tenants:
-  - id: "demo"
-    name: "Demo Tenant"
-    secret_key: "${DEMO_TENANT_SECRET}"
+auth:
+  jwt_signing_key: "${TAUTH_JWT_SIGNING_KEY}"
+  jwt_issuer: "${TAUTH_JWT_ISSUER}"
+  tauth_tenant_id: "${TAUTH_TENANT_ID}"
+  session_cookie_name: "${TAUTH_SESSION_COOKIE_NAME}"
+  public_origin: "${LEDGER_PUBLIC_ORIGIN}"
 ```
 
-Each tenant requires a non-empty `id` and `secret_key`. Clients must send the matching secret as a Bearer token in the `authorization` gRPC metadata header (see [Authentication](#authentication)).
+Static tenants and plaintext configuration secrets are not supported. An authenticated person provisions one UserAccount, creates named tenants, and creates or revokes each tenant credential through the HTTP control plane.
 
 Environment variables:
 
-| Variable                | Default                   | Description                                                    |
-| ----------------------- | ------------------------- | -------------------------------------------------------------- |
-| `DATABASE_URL`          | `sqlite:///tmp/ledger.db` | Database connection string (`postgres://...` or `sqlite:///…`) |
-| `GRPC_LISTEN_ADDR`      | `:50051`                  | gRPC server listen address                                     |
-| `DEFAULT_TENANT_SECRET` | `default-secret`          | Bearer token for the `default` tenant                          |
-| `DEMO_TENANT_SECRET`    | `demo-secret`             | Bearer token for the `demo` tenant                             |
+The committed configuration requires `DATABASE_URL`, `TAUTH_JWT_SIGNING_KEY`, `TAUTH_JWT_ISSUER`, `TAUTH_TENANT_ID`, `TAUTH_SESSION_COOKIE_NAME`, and `LEDGER_PUBLIC_ORIGIN`. Listener addresses are explicit configuration fields.
 
-### Generate a secret
+### HTTP control plane
 
-Generate a random tenant secret with:
+The HTTP listener exposes `GET /healthz` and these TAuth-protected resources:
 
-```bash
-openssl rand -hex 32
-```
+- `PUT` and `GET /api/user-account`.
+- `POST` and `GET /api/tenants`.
+- `GET /api/tenants/{tenant_id}`.
+- `POST` and `GET /api/tenants/{tenant_id}/credentials`.
+- `DELETE /api/tenants/{tenant_id}/credentials/{credential_id}`.
 
-For example, you can assign it directly to the ledger tenant secret:
-
-```bash
-export DEFAULT_TENANT_SECRET="$(openssl rand -hex 32)"
-```
+Unsafe requests require the exact configured `Origin` and `X-Ledger-CSRF: 1`. Tenant and credential creation also require `Idempotency-Key`. A new credential secret appears only in its successful creation response.
 
 ---
 
@@ -151,13 +147,12 @@ make deploy
 ```
 
 All three commands delegate to the exact sibling `../mprlab-gateway`. Ledger
-declares only its Go container, a fresh retained `ledger-data` volume,
-bounded retirement of the legacy `mprlab-nginx-gateway/ledger-api` service,
-committed non-secret configuration, and `ledger.grpc` endpoint in the sole
-tracked production declaration, `.mprlab/deploy/resources.yml`. That manifest
+declares its Go container and a new retained `ledger-data` volume.
+The manifest retires the legacy `mprlab-nginx-gateway/ledger-api` service.
+It also declares the non-secret configuration and the `ledger.grpc` endpoint.
+`.mprlab/deploy/resources.yml` is the only tracked production declaration. That manifest
 uses the permanent versionless contract and contains the SemVer release policy. Its one service
-declares singular gateway placement and binds `DATABASE_URL` plus three tenant
-secrets through one typed `private_values` resource. The exact values live only in the ignored mode-0600
+declares singular gateway placement and binds the database plus the required TAuth and public-origin values through one typed `private_values` resource. The exact values live only in the ignored mode-0600
 `.mprlab/deploy/.env` input, which is excluded from the Ledger Docker build
 context and read only by deployment. Release and publication do not read it.
 The legacy volume remains untouched. The gateway owns release sealing,
@@ -165,17 +160,24 @@ immutable publication, deployment convergence, and retry verification. Ledger
 has no Node lifecycle dependency.
 
 ```bash
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/credit?sslmode=disable \
-GRPC_LISTEN_ADDR=:50051 \
-DEFAULT_TENANT_SECRET=my-secret \
-go run ./cmd/credit
+go run ./cmd/credit --config configs/config.ledger.yml
 ```
 To build a standalone binary named `ledgerd`:
 
 ```bash
 go build -o ledgerd ./cmd/credit
-DEFAULT_TENANT_SECRET=my-secret ./ledgerd
+./ledgerd --config configs/config.ledger.yml
 ```
+
+### Forward-only data migration
+
+An existing database with the legacy `accounts` table does not start. Run the bounded migration once with an explicit mode-0600 YAML mapping:
+
+```bash
+ledgerd --config configs/config.ledger.yml migrate-user-accounts --mapping /private/ledger-user-account-mapping.yml
+```
+
+The mapping declares the complete legacy tenant set, each canonical tenant UUID and name, its exact TAuth owner identity, and one canonical `ledger_<credential_uuid>_<secret>` credential. The command validates the complete mapping before mutation, retains accounting history, renames `accounts` to `ledger_accounts`, and rejects a rerun.
 
 ---
 
@@ -189,8 +191,8 @@ Mutation RPCs return `entry_id` + `created_unix_utc` so clients can correlate re
 
 ```bash
 grpcurl -plaintext \
-  -H 'authorization: Bearer default-secret' \
-  -d '{"tenant_id":"default","user_id":"user123","ledger_id":"default"}' \
+  -H 'authorization: Bearer <tenant_credential>' \
+  -d '{"tenant_id":"0196f0ec-3e80-7a54-bd2b-56cfe90bf801","user_id":"user123","ledger_id":"default"}' \
   localhost:50051 credit.v1.CreditService/GetBalance
 ```
 
@@ -207,9 +209,9 @@ Response:
 
 ```bash
 grpcurl -plaintext \
-  -H 'authorization: Bearer default-secret' \
+  -H 'authorization: Bearer <tenant_credential>' \
   -d '{
-    "tenant_id":"default",
+    "tenant_id":"0196f0ec-3e80-7a54-bd2b-56cfe90bf801",
     "user_id":"user123",
     "ledger_id":"default",
     "amount_cents": 1000,
@@ -223,9 +225,9 @@ grpcurl -plaintext \
 
 ```bash
 grpcurl -plaintext \
-  -H 'authorization: Bearer default-secret' \
+  -H 'authorization: Bearer <tenant_credential>' \
   -d '{
-    "tenant_id":"default",
+    "tenant_id":"0196f0ec-3e80-7a54-bd2b-56cfe90bf801",
     "user_id":"user123",
     "ledger_id":"default",
     "amount_cents": 500,
@@ -239,9 +241,9 @@ grpcurl -plaintext \
 
 ```bash
 grpcurl -plaintext \
-  -H 'authorization: Bearer default-secret' \
+  -H 'authorization: Bearer <tenant_credential>' \
   -d '{
-    "tenant_id":"default",
+    "tenant_id":"0196f0ec-3e80-7a54-bd2b-56cfe90bf801",
     "user_id":"user123",
     "ledger_id":"default",
     "reservation_id":"order-555",
@@ -255,9 +257,9 @@ grpcurl -plaintext \
 
 ```bash
 grpcurl -plaintext \
-  -H 'authorization: Bearer default-secret' \
+  -H 'authorization: Bearer <tenant_credential>' \
   -d '{
-    "tenant_id":"default",
+    "tenant_id":"0196f0ec-3e80-7a54-bd2b-56cfe90bf801",
     "user_id":"user123",
     "ledger_id":"default",
     "reservation_id":"order-555",
@@ -270,9 +272,9 @@ grpcurl -plaintext \
 
 ```bash
 grpcurl -plaintext \
-  -H 'authorization: Bearer default-secret' \
+  -H 'authorization: Bearer <tenant_credential>' \
   -d '{
-    "tenant_id":"default",
+    "tenant_id":"0196f0ec-3e80-7a54-bd2b-56cfe90bf801",
     "user_id":"user123",
     "ledger_id":"default",
     "amount_cents": 200,
@@ -287,9 +289,9 @@ Refunds are first-class entries linked to an original debit entry; the ledger en
 
 ```bash
 grpcurl -plaintext \
-  -H 'authorization: Bearer default-secret' \
+  -H 'authorization: Bearer <tenant_credential>' \
   -d '{
-    "tenant_id":"default",
+    "tenant_id":"0196f0ec-3e80-7a54-bd2b-56cfe90bf801",
     "user_id":"user123",
     "ledger_id":"default",
     "original_idempotency_key":"spend-1",
@@ -305,9 +307,9 @@ Use `Batch` to execute many mutations for a single account in one request. Dupli
 
 ```bash
 grpcurl -plaintext \
-  -H 'authorization: Bearer default-secret' \
+  -H 'authorization: Bearer <tenant_credential>' \
   -d '{
-    "account": { "tenant_id":"default", "user_id":"user123", "ledger_id":"default" },
+    "account": { "tenant_id":"0196f0ec-3e80-7a54-bd2b-56cfe90bf801", "user_id":"user123", "ledger_id":"default" },
     "atomic": false,
     "operations": [
       {
@@ -336,9 +338,9 @@ grpcurl -plaintext \
 
 ```bash
 grpcurl -plaintext \
-  -H 'authorization: Bearer default-secret' \
+  -H 'authorization: Bearer <tenant_credential>' \
   -d '{
-    "tenant_id":"default",
+    "tenant_id":"0196f0ec-3e80-7a54-bd2b-56cfe90bf801",
     "user_id":"user123",
     "ledger_id":"default",
     "reservation_id":"order-555"
@@ -349,9 +351,9 @@ grpcurl -plaintext \
 
 ```bash
 grpcurl -plaintext \
-  -H 'authorization: Bearer default-secret' \
+  -H 'authorization: Bearer <tenant_credential>' \
   -d '{
-    "tenant_id":"default",
+    "tenant_id":"0196f0ec-3e80-7a54-bd2b-56cfe90bf801",
     "user_id":"user123",
     "ledger_id":"default",
     "limit": 20,
@@ -363,9 +365,9 @@ grpcurl -plaintext \
 
 ```bash
 grpcurl -plaintext \
-  -H 'authorization: Bearer default-secret' \
+  -H 'authorization: Bearer <tenant_credential>' \
   -d '{
-    "tenant_id":"default",
+    "tenant_id":"0196f0ec-3e80-7a54-bd2b-56cfe90bf801",
     "user_id":"user123",
     "ledger_id":"default",
     "types": ["refund", "spend", "grant"],

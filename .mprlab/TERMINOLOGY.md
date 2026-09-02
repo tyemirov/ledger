@@ -79,6 +79,15 @@ Give each term one meaning. Use the same term for the same concept in all docume
 
 Add repository-specific technical nouns below this line.
 
+- `control plane`: The HTTP API that manages UserAccount and Ledger tenant resources.
+- `data plane`: The gRPC API that performs credit operations.
+- `Ledger account`: A credit namespace that one tenant ID, one user ID, and one ledger ID identify.
+- `Ledger tenant`: A Ledger workspace that contains Ledger accounts and belongs to one UserAccount.
+- `TAuth session`: A TAuth-issued session that identifies an authenticated person.
+- `TAuth tenant`: A TAuth authentication realm that issues sessions for the Ledger application.
+- `tenant credential`: A revocable secret that authorizes a client for one Ledger tenant.
+- `UserAccount`: A Ledger resource that binds one TAuth user identity to Ledger tenant ownership.
+
 ```text
 - `term`: Definition with one meaning.
 ```
@@ -116,6 +125,8 @@ Use the simple present, simple past, simple future, imperative, or infinitive fo
 ## Repository Technical Verbs
 
 Add repository-specific technical verbs below this line.
+
+- `provision`: Create the canonical UserAccount for one authenticated TAuth identity. Approved forms: provision, provisions, provisioned.
 
 ```text
 - `term`: Definition with one meaning and the approved verb forms.
