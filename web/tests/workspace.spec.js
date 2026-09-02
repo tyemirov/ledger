@@ -172,6 +172,38 @@ test("aligns the public shell controls on shared vertical edges", async ({ page 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+test("maps every theme-switcher quadrant to its Ledger palette", async ({ page }) => {
+  await page.unroute("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css");
+  await page.unroute("https://cdn.jsdelivr.net/npm/js-yaml@5.4.1/dist/browser/js-yaml.umd.min.js");
+  await page.unroute("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui-config.js");
+  await page.goto(baseURL);
+  await expect.poll(() => page.evaluate(() => Boolean(customElements.get("mpr-footer")))).toBe(true);
+
+  const themeGrid = page.locator('mpr-footer [data-mpr-theme-toggle="grid"]');
+  await expect(themeGrid).toBeVisible();
+  await expect(themeGrid.locator('[data-mpr-theme-toggle="quad"][data-quad-enabled="true"]')).toHaveCount(4);
+  const gridBox = await themeGrid.boundingBox();
+  if (!gridBox) throw new Error("theme_switcher_grid_not_rendered");
+
+  const modes = [
+    { x: 0.25, y: 0.25, index: "0", theme: "light", palette: "default", background: "#f8fafc", accent: "#2563eb" },
+    { x: 0.75, y: 0.25, index: "1", theme: "light", palette: "sunrise", background: "#fff7ed", accent: "#c2410c" },
+    { x: 0.25, y: 0.75, index: "2", theme: "dark", palette: "default", background: "#101216", accent: "#6f9dff" },
+    { x: 0.75, y: 0.75, index: "3", theme: "dark", palette: "forest", background: "#052e2b", accent: "#4ade80" },
+  ];
+
+  for (const mode of modes) {
+    await themeGrid.click({ position: { x: gridBox.width * mode.x, y: gridBox.height * mode.y } });
+    await expect(themeGrid).toHaveAttribute("data-square-active", mode.index);
+    await expect(page.locator("html")).toHaveAttribute("data-mpr-theme", mode.theme);
+    await expect(page.locator("html")).toHaveAttribute("data-ledger-palette", mode.palette);
+    await expect(page.locator("body")).toHaveAttribute("data-mpr-theme", mode.theme);
+    await expect(page.locator("body")).toHaveAttribute("data-ledger-palette", mode.palette);
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--ledger-bg").trim())).toBe(mode.background);
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--mpr-color-accent").trim())).toBe(mode.accent);
+  }
+});
+
 test("shows one tenant creation action for an empty collection", async ({ page }) => {
   await page.route(`${baseURL}/api/**`, (route) => {
     const request = route.request();
