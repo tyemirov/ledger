@@ -35,6 +35,18 @@ const (
 	credentialOneID  = "0196f0ec-3e80-7a54-bd2b-56cfe90bf811"
 )
 
+func testBrowserConfiguration() BrowserConfig {
+	return BrowserConfig{
+		Description:    "Ledger",
+		TAuthURL:       "https://auth.example.test",
+		GoogleClientID: "google-client-id",
+		LoginPath:      "/auth/google",
+		LogoutPath:     "/auth/logout",
+		NoncePath:      "/auth/nonce",
+		SessionPath:    "/auth/session",
+	}
+}
+
 type controlHarness struct {
 	test        *testing.T
 	database    *gorm.DB
@@ -113,7 +125,7 @@ func newControlHarness(test *testing.T) *controlHarness {
 		test.Fatalf("session validator: %v", err)
 	}
 	requestLogger := &requestLoggerStub{}
-	handler, err := NewHandler(accountService, tenantService, validator, testAuthTenantID, testOrigin+"/", requestLogger)
+	handler, err := NewHandler(accountService, tenantService, validator, testAuthTenantID, testOrigin+"/", testBrowserConfiguration(), requestLogger)
 	if err != nil {
 		test.Fatalf("handler: %v", err)
 	}
@@ -364,22 +376,25 @@ func TestControlPlaneDependencyAndDatabaseErrors(test *testing.T) {
 	harness := newControlHarness(test)
 	for _, build := range []func() (*Handler, error){
 		func() (*Handler, error) {
-			return NewHandler(nil, harness.handler.tenants, harness.handler.sessions, testAuthTenantID, testOrigin, harness.logger)
+			return NewHandler(nil, harness.handler.tenants, harness.handler.sessions, testAuthTenantID, testOrigin, testBrowserConfiguration(), harness.logger)
 		},
 		func() (*Handler, error) {
-			return NewHandler(harness.handler.accounts, nil, harness.handler.sessions, testAuthTenantID, testOrigin, harness.logger)
+			return NewHandler(harness.handler.accounts, nil, harness.handler.sessions, testAuthTenantID, testOrigin, testBrowserConfiguration(), harness.logger)
 		},
 		func() (*Handler, error) {
-			return NewHandler(harness.handler.accounts, harness.handler.tenants, nil, testAuthTenantID, testOrigin, harness.logger)
+			return NewHandler(harness.handler.accounts, harness.handler.tenants, nil, testAuthTenantID, testOrigin, testBrowserConfiguration(), harness.logger)
 		},
 		func() (*Handler, error) {
-			return NewHandler(harness.handler.accounts, harness.handler.tenants, harness.handler.sessions, "", testOrigin, harness.logger)
+			return NewHandler(harness.handler.accounts, harness.handler.tenants, harness.handler.sessions, "", testOrigin, testBrowserConfiguration(), harness.logger)
 		},
 		func() (*Handler, error) {
-			return NewHandler(harness.handler.accounts, harness.handler.tenants, harness.handler.sessions, testAuthTenantID, " ", harness.logger)
+			return NewHandler(harness.handler.accounts, harness.handler.tenants, harness.handler.sessions, testAuthTenantID, " ", testBrowserConfiguration(), harness.logger)
 		},
 		func() (*Handler, error) {
-			return NewHandler(harness.handler.accounts, harness.handler.tenants, harness.handler.sessions, testAuthTenantID, testOrigin, nil)
+			return NewHandler(harness.handler.accounts, harness.handler.tenants, harness.handler.sessions, testAuthTenantID, testOrigin, testBrowserConfiguration(), nil)
+		},
+		func() (*Handler, error) {
+			return NewHandler(harness.handler.accounts, harness.handler.tenants, harness.handler.sessions, testAuthTenantID, testOrigin, BrowserConfig{}, harness.logger)
 		},
 	} {
 		if _, err := build(); err == nil {
@@ -397,6 +412,63 @@ func TestControlPlaneDependencyAndDatabaseErrors(test *testing.T) {
 	assertStatus(test, response, http.StatusInternalServerError)
 	response, _ = harness.request(http.MethodPut, "/api/user-account", "", harness.cookieTwo, true, nil)
 	assertStatus(test, response, http.StatusInternalServerError)
+}
+
+func TestControlPlaneWorkspaceAssetsAndConfiguration(test *testing.T) {
+	harness := newControlHarness(test)
+	get := func(path string) (*http.Response, []byte) {
+		test.Helper()
+		response, err := http.Get(harness.server.URL + path)
+		if err != nil {
+			test.Fatalf("get %s: %v", path, err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			test.Fatalf("read %s: %v", path, err)
+		}
+		return response, body
+	}
+	for path, contentType := range map[string]string{
+		"/":                                   "text/html; charset=utf-8",
+		"/index.html":                         "text/html; charset=utf-8",
+		"/assets/ledger/styles.css":           "text/css; charset=utf-8",
+		"/assets/ledger/js/alpine-runtime.js": "text/javascript; charset=utf-8",
+		"/assets/ledger/js/app.js":            "text/javascript; charset=utf-8",
+		"/assets/ledger/js/client.js":         "text/javascript; charset=utf-8",
+		"/assets/ledger/js/constants.js":      "text/javascript; charset=utf-8",
+		"/assets/ledger/js/contracts.js":      "text/javascript; charset=utf-8",
+	} {
+		response, _ := get(path)
+		assertStatus(test, response, http.StatusOK)
+		if response.Header.Get("Content-Type") != contentType || response.Header.Get("Cache-Control") != "no-store" {
+			test.Fatalf("asset %s headers=%v", path, response.Header)
+		}
+	}
+	response, _ := get("/assets/ledger/unknown.js")
+	assertStatus(test, response, http.StatusNotFound)
+	response, _ = get("/unknown")
+	assertStatus(test, response, http.StatusNotFound)
+	response, body := get("/config-ui.yaml")
+	assertStatus(test, response, http.StatusOK)
+	if response.Header.Get("Content-Type") != "application/yaml" || response.Header.Get("Cache-Control") != "no-store" {
+		test.Fatalf("browser configuration headers=%v", response.Header)
+	}
+	for _, fragment := range []string{testOrigin, testAuthTenantID, "google-client-id", "/auth/session"} {
+		if !strings.Contains(string(body), fragment) {
+			test.Fatalf("browser configuration missing %q: %s", fragment, body)
+		}
+	}
+
+	recorder := httptest.NewRecorder()
+	func() {
+		defer func() {
+			if recover() == nil {
+				test.Fatalf("missing embedded file did not panic")
+			}
+		}()
+		harness.handler.serveBrowserFile(recorder, "web/missing", "text/plain")
+	}()
 }
 
 func TestControlPlaneTenantStorageErrors(test *testing.T) {

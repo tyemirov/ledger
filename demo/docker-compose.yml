@@ -3,118 +3,73 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: ledger-ledger:local
-    container_name: ledger-ledger
+    image: ledger-local:latest
     env_file:
       - ./configs/.env.ledger
     command: ["/srv/ledgerd", "--config", "/srv/config.yml"]
-    ports:
-      - "50051:50051"
     volumes:
       - ledger_data:/srv/data
       - ./configs/config.yml:/srv/config.yml:ro
-    restart: unless-stopped
+    expose:
+      - "50051"
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 2s
 
   tauth:
     image: ghcr.io/tyemirov/tauth:latest
-    container_name: ledger-tauth
     pull_policy: always
     env_file:
       - ./configs/.env.tauth
     volumes:
       - tauth_data:/data
       - ./configs/tauth.config.yaml:/config.yaml:ro
-    ports:
-      - "8081:8080"
-    restart: unless-stopped
-
-  demoapi:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ledger-demoapi:latest
-    container_name: ledger-demoapi
-    env_file:
-      - ./configs/.env.demoapi
-    depends_on:
-      ledger:
-        condition: service_started
-      tauth:
-        condition: service_started
-    ports:
-      - "9090:9090"
-    restart: unless-stopped
+    expose:
+      - "8080"
 
   frontend-localhost:
-    profiles:
-      - localhost
+    profiles: [localhost]
     image: ghcr.io/tyemirov/ghttp:latest
-    container_name: ledger-ghttp-localhost
     pull_policy: always
     depends_on:
-      demoapi:
-        condition: service_started
+      ledger:
+        condition: service_healthy
       tauth:
         condition: service_started
-    command:
-      [
-        "--directory",
-        "/data",
-        "--proxy",
-        "/api=http://demoapi:9090",
-        "--proxy",
-        "/auth=http://tauth:8080",
-        "--proxy",
-        "/me=http://tauth:8080",
-        "--proxy",
-        "/tauth.js=http://tauth:8080",
-        "8000",
-      ]
+    environment:
+      GHTTP_SERVE_PORT: "8000"
+      GHTTP_SERVE_DIRECTORY: "/tmp"
+      GHTTP_SERVE_PROXIES: "/auth=http://tauth:8080,/me=http://tauth:8080,/=http://ledger:8080"
+      GHTTP_SERVE_RESPONSE_HEADERS: "/=Cache-Control:no-store"
     ports:
-      - "8000:8000"
-    volumes:
-      - ./ui:/data:ro
-      - ./config.js:/data/config.js:ro
-    restart: unless-stopped
+      - "127.0.0.1:8000:8000"
 
   frontend-computercat:
-    profiles:
-      - computercat
+    profiles: [computercat]
     image: ghcr.io/tyemirov/ghttp:latest
-    container_name: ledger-ghttp-computercat
     pull_policy: always
     depends_on:
-      demoapi:
-        condition: service_started
+      ledger:
+        condition: service_healthy
       tauth:
         condition: service_started
-    command:
-      [
-        "--directory",
-        "/data",
-        "--tls-cert",
-        "/certs/computercat-cert.pem",
-        "--tls-key",
-        "/certs/computercat-key.pem",
-        "--proxy",
-        "/api=http://demoapi:9090",
-        "--proxy",
-        "/auth=http://tauth:8080",
-        "--proxy",
-        "/me=http://tauth:8080",
-        "--proxy",
-        "/tauth.js=http://tauth:8080",
-        "4443",
-      ]
+    environment:
+      GHTTP_SERVE_PORT: "4443"
+      GHTTP_SERVE_DIRECTORY: "/tmp"
+      GHTTP_SERVE_TLS_CERT_FILE: "/certs/computercat-cert.pem"
+      GHTTP_SERVE_TLS_KEY_FILE: "/certs/computercat-key.pem"
+      GHTTP_SERVE_PROXIES: "/auth=http://tauth:8080,/me=http://tauth:8080,/=http://ledger:8080"
+      GHTTP_SERVE_RESPONSE_HEADERS: "/=Cache-Control:no-store"
     ports:
       - "4443:4443"
     volumes:
-      - ./ui:/data:ro
-      - ./config.js:/data/config.js:ro
       - "${DEMO_TLS_CERT_FILE:-/media/share/Drive/exchange/certs/computercat/computercat-cert.pem}:/certs/computercat-cert.pem:ro"
       - "${DEMO_TLS_KEY_FILE:-/media/share/Drive/exchange/certs/computercat/computercat-key.pem}:/certs/computercat-key.pem:ro"
-    restart: unless-stopped
 
 volumes:
-  tauth_data:
   ledger_data:
+  tauth_data:

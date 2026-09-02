@@ -188,6 +188,14 @@ auth:
   tauth_tenant_id: "mprlab"
   session_cookie_name: "app_session"
   public_origin: "https://ledger.example.test"
+ui:
+  description: "Ledger"
+  tauth_url: "https://ledger.example.test"
+  google_client_id: "google-client-id"
+  login_path: "/auth/google"
+  logout_path: "/auth/logout"
+  nonce_path: "/auth/nonce"
+  session_path: "/auth/session"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -230,6 +238,14 @@ auth:
   tauth_tenant_id: "mprlab"
   session_cookie_name: "app_session"
   public_origin: "https://ledger.example.test"
+ui:
+  description: "Ledger"
+  tauth_url: "https://ledger.example.test"
+  google_client_id: "google-client-id"
+  login_path: "/auth/google"
+  logout_path: "/auth/logout"
+  nonce_path: "/auth/nonce"
+  session_path: "/auth/session"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -270,6 +286,14 @@ auth:
   tauth_tenant_id: "mprlab"
   session_cookie_name: "app_session"
   public_origin: "https://ledger.example.test"
+ui:
+  description: "Ledger"
+  tauth_url: "https://ledger.example.test"
+  google_client_id: "google-client-id"
+  login_path: "/auth/google"
+  logout_path: "/auth/logout"
+  nonce_path: "/auth/nonce"
+  session_path: "/auth/session"
 `
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -1074,6 +1098,14 @@ auth:
   tauth_tenant_id: "mprlab"
   session_cookie_name: "app_session"
   public_origin: "https://ledger.example.test"
+ui:
+  description: "Ledger"
+  tauth_url: "https://ledger.example.test"
+  google_client_id: "google-client-id"
+  login_path: "/auth/google"
+  logout_path: "/auth/logout"
+  nonce_path: "/auth/nonce"
+  session_path: "/auth/session"
 `, sqlitePath, listenAddress, httpAddress)
 	if err := os.WriteFile(configFile, []byte(content), 0o644); err != nil {
 		test.Fatalf("write config file: %v", err)
@@ -1252,6 +1284,13 @@ func configuredRuntime(databaseURL string, grpcAddress string, httpAddress strin
 	configuration.Auth.TAuthTenantID = "mprlab"
 	configuration.Auth.SessionCookieName = "app_session"
 	configuration.Auth.PublicOrigin = testRuntimeOrigin
+	configuration.UI.Description = "Ledger"
+	configuration.UI.TAuthURL = testRuntimeOrigin
+	configuration.UI.GoogleClientID = "google-client-id"
+	configuration.UI.LoginPath = "/auth/google"
+	configuration.UI.LogoutPath = "/auth/logout"
+	configuration.UI.NoncePath = "/auth/nonce"
+	configuration.UI.SessionPath = "/auth/session"
 	return configuration
 }
 

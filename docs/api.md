@@ -35,7 +35,7 @@ The server extracts `tenant_id` from the request body and verifies the Bearer cr
 
 An authenticated UserAccount owner creates and revokes credentials through the Ledger HTTP control plane. A credential secret is returned once. Ledger stores only its SHA-256 digest.
 
-The HTTP control plane contract is defined in `api/control/v1/openapi.yaml`.
+The authenticated browser workspace creates and revokes these credentials. The HTTP listener also serves `/config-ui.yaml` as the only browser authentication config. The HTTP control plane contract is defined in `api/control/v1/openapi.yaml`.
 
 ## Data Model
 

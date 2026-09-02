@@ -4,8 +4,14 @@ UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResear
 PRODUCTION_PACKAGES := $(shell go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./...)
 INTEGRATION_TEST_PACKAGES :=
 DEADCODE_ENTRYPOINT_PACKAGES := ./cmd/credit
+NPM ?= npm
+FRONTEND_DIRECTORY := web
+PLAYWRIGHT_BROWSERS_PATH := $(CURDIR)/$(FRONTEND_DIRECTORY)/node_modules/.cache/ms-playwright
+FRONTEND_DEPENDENCY_STAMP := $(PLAYWRIGHT_BROWSERS_PATH)/.ledger-frontend-dependencies
 
-.PHONY: fmt format check-format lint test test-unit test-integration ci tools check-unused-packages build-cgo-off
+export PLAYWRIGHT_BROWSERS_PATH
+
+.PHONY: fmt format check-format lint frontend-dependencies frontend-lint frontend-test test test-unit test-integration ci tools check-unused-packages build-cgo-off
 
 fmt: check-format
 
@@ -22,7 +28,7 @@ check-format:
 		exit 1; \
 	fi
 
-lint: tools
+lint: tools frontend-lint
 	go vet $(UNIT_TEST_PACKAGES)
 	staticcheck -tests=false $(STATICCHECK_PACKAGES)
 	ineffassign $(UNIT_TEST_PACKAGES)
@@ -55,13 +61,27 @@ build-cgo-off:
 	trap 'rm -rf "$$out_dir"' EXIT; \
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$$out_dir/ledgerd" ./cmd/credit
 
+frontend-dependencies: $(FRONTEND_DEPENDENCY_STAMP)
+
+$(FRONTEND_DEPENDENCY_STAMP): $(FRONTEND_DIRECTORY)/package.json $(FRONTEND_DIRECTORY)/package-lock.json
+	cd $(FRONTEND_DIRECTORY) && $(NPM) ci
+	cd $(FRONTEND_DIRECTORY) && ./node_modules/.bin/playwright install chromium --only-shell
+	@mkdir -p "$(PLAYWRIGHT_BROWSERS_PATH)"
+	@touch "$@"
+
+frontend-lint: frontend-dependencies
+	cd $(FRONTEND_DIRECTORY) && $(NPM) run lint
+
+frontend-test: frontend-dependencies
+	cd $(FRONTEND_DIRECTORY) && $(NPM) test
+
 test: test-unit
 
 test-unit:
 	go test $(UNIT_TEST_PACKAGES) -coverprofile=coverage.out -covermode=count
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 100.0) { print "coverage below 100%"; exit 1 } }'
 
-ci: check-format lint test-unit
+ci: check-format lint test-unit frontend-test
 
 tools:
 	@command -v staticcheck >/dev/null 2>&1 || go install honnef.co/go/tools/cmd/staticcheck@latest

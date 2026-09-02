@@ -11,8 +11,14 @@ mprlab_resources:
         ledger-public-origin: LEDGER_PUBLIC_ORIGIN
         tauth-jwt-issuer: TAUTH_JWT_ISSUER
         tauth-jwt-signing-key: TAUTH_JWT_SIGNING_KEY
+        tauth-google-client-id: TAUTH_GOOGLE_CLIENT_ID
+        tauth-login-path: TAUTH_LOGIN_PATH
+        tauth-logout-path: TAUTH_LOGOUT_PATH
+        tauth-nonce-path: TAUTH_NONCE_PATH
+        tauth-session-path: TAUTH_SESSION_PATH
         tauth-session-cookie-name: TAUTH_SESSION_COOKIE_NAME
         tauth-tenant-id: TAUTH_TENANT_ID
+        tauth-url: TAUTH_URL
     - kind: compose_project
       id: runtime
       retired_services:
@@ -46,12 +52,30 @@ mprlab_resources:
             TAUTH_JWT_SIGNING_KEY:
               resource: private
               output: tauth-jwt-signing-key
+            TAUTH_GOOGLE_CLIENT_ID:
+              resource: private
+              output: tauth-google-client-id
+            TAUTH_LOGIN_PATH:
+              resource: private
+              output: tauth-login-path
+            TAUTH_LOGOUT_PATH:
+              resource: private
+              output: tauth-logout-path
+            TAUTH_NONCE_PATH:
+              resource: private
+              output: tauth-nonce-path
+            TAUTH_SESSION_PATH:
+              resource: private
+              output: tauth-session-path
             TAUTH_SESSION_COOKIE_NAME:
               resource: private
               output: tauth-session-cookie-name
             TAUTH_TENANT_ID:
               resource: private
               output: tauth-tenant-id
+            TAUTH_URL:
+              resource: private
+              output: tauth-url
           assets:
             - source: configs/config.ledger.yml
               target: /srv/config.yml
@@ -63,6 +87,11 @@ mprlab_resources:
           ports:
             - container_port: 50051
             - container_port: 8080
+          readiness:
+            protocol: http
+            port: 8080
+            path: /healthz
+            expected_status: 200
       volumes:
         - id: data
           name: ledger-data
@@ -80,3 +109,18 @@ mprlab_resources:
         port: 50051
       health:
         protocol: tcp
+    - kind: runtime_capability
+      id: http
+      name: ledger.http
+      version: 1
+      project: runtime
+      service: ledger-api
+      endpoint:
+        scope: same_host
+        scheme: http
+        alias: ledger-api
+        port: 8080
+      health:
+        protocol: http
+        path: /healthz
+        expected_status: 200

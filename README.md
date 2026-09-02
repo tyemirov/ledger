@@ -20,23 +20,26 @@ It is intentionally **application-agnostic** — you decide when and why credits
 * Reservation introspection APIs (GetReservation / ListReservations)
 * ListEntries filtering (types / reservation_id / idempotency_key_prefix)
 * gRPC API for integration from any language
+* Authenticated browser workspace for UserAccount, tenant, and credential management
+* Owner-scoped Ledger tenants with no application tenant-count limit
+* One-time, revocable tenant credentials for application clients
 * Audit-friendly — no balance overwrites, all changes are recorded
 
 ---
 
 ## Architecture
 
-```
-[Your App / Web API]
-        |
-        |  gRPC
-        v
- [Ledger Service]  <--->  PostgreSQL
+```text
+Browser --> mpr-ui and TAuth --> Ledger HTTP control plane
+                                      |
+Application client --> private gRPC --+--> PostgreSQL or SQLite
 ```
 
 * `pkg/ledger` – core domain logic (ledger) reusable as a Go module
 * `internal/store/gormstore` – database-backed implementation of `ledger.Store` (SQLite/PostgreSQL via GORM)
 * `internal/grpcserver` – gRPC API bindings
+* `internal/controlplane` – authenticated HTTP resources and the browser workspace
+* `internal/useraccount` – UserAccount and Ledger tenant ownership rules
 * `api/credit/v1` – protobuf definitions
 
 ### Authentication
@@ -114,17 +117,28 @@ auth:
   tauth_tenant_id: "${TAUTH_TENANT_ID}"
   session_cookie_name: "${TAUTH_SESSION_COOKIE_NAME}"
   public_origin: "${LEDGER_PUBLIC_ORIGIN}"
+
+ui:
+  description: "Ledger"
+  tauth_url: "${TAUTH_URL}"
+  google_client_id: "${TAUTH_GOOGLE_CLIENT_ID}"
+  login_path: "${TAUTH_LOGIN_PATH}"
+  logout_path: "${TAUTH_LOGOUT_PATH}"
+  nonce_path: "${TAUTH_NONCE_PATH}"
+  session_path: "${TAUTH_SESSION_PATH}"
 ```
 
 Static tenants and plaintext configuration secrets are not supported. An authenticated person provisions one UserAccount, creates named tenants, and creates or revokes each tenant credential through the HTTP control plane.
 
 Environment variables:
 
-The committed configuration requires `DATABASE_URL`, `TAUTH_JWT_SIGNING_KEY`, `TAUTH_JWT_ISSUER`, `TAUTH_TENANT_ID`, `TAUTH_SESSION_COOKIE_NAME`, and `LEDGER_PUBLIC_ORIGIN`. Listener addresses are explicit configuration fields.
+The committed configuration requires `DATABASE_URL`, `LEDGER_PUBLIC_ORIGIN`, `TAUTH_GOOGLE_CLIENT_ID`, `TAUTH_JWT_ISSUER`, `TAUTH_JWT_SIGNING_KEY`, `TAUTH_LOGIN_PATH`, `TAUTH_LOGOUT_PATH`, `TAUTH_NONCE_PATH`, `TAUTH_SESSION_COOKIE_NAME`, `TAUTH_SESSION_PATH`, `TAUTH_TENANT_ID`, and `TAUTH_URL`. Listener addresses are explicit configuration fields.
 
 ### HTTP control plane
 
-The HTTP listener exposes `GET /healthz` and these TAuth-protected resources:
+The HTTP listener serves the browser workspace at `/`, its checked assets under `/assets/ledger/`, the public browser authentication config at `/config-ui.yaml`, and `GET /healthz`.
+
+The listener also exposes these TAuth-protected resources:
 
 - `PUT` and `GET /api/user-account`.
 - `POST` and `GET /api/tenants`.
@@ -132,7 +146,7 @@ The HTTP listener exposes `GET /healthz` and these TAuth-protected resources:
 - `POST` and `GET /api/tenants/{tenant_id}/credentials`.
 - `DELETE /api/tenants/{tenant_id}/credentials/{credential_id}`.
 
-Unsafe requests require the exact configured `Origin` and `X-Ledger-CSRF: 1`. Tenant and credential creation also require `Idempotency-Key`. A new credential secret appears only in its successful creation response.
+The workspace requests a protected resource only after `mpr-ui` reports an authenticated TAuth session. Unsafe requests require the exact configured `Origin` and `X-Ledger-CSRF: 1`. Tenant and credential creation also require `Idempotency-Key`. A new credential secret appears only in its successful creation response.
 
 ---
 
@@ -152,7 +166,7 @@ The manifest retires the legacy `mprlab-nginx-gateway/ledger-api` service.
 It also declares the non-secret configuration and the `ledger.grpc` endpoint.
 `.mprlab/deploy/resources.yml` is the only tracked production declaration. That manifest
 uses the permanent versionless contract and contains the SemVer release policy. Its one service
-declares singular gateway placement and binds the database plus the required TAuth and public-origin values through one typed `private_values` resource. The exact values live only in the ignored mode-0600
+declares singular gateway placement and binds the database plus the required TAuth, browser, and public-origin values through one typed `private_values` resource. The exact values live only in the ignored mode-0600
 `.mprlab/deploy/.env` input, which is excluded from the Ledger Docker build
 context and read only by deployment. Release and publication do not read it.
 The legacy volume remains untouched. The gateway owns release sealing,
@@ -385,9 +399,9 @@ Use the provided `Makefile` targets for local tooling:
 
 ```bash
 make fmt   # verifies gofmt formatting
-make lint  # runs go vet, staticcheck, and ineffassign
+make lint  # runs Go static checks and the checked browser-module compile
 make test  # executes go test with 100% coverage enforcement
-make ci    # runs fmt + lint + test
+make ci    # runs format, lint, Go coverage, and browser acceptance checks
 ```
 
 Docker Compose reads configuration from `.env.ledger`, so the container runtime matches the CLI flag/environment setup.
@@ -402,9 +416,9 @@ To run against Postgres outside Compose, set `DATABASE_URL` to a Postgres DSN (f
 
 ---
 
-## Demo Application
+## Local Workspace
 
-All demo assets (UI, Docker compose, optional backend) live under `demo/`. The ledger service code remains agnostic of the demo; see `demo/README.md` inside that folder for usage.
+The `demo/` composition runs Ledger, TAuth, and one same-origin proxy. Ledger serves the same embedded workspace that the production binary serves. See `demo/README.md` for the required private local config and profile commands.
 
 ---
 

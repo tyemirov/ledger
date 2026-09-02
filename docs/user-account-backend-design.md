@@ -449,8 +449,8 @@ The backend uses these independent implementation slices:
 3. Add tenant creation, owner authorization, pagination, and idempotency.
 4. Add the persistent tenant credential registry and data plane authentication.
 5. Add the bounded migration and remove the static tenant contract.
-6. Add the public runtime route after the exact profile is available.
-7. Add the browser frontend in F001.
+6. Serve the browser workspace and HTTP capability from the Ledger runtime.
+7. Add the exact public route after the hosted route profile is available.
 
 B001 is resolved in the credential-backed data plane boundary. `Batch` reads the nested account tenant before authentication.
 
@@ -468,6 +468,7 @@ B001 is resolved in the credential-backed data plane boundary. `Batch` reads the
 - Do not add a persistent tenant count limit.
 - Retain a disabled identity's UserAccount and tenant ownership until a separate retention policy changes this rule.
 - Run one `ledgerd` process with separate HTTP and gRPC listeners.
+- Serve the F001 browser workspace, `/config-ui.yaml`, and the control plane from the HTTP listener.
 
 ## Required Operator Inputs
 

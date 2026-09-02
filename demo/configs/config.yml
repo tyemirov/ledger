@@ -1,8 +1,20 @@
 service:
-  database_url: "${DATABASE_URL:-sqlite:///tmp/ledger.db}"
-  listen_addr: "${GRPC_LISTEN_ADDR:-:50051}"
+  database_url: "${DATABASE_URL}"
+  grpc_listen_addr: ":50051"
+  http_listen_addr: ":8080"
 
-tenants:
-  - id: "demo"
-    name: "Demo Tenant"
-    secret_key: "${DEMO_TENANT_SECRET}"
+auth:
+  jwt_signing_key: "${TAUTH_JWT_SIGNING_KEY}"
+  jwt_issuer: "${TAUTH_JWT_ISSUER}"
+  tauth_tenant_id: "${TAUTH_TENANT_ID}"
+  session_cookie_name: "${TAUTH_SESSION_COOKIE_NAME}"
+  public_origin: "${LEDGER_PUBLIC_ORIGIN}"
+
+ui:
+  description: "Ledger local"
+  tauth_url: "${TAUTH_URL}"
+  google_client_id: "${TAUTH_GOOGLE_CLIENT_ID}"
+  login_path: "/auth/google"
+  logout_path: "/auth/logout"
+  nonce_path: "/auth/nonce"
+  session_path: "/auth/session"

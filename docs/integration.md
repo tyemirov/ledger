@@ -17,10 +17,13 @@ SQLite databases are created automatically. For Postgres, ensure the database ex
 
 The server prepares the canonical schema and starts separate gRPC and HTTP listeners. Deploy the gRPC port on a private interface.
 
-The HTTP control plane validates TAuth sessions. It owns UserAccount, tenant, and credential management. Use these integration steps for any language:
+The HTTP listener serves the authenticated Ledger workspace at `/`. The workspace uses `/config-ui.yaml`, `mpr-ui`, and the TAuth session to manage UserAccount, tenant, and credential resources. Ledger validates the TAuth session again at each protected HTTP resource.
+
+Use these integration steps for any language:
 
 * Generate gRPC stubs from `api/credit/v1/credit.proto`.
-* Create a named tenant and a separate tenant credential through the authenticated HTTP control plane.
+* Sign in to the Ledger workspace.
+* Create a named tenant and a separate tenant credential in the selected tenant workspace.
 * **Authenticate every request** by setting the `authorization` gRPC metadata header to `Bearer <tenant_credential>`. The credential must belong to the UUID in `tenant_id`. Invalid or revoked credentials receive gRPC `Unauthenticated`. A tenant mismatch receives `PermissionDenied`.
 * Call the relevant RPCs (`GetBalance`, `Grant`, `Spend`, `Refund`, `Reserve`, `Batch`, `ListEntries`, `GetReservation`, etc.) using `tenant_id`, `user_id`, and `ledger_id` to identify the account in the ledger.
 
@@ -32,9 +35,9 @@ ctx := metadata.NewOutgoingContext(ctx, md)
 resp, err := client.GetBalance(ctx, &creditv1.BalanceRequest{...})
 ```
 
-See `README.md` for Docker Compose examples that pair `ledgerd` with demo applications.
+See `demo/README.md` for the local same-origin Ledger and TAuth composition.
 
-The resource and error representations for the HTTP control plane are defined in `api/control/v1/openapi.yaml`.
+The browser config, resource, and error representations for the HTTP control plane are defined in `api/control/v1/openapi.yaml`.
 
 #### Bootstrap grants (client-managed)
 

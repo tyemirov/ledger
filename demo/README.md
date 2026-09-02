@@ -1,92 +1,38 @@
-# Demo Stack Guide
+# Local Ledger Workspace
 
-This demo is self-contained under `demo/`. Runtime config lives in `demo/configs/`, the UI is served through `ghttp`, and the stack can be started in one of two frontend modes:
+The local stack runs Ledger, TAuth, and one same-origin `ghttp` entrypoint. Ledger serves the production workspace and control plane.
 
-- `localhost`: plain HTTP on `http://localhost:8000`
-- `computercat`: HTTPS on `https://localhost:4443` or the computercat host name, using host TLS files
+The proxy sends `/auth` and `/me` to TAuth. It sends all other paths to the Ledger HTTP listener.
 
-## Components
+## Configuration
 
-1. `ledgerd` on `:50051`
-2. `tauth` on `:8081`
-3. `demoapi` on `:9090`
-4. `ghttp` as the UI entrypoint, with `/api`, `/auth`, `/me`, and `/tauth.js` proxied through the same origin
+Keep the local private values in `demo/configs/.env.ledger` and `demo/configs/.env.tauth`. The Ledger file must define these names:
 
-## Config Layout
+- `DATABASE_URL`
+- `LEDGER_PUBLIC_ORIGIN`
+- `TAUTH_GOOGLE_CLIENT_ID`
+- `TAUTH_JWT_ISSUER`
+- `TAUTH_JWT_SIGNING_KEY`
+- `TAUTH_SESSION_COOKIE_NAME`
+- `TAUTH_TENANT_ID`
+- `TAUTH_URL`
 
-- `demo/configs/config.yml`: ledger service config
-- `demo/configs/.env.ledger`: ledger runtime env
-- `demo/configs/tauth.config.yaml`: TAuth config
-- `demo/configs/.env.tauth`: TAuth runtime env
-- `demo/configs/.env.demoapi`: demo backend env
+Use the same TAuth tenant, signing key, cookie name, and Google client ID in both local services.
 
-The shipped demo uses the `demo` tenant and the `demo` ledger ID end to end.
+For the `localhost` profile, use `http://localhost:8000` for `LEDGER_PUBLIC_ORIGIN` and `TAUTH_URL`.
 
-## Google OAuth Client ID
+## Start
 
-To replace the Google OAuth Web client ID:
-
-```bash
-cd demo
-make configure-google-client-id GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
-```
-
-That updates `demo/config.js`, the UI fallbacks, `demo/configs/tauth.config.yaml`, and the TAuth env files in `demo/configs/`.
-
-## Start The Demo
-
-From `demo/`:
+Run one profile from `demo/`:
 
 ```bash
 ./up.sh localhost
 ```
 
-or:
-
 ```bash
 ./up.sh computercat
 ```
 
-`localhost` is the default if you omit the argument.
+The `computercat` profile keeps the existing host TLS file contract. Run `./down.sh` to stop the stack.
 
-Direct Compose equivalents:
-
-```bash
-docker compose --profile localhost up --build
-docker compose --profile computercat up --build
-```
-
-## Frontend Modes
-
-`localhost`:
-- No TLS certificates required
-- UI served at `http://localhost:8000`
-
-`computercat`:
-- Uses TLS on `:4443`
-- Expects host certificate files mounted through:
-  - `DEMO_TLS_CERT_FILE`
-  - `DEMO_TLS_KEY_FILE`
-- If those variables are unset, Compose defaults to `/media/share/Drive/exchange/certs/computercat/computercat-cert.pem` and `/media/share/Drive/exchange/certs/computercat/computercat-key.pem`
-
-## Stop The Demo
-
-From `demo/`:
-
-```bash
-./down.sh
-```
-
-## Smoke Check
-
-After startup:
-
-1. Open the frontend for the selected profile.
-2. Sign in through the header.
-3. Confirm the wallet bootstraps and the balance appears.
-4. Spend, purchase, reserve, capture, release, refund, and batch actions should all flow through the proxied `/api` routes.
-
-Persistent volumes:
-
-- `ledger_data`
-- `tauth_data`
+After sign-in, Ledger provisions one UserAccount. You can create tenants and separate application credentials from the workspace.

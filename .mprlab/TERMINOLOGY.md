@@ -83,6 +83,7 @@ Add repository-specific technical nouns below this line.
 - `data plane`: The gRPC API that performs credit operations.
 - `Ledger account`: A credit namespace that one tenant ID, one user ID, and one ledger ID identify.
 - `Ledger tenant`: A Ledger workspace that contains Ledger accounts and belongs to one UserAccount.
+- `Ledger workspace`: The authenticated browser frontend that manages one UserAccount and its Ledger tenants.
 - `TAuth session`: A TAuth-issued session that identifies an authenticated person.
 - `TAuth tenant`: A TAuth authentication realm that issues sessions for the Ledger application.
 - `tenant credential`: A revocable secret that authorizes a client for one Ledger tenant.

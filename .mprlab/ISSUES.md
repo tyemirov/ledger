@@ -257,7 +257,7 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## Features
 
-- [ ] [F001] (P1) {F002} Add the authenticated Ledger workspace.
+- [-] [F001] (P1) {F002} Add the authenticated Ledger workspace.
   Goal:
   An authenticated user can provision one UserAccount and manage any number of owned Ledger tenants in one secure browser workspace.
   Requirements:

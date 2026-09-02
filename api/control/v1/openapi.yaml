@@ -8,6 +8,17 @@ servers:
 security:
   - tauthSession: []
 paths:
+  /config-ui.yaml:
+    get:
+      operationId: getBrowserConfiguration
+      security: []
+      responses:
+        "200":
+          description: The current MPR UI and TAuth browser configuration.
+          content:
+            application/yaml:
+              schema:
+                type: string
   /healthz:
     get:
       operationId: getHealth
