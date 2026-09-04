@@ -17,6 +17,9 @@ func TestStoreFlow(test *testing.T) {
 	test.Parallel()
 	db := newSQLiteDB(test)
 	store := New(db)
+	if err := store.CheckHealth(test.Context()); err != nil {
+		test.Fatalf("datastore health: %v", err)
+	}
 
 	tenantID, err := ledger.NewTenantID("default")
 	if err != nil {

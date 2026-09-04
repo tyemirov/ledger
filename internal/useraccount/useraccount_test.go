@@ -10,6 +10,7 @@ import (
 const testID = "0196f0ec-3e80-7a54-bd2b-56cfe90bf810"
 
 type testStore struct {
+	Store
 	provisionInput ProvisionInput
 	provisioned    Account
 	created        bool

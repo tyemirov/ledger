@@ -49,6 +49,45 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## Improvements
 
+- [x] [I027] (P1) Standardize HTTP health at `/healthz`.
+  Goal:
+  Make `/healthz` the canonical health endpoint for the Ledger web and API
+  origin. Use the endpoint for readiness without application requests.
+
+  Requirements:
+  - Keep unauthenticated `GET /healthz` on the combined web and API origin.
+  - Return `200` only when the origin can serve its current application contract.
+  - Return a non-success status when a required runtime dependency prevents service.
+  - Send `Cache-Control: no-store` on every health response.
+  - Keep the response free from credentials and internal state.
+  - Do not mutate application state during a probe.
+  - Do not record a probe as application usage or an audit event.
+  - Do not emit routine information-level request events for successful probes.
+  - Keep failed probe evidence in container and deployment diagnostics.
+  - Use `/healthz` for local Compose, runtime capability, and public health checks.
+  - Set `start_interval: 1s` and `interval: 30s` for Docker probes.
+  - Set a bounded `start_period` for the HTTP startup contract.
+  - Preserve protocol-native readiness for the gRPC service.
+  - Keep the selected manifest contract unchanged.
+
+  Deliverables:
+  - Update the endpoint, request logging, orchestration, manifest, documentation, and black-box tests.
+
+  Validation:
+  - Verify unauthenticated `GET /healthz` returns `200` and `Cache-Control: no-store`.
+  - Verify a required dependency failure returns a non-success status.
+  - Verify the gRPC readiness contract remains protocol-native.
+  - Verify Docker probes use the required startup and steady intervals.
+  - Verify successful probes create no routine request events.
+  - Verify failed probes retain diagnostic evidence.
+  - Run `make ci`.
+
+  Resolution:
+  - Added bounded database readiness and minimal `503` responses.
+  - Suppressed successful probe events and retained failure diagnostics.
+  - Updated local probe timing and the OpenAPI contract.
+  - `make ci` passed, including browser and local lifecycle tests.
+
 - [ ] [I025] (P1) {F001,F002} Complete the one-time production UserAccount migration.
   Goal:
   I025 authorizes one migration of the retained production data.

@@ -43,6 +43,11 @@ type Store struct {
 	db *gorm.DB
 }
 
+// CheckHealth verifies the account datastore with a read-only query.
+func (store *Store) CheckHealth(ctx context.Context) error {
+	return store.db.WithContext(ctx).Exec("SELECT 1").Error
+}
+
 // New returns a Store backed by gorm.DB.
 func New(db *gorm.DB) *Store {
 	return &Store{db: db}

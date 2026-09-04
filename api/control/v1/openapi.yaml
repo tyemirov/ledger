@@ -25,11 +25,27 @@ paths:
       security: []
       responses:
         "200":
-          description: The process is healthy.
+          description: The service datastore is available.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthDocument"
+        "503":
+          description: The service datastore is unavailable.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, const: unavailable }
   /api/user-account:
     get:
       operationId: getUserAccount
