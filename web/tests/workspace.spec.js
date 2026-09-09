@@ -1,6 +1,7 @@
 // @ts-check
 
 import { test, expect } from "@playwright/test";
+import { installSharedUI } from "../shared-ui-candidate.js";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
@@ -61,10 +62,17 @@ test.afterAll(async () => {
   if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
 });
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, context }) => {
+  await installSharedUI(context);
+  await context.route(`${baseURL}/auth/**`, (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/auth/session") return route.fulfill({ status: 204, body: "" });
+    if (pathname === "/auth/nonce") return route.fulfill({ json: { nonce: "ledger-layout-nonce" } });
+    throw new Error(`unexpected_layout_auth_request:${pathname}`);
+  });
   await page.route("https://cdn.jsdelivr.net/npm/alpinejs@3.17.1/dist/module.esm.js", (route) => route.fulfill({ contentType: "text/javascript", body: alpineModule }));
   await page.route("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css", (route) => route.fulfill({ contentType: "text/css", body: "" }));
-  await page.route("https://cdn.jsdelivr.net/npm/js-yaml@5.4.1/dist/browser/js-yaml.umd.min.js", (route) => route.fulfill({ contentType: "text/javascript", body: "" }));
+  await page.route("https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js", (route) => route.fulfill({ contentType: "text/javascript", body: "" }));
   await page.route("https://accounts.google.com/gsi/client", (route) => route.fulfill({ contentType: "text/javascript", body: "" }));
   await page.route("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui-config.js", (route) => route.fulfill({
     contentType: "text/javascript",
@@ -112,8 +120,9 @@ test("fails closed when the shared authenticated request path is unavailable", a
 });
 
 test("aligns the public shell controls on shared vertical edges", async ({ page }) => {
+  await page.unroute("https://accounts.google.com/gsi/client");
   await page.unroute("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css");
-  await page.unroute("https://cdn.jsdelivr.net/npm/js-yaml@5.4.1/dist/browser/js-yaml.umd.min.js");
+  await page.unroute("https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js");
   await page.unroute("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui-config.js");
   await page.route(`${baseURL}/api/**`, (route) => {
     const request = route.request();
@@ -129,7 +138,7 @@ test("aligns the public shell controls on shared vertical edges", async ({ page 
   await expect.poll(() => page.evaluate(() => Boolean(customElements.get("mpr-header") && customElements.get("mpr-footer")))).toBe(true);
 
   const brand = page.getByRole("link", { name: "Ledger workspace" });
-  const signIn = page.getByRole("button", { name: "Sign in", exact: true });
+  const signIn = page.getByRole("button", { name: "Sign in with Google", exact: true });
   const privacy = page.getByRole("link", { name: "Privacy • Terms", exact: true });
   const documentation = page.getByRole("button", { name: "Documentation", exact: true });
   await expect(brand).toBeVisible();
@@ -174,7 +183,7 @@ test("aligns the public shell controls on shared vertical edges", async ({ page 
 
 test("maps every theme-switcher quadrant to its Ledger palette", async ({ page }) => {
   await page.unroute("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css");
-  await page.unroute("https://cdn.jsdelivr.net/npm/js-yaml@5.4.1/dist/browser/js-yaml.umd.min.js");
+  await page.unroute("https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js");
   await page.unroute("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui-config.js");
   await page.goto(baseURL);
   await expect.poll(() => page.evaluate(() => Boolean(customElements.get("mpr-footer")))).toBe(true);

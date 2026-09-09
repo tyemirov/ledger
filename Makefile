@@ -72,8 +72,8 @@ $(FRONTEND_DEPENDENCY_STAMP): $(FRONTEND_DIRECTORY)/package.json $(FRONTEND_DIRE
 frontend-lint: frontend-dependencies
 	cd $(FRONTEND_DIRECTORY) && $(NPM) run lint
 
-frontend-test: frontend-dependencies
-	cd $(FRONTEND_DIRECTORY) && $(NPM) test
+frontend-test: frontend-dependencies prepare-shared-ui
+	cd $(FRONTEND_DIRECTORY) && $(NPM) test -- $(FRONTEND_TEST_ARGS)
 
 test: test-unit test-integration
 
@@ -114,3 +114,10 @@ release publish deploy:
 	fi; \
 	$(MAKE) --no-print-directory -C "$${gateway_root}" "app-$@" \
 		MPRLAB_APP_ROOT="$${application_root}"
+
+.PHONY: prepare-shared-ui test-shared-ui
+prepare-shared-ui:
+	cd $(FRONTEND_DIRECTORY) && node --input-type=module -e 'import { prepareSharedUI } from "./shared-ui-candidate.js"; await prepareSharedUI();'
+
+test-shared-ui: frontend-dependencies prepare-shared-ui
+	cd $(FRONTEND_DIRECTORY) && $(NPM) test -- shared-ui.spec.js $(SHARED_UI_TEST_ARGS)

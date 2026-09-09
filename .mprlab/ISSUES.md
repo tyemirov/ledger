@@ -13,6 +13,26 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## BugFixes
 
+- [!] [B003] (P1) Publish the current mpr-ui browser configuration contract.
+  Goal:
+  The `mpr-ui@latest` configuration loader accepts the canonical provider map that Ledger uses.
+  The published loader still requires the obsolete flat Google fields.
+  Requirements:
+  - Keep `mpr-ui@latest` as the shared browser integration surface.
+  - Publish the provider-map configuration loader from the current mpr-ui source.
+  - Do not add the obsolete flat Google configuration to Ledger.
+  Validation:
+  - Load the Ledger shell with the literal `mpr-ui@latest` URLs.
+  - Verify that the loader accepts the explicit Google, Apple, and password provider entries.
+  - Verify that `mpr-header` and `mpr-footer` initialize.
+  Deliverables:
+  - Keep the nested config producer and current footer menu.
+  - Verify the shared UI candidate through the real Ledger service.
+  - Cover login, session restoration, request recovery, and logout at desktop and mobile widths.
+  - Release the loading overlay after recovery of an existing authenticated workspace.
+  - Use `docs/mpr-ui-migration.md` for the remaining publication and production gates.
+  Blocked: Shared publication, public TLS, the F002 Pages change, and live authentication acceptance remain incomplete.
+
 - [x] [B002] (P1) Make every production theme-switcher quadrant functional.
   Goal:
   Each quadrant of the square footer control selects its distinct Ledger theme mode.
