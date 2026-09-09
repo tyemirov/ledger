@@ -17,7 +17,7 @@ The workspace releases its loading overlay after authentication recovery.
 
 ## Candidate Qualification
 
-The test candidate is `bbc21cc264d96b51195e0c1a264ad43f14a205ad`.
+The test candidate is `768f25936497c5aabd426197d21c2100b6e5d9a1`.
 `web/shared-ui-candidate.js` records and verifies all asset SHA-256 values.
 The test cache stays under `web/node_modules`.
 The production asset URLs remain unchanged.
@@ -38,7 +38,7 @@ The source changes correct both failures.
 
 Local `make ci` passed on September 9, 2026.
 It passed static analysis, the Go coverage gate, eight browser scenarios, local lifecycle checks, and the Pages artifact check.
-The validation log is `/tmp/ledger-b003-ci-final.log`.
+The validation log is `/tmp/ledger-b003-b069-ci.log`.
 
 ## Related Working Changes
 
@@ -57,7 +57,7 @@ The API health endpoint returned a TLS handshake error.
 No public runtime or cache result is established for Ledger.
 
 1. Complete the F002 Pages and API source changes.
-2. Qualify the same final library candidate used by all I009 consumers.
+2. Complete final candidate qualification across all I009 consumers.
 3. Prepare the Ledger maintenance procedure and measure browser and CDN cache behavior.
 4. Obtain the user-selected publication window through I009.
 5. Have the user publish the shared library and deploy the approved Ledger release unit.

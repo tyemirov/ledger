@@ -25,6 +25,8 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Load the Ledger shell with the literal `mpr-ui@latest` URLs.
   - Verify that the loader accepts the explicit Google, Apple, and password provider entries.
   - Verify that `mpr-header` and `mpr-footer` initialize.
+  - Final candidate `768f25936497c5aabd426197d21c2100b6e5d9a1` passed local CI with eight browser scenarios.
+  - Local CI includes retained F002 working changes; hosted CI qualifies the committed source separately.
   Deliverables:
   - Keep the nested config producer and current footer menu.
   - Verify the shared UI candidate through the real Ledger service.

@@ -3,11 +3,11 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export const revision = "bbc21cc264d96b51195e0c1a264ad43f14a205ad";
+export const revision = "768f25936497c5aabd426197d21c2100b6e5d9a1";
 const assets = {
   "mpr-ui-config.js": "3f56fbd212a516d2bd8b0b95f73ae7ad82952c10d8d5f4e6f8b44d3233f01304",
   "mpr-ui.js": "3e725dbe911470ca934cb46456369479b6ac232eee5ccba2582bf8d939259ae8",
-  "mpr-ui.css": "31b92536df3a1584b7f19ac50eb61d6c7aff7c710ee92b84c46835194849e816",
+  "mpr-ui.css": "351bbf6c15054528a651571d8c8bd85536eea76c3e574f9335e6cd413878923f",
   "js-yaml.min.js": "45dc3dd03dc07a06705a2c2989b8c7f709013f04bd5386e3279d4e447f07ebd7",
 };
 const directory = path.join(import.meta.dirname, "node_modules/.mpr-ui-candidate", revision);
