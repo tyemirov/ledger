@@ -201,10 +201,39 @@ func (harness *controlHarness) request(method string, path string, body string, 
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 		harness.test.Fatalf("decode response: %v", err)
 	}
-	if response.Header.Get("Cache-Control") != "private, no-store" || response.Header.Get("X-Content-Type-Options") != "nosniff" {
+	wantCacheControl := "private, no-store"
+	if path == "/healthz" {
+		wantCacheControl = "no-store"
+	}
+	if response.Header.Get("Cache-Control") != wantCacheControl || response.Header.Get("X-Content-Type-Options") != "nosniff" {
 		harness.test.Fatalf("security response headers are missing")
 	}
 	return response, payload
+}
+
+func TestHealthReportsUnavailableDatabase(test *testing.T) {
+	harness := newControlHarness(test)
+	response, _ := harness.request(http.MethodGet, "/healthz", "", nil, false, nil)
+	assertStatus(test, response, http.StatusOK)
+	var count int64
+	if err := harness.database.Model(&gormstore.ControlEvent{}).Count(&count).Error; err != nil || count != 0 {
+		test.Fatalf("health created an audit event: count=%d error=%v", count, err)
+	}
+	database, err := harness.database.DB()
+	if err != nil {
+		test.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		test.Fatal(err)
+	}
+	response, payload := harness.request(http.MethodGet, "/healthz", "", nil, false, nil)
+	assertStatus(test, response, http.StatusServiceUnavailable)
+	if len(payload) != 1 || payload["status"] != "unavailable" {
+		test.Fatalf("health exposed internal state: %v", payload)
+	}
+	if len(harness.logger.logs) != 1 || harness.logger.logs[0].StatusCode != http.StatusServiceUnavailable || harness.logger.logs[0].Error == nil {
+		test.Fatalf("missing failure diagnostics: %+v", harness.logger.logs)
+	}
 }
 
 func TestControlPlaneLifecycle(test *testing.T) {
@@ -215,7 +244,7 @@ func TestControlPlaneLifecycle(test *testing.T) {
 	if payload["status"] != "ok" {
 		test.Fatalf("health payload: %v", payload)
 	}
-	if len(harness.logger.logs) != 1 || harness.logger.logs[0].Operation != "GET /healthz" || harness.logger.logs[0].StatusCode != http.StatusOK || harness.logger.logs[0].Duration <= 0 {
+	if len(harness.logger.logs) != 0 {
 		test.Fatalf("health request log: %+v", harness.logger.logs)
 	}
 	response, _ = harness.request(http.MethodGet, "/api/user-account", "", nil, false, nil)

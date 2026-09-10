@@ -185,6 +185,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		if statusCode == 0 {
 			statusCode = http.StatusOK
 		}
+		if request.URL.Path == "/healthz" && statusCode == http.StatusOK {
+			return
+		}
 		handler.logger.LogControlRequest(RequestLog{
 			Operation:     request.Method + " " + request.URL.Path,
 			StatusCode:    statusCode,
@@ -199,7 +202,15 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	handler.mux.ServeHTTP(observed, request)
 }
 
-func (handler *Handler) health(response http.ResponseWriter, _ *http.Request) {
+func (handler *Handler) health(response http.ResponseWriter, request *http.Request) {
+	response.Header().Set("Cache-Control", "no-store")
+	ctx, cancel := context.WithTimeout(request.Context(), time.Second)
+	defer cancel()
+	if err := handler.accounts.CheckHealth(ctx); err != nil {
+		setRequestError(request, err)
+		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+		return
+	}
 	writeJSON(response, http.StatusOK, map[string]string{"status": "ok"})
 }
 

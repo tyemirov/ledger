@@ -96,6 +96,7 @@ func (account Account) CreatedAt() time.Time {
 }
 
 type Store interface {
+	CheckHealth(context.Context) error
 	ProvisionUserAccount(context.Context, ProvisionInput) (Account, bool, error)
 	GetUserAccount(context.Context, ExternalIdentity) (Account, error)
 }
@@ -112,6 +113,11 @@ type Service struct {
 	store   Store
 	now     Clock
 	newUUID UUIDGenerator
+}
+
+// CheckHealth verifies the required account datastore without mutations.
+func (service *Service) CheckHealth(ctx context.Context) error {
+	return service.store.CheckHealth(ctx)
 }
 
 func NewService(store Store, now Clock, newUUID UUIDGenerator) (*Service, error) {
