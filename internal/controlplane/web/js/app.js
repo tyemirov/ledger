@@ -138,7 +138,11 @@ function ledgerWorkspace() {
     },
 
     async openAuthenticatedWorkspace() {
-      if (this.authState === AUTH_STATES.AUTHENTICATED || this.authState === AUTH_STATES.LOADING && this.workspaceController) return;
+      if (this.authState === AUTH_STATES.AUTHENTICATED) {
+        await this.dispatchWorkspaceReady();
+        return;
+      }
+      if (this.authState === AUTH_STATES.LOADING && this.workspaceController) return;
       this.clearProtectedState();
       this.authVersion += 1;
       const version = this.authVersion;

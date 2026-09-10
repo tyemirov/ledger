@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css">
     <link rel="stylesheet" href="/assets/ledger/styles.css">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/js-yaml@5.4.1/dist/browser/js-yaml.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui-config.js"></script>
     <script
       id="mpr-ui-bundle"
@@ -232,7 +232,7 @@
 
     <mpr-footer
       prefix-text="Ledger by Marco Polo Research Lab"
-      links-collection='{"style":"drop-up","text":"Documentation","links":[{"label":"Ledger API","url":"https://github.com/tyemirov/ledger/blob/master/docs/api.md"},{"label":"Integration guide","url":"https://github.com/tyemirov/ledger/blob/master/docs/integration.md"}]}'
+      menu='{"label":"Documentation","placement":"top","sections":[{"id":"documentation","label":"Documentation","mode":"static","links":[{"label":"Ledger API","href":"https://github.com/tyemirov/ledger/blob/master/docs/api.md"},{"label":"Integration guide","href":"https://github.com/tyemirov/ledger/blob/master/docs/integration.md"}]}]}'
       theme-switcher="square"
       theme-config='{"attribute":"data-mpr-theme","targets":["document","body"],"initialMode":"default-dark","modes":[{"value":"default-light","attributeValue":"light","dataset":{"data-ledger-palette":"default"}},{"value":"sunrise-light","attributeValue":"light","dataset":{"data-ledger-palette":"sunrise"}},{"value":"default-dark","attributeValue":"dark","dataset":{"data-ledger-palette":"default"}},{"value":"forest-dark","attributeValue":"dark","dataset":{"data-ledger-palette":"forest"}}]}'
     ></mpr-footer>
