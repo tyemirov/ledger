@@ -401,6 +401,62 @@ func TestControlPlaneLifecycle(test *testing.T) {
 	}
 }
 
+func TestControlPlaneCrossOriginContract(test *testing.T) {
+	harness := newControlHarness(test)
+	request := func(method string, origin string, requestedMethod string, requestedHeaders string) *http.Response {
+		test.Helper()
+		value, err := http.NewRequest(method, harness.server.URL+"/api/tenants", nil)
+		if err != nil {
+			test.Fatalf("new CORS request: %v", err)
+		}
+		if origin != "" {
+			value.Header.Set("Origin", origin)
+		}
+		if requestedMethod != "" {
+			value.Header.Set("Access-Control-Request-Method", requestedMethod)
+		}
+		if requestedHeaders != "" {
+			value.Header.Set("Access-Control-Request-Headers", requestedHeaders)
+		}
+		response, err := http.DefaultClient.Do(value)
+		if err != nil {
+			test.Fatalf("CORS request: %v", err)
+		}
+		test.Cleanup(func() { _ = response.Body.Close() })
+		return response
+	}
+
+	response := request(http.MethodOptions, testOrigin, http.MethodPost, "content-type, idempotency-key, x-ledger-csrf")
+	assertStatus(test, response, http.StatusNoContent)
+	if response.Header.Get("Access-Control-Allow-Origin") != testOrigin || response.Header.Get("Access-Control-Allow-Credentials") != "true" {
+		test.Fatalf("credentialed CORS headers=%v", response.Header)
+	}
+	if response.Header.Get("Access-Control-Allow-Headers") != corsAllowHeaders || response.Header.Get("Access-Control-Allow-Methods") != corsAllowMethods {
+		test.Fatalf("CORS preflight contract=%v", response.Header)
+	}
+	assertStatus(test, request(http.MethodOptions, testOrigin, http.MethodGet, ""), http.StatusNoContent)
+
+	response = request(http.MethodGet, testOrigin, "", "")
+	assertStatus(test, response, http.StatusUnauthorized)
+	if response.Header.Get("Access-Control-Allow-Origin") != testOrigin || response.Header.Get("Access-Control-Allow-Credentials") != "true" {
+		test.Fatalf("actual credentialed CORS headers=%v", response.Header)
+	}
+
+	response = request(http.MethodOptions, "https://wrong.example.test", http.MethodPost, "content-type")
+	assertStatus(test, response, http.StatusForbidden)
+	if response.Header.Get("Access-Control-Allow-Origin") != "" {
+		test.Fatalf("rejected origin received CORS permission: %v", response.Header)
+	}
+	assertStatus(test, request(http.MethodOptions, testOrigin+"/", http.MethodPost, "content-type"), http.StatusForbidden)
+	response = request(http.MethodOptions, testOrigin, http.MethodPatch, "content-type")
+	assertStatus(test, response, http.StatusMethodNotAllowed)
+	if response.Header.Get("Allow") != corsAllowMethods {
+		test.Fatalf("expected Allow %q, got %q", corsAllowMethods, response.Header.Get("Allow"))
+	}
+	assertStatus(test, request(http.MethodOptions, testOrigin, http.MethodPost, "authorization"), http.StatusForbidden)
+	assertStatus(test, request(http.MethodOptions, "", http.MethodPost, "content-type"), http.StatusNotFound)
+}
+
 func TestControlPlaneDependencyAndDatabaseErrors(test *testing.T) {
 	harness := newControlHarness(test)
 	for _, build := range []func() (*Handler, error){
@@ -473,6 +529,7 @@ func TestControlPlaneWorkspaceAssetsAndConfiguration(test *testing.T) {
 		"/assets/ledger/js/client.js":         "text/javascript; charset=utf-8",
 		"/assets/ledger/js/constants.js":      "text/javascript; charset=utf-8",
 		"/assets/ledger/js/contracts.js":      "text/javascript; charset=utf-8",
+		"/assets/ledger/js/profile.js":        "text/javascript; charset=utf-8",
 	} {
 		response, _ := get(path)
 		assertStatus(test, response, http.StatusOK)

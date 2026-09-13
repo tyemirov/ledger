@@ -54,7 +54,7 @@ func (handler *Handler) workspaceAsset(response http.ResponseWriter, request *ht
 		contentType = "text/css; charset=utf-8"
 	}
 	switch name {
-	case "styles.css", "js/alpine-runtime.js", "js/app.js", "js/client.js", "js/constants.js", "js/contracts.js":
+	case "styles.css", "js/alpine-runtime.js", "js/app.js", "js/client.js", "js/constants.js", "js/contracts.js", "js/profile.js":
 		handler.serveBrowserFile(response, "web/"+name, contentType)
 	default:
 		http.NotFound(response, request)

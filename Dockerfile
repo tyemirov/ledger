@@ -17,6 +17,13 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS="${TARGETOS:-$(go env GOOS)}" GOARCH="${TARGETARCH:-$(go env GOARCH)}" go build -o /out/ledgerd ./cmd/credit
 
+# GitHub Pages stage
+FROM scratch AS pages
+COPY internal/controlplane/web/index.html /index.html
+COPY internal/controlplane/web/config-ui.yaml /config-ui.yaml
+COPY internal/controlplane/web/styles.css /assets/ledger/styles.css
+COPY internal/controlplane/web/js /assets/ledger/js
+
 # runtime stage
 FROM alpine:3.21
 WORKDIR /srv

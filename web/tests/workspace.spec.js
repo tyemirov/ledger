@@ -70,6 +70,10 @@ test.beforeEach(async ({ page, context }) => {
     if (pathname === "/auth/nonce") return route.fulfill({ json: { nonce: "ledger-layout-nonce" } });
     throw new Error(`unexpected_layout_auth_request:${pathname}`);
   });
+  await page.route(`${baseURL}/assets/ledger/js/profile.js`, (route) => route.fulfill({
+    contentType: "text/javascript",
+    body: `export const BROWSER_PROFILE=Object.freeze({apiOrigin:${JSON.stringify(baseURL)}});`,
+  }));
   await page.route("https://cdn.jsdelivr.net/npm/alpinejs@3.17.1/dist/module.esm.js", (route) => route.fulfill({ contentType: "text/javascript", body: alpineModule }));
   await page.route("https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css", (route) => route.fulfill({ contentType: "text/css", body: "" }));
   await page.route("https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js", (route) => route.fulfill({ contentType: "text/javascript", body: "" }));
@@ -340,7 +344,7 @@ test("manages tenants and one-time credentials through the authenticated workspa
   expect(authenticatedFetchCalls.every((call) => call.authHostID === "ledger-header")).toBe(true);
   expect(authenticatedFetchCalls.filter((call) => ["PUT", "POST", "DELETE"].includes(call.method)).every((call) => call.policy?.mutationReplay === "authorization-before-domain-work")).toBe(true);
   expect(authenticatedFetchCalls.filter((call) => call.method === "GET").every((call) => call.policy === null)).toBe(true);
-  expect(authenticatedFetchCalls.find((call) => call.method === "POST" && call.input === "/api/tenants")?.body).toBe(JSON.stringify({ name: "Analytics" }));
+  expect(authenticatedFetchCalls.find((call) => call.method === "POST" && call.input === `${baseURL}/api/tenants`)?.body).toBe(JSON.stringify({ name: "Analytics" }));
   expect(authenticatedFetchCalls.find((call) => call.method === "POST" && call.input.endsWith("/credentials"))?.body).toBe("{}");
 
   await page.setViewportSize({ width: 390, height: 844 });

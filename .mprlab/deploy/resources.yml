@@ -8,17 +8,8 @@ mprlab_resources:
       id: private
       bindings:
         database-url: DATABASE_URL
-        ledger-public-origin: LEDGER_PUBLIC_ORIGIN
-        tauth-jwt-issuer: TAUTH_JWT_ISSUER
         tauth-jwt-signing-key: TAUTH_JWT_SIGNING_KEY
         tauth-google-client-id: TAUTH_GOOGLE_CLIENT_ID
-        tauth-login-path: TAUTH_LOGIN_PATH
-        tauth-logout-path: TAUTH_LOGOUT_PATH
-        tauth-nonce-path: TAUTH_NONCE_PATH
-        tauth-session-path: TAUTH_SESSION_PATH
-        tauth-session-cookie-name: TAUTH_SESSION_COOKIE_NAME
-        tauth-tenant-id: TAUTH_TENANT_ID
-        tauth-url: TAUTH_URL
     - kind: compose_project
       id: runtime
       retired_services:
@@ -44,38 +35,21 @@ mprlab_resources:
               resource: private
               output: database-url
             LEDGER_PUBLIC_ORIGIN:
-              resource: private
-              output: ledger-public-origin
-            TAUTH_JWT_ISSUER:
-              resource: private
-              output: tauth-jwt-issuer
+              value: https://ledger.mprlab.com
             TAUTH_JWT_SIGNING_KEY:
-              resource: private
-              output: tauth-jwt-signing-key
+              resource: authentication
+              output: jwt-signing-key
             TAUTH_GOOGLE_CLIENT_ID:
-              resource: private
-              output: tauth-google-client-id
-            TAUTH_LOGIN_PATH:
-              resource: private
-              output: tauth-login-path
-            TAUTH_LOGOUT_PATH:
-              resource: private
-              output: tauth-logout-path
-            TAUTH_NONCE_PATH:
-              resource: private
-              output: tauth-nonce-path
-            TAUTH_SESSION_PATH:
-              resource: private
-              output: tauth-session-path
+              resource: authentication
+              output: google-web-client-id
             TAUTH_SESSION_COOKIE_NAME:
-              resource: private
-              output: tauth-session-cookie-name
+              resource: authentication
+              output: session-cookie-name
             TAUTH_TENANT_ID:
-              resource: private
-              output: tauth-tenant-id
+              resource: authentication
+              output: tenant-id
             TAUTH_URL:
-              resource: private
-              output: tauth-url
+              value: https://ledger-api.mprlab.com
           assets:
             - source: configs/config.ledger.yml
               target: /srv/config.yml
@@ -118,9 +92,68 @@ mprlab_resources:
       endpoint:
         scope: same_host
         scheme: http
-        alias: ledger-api
+        alias: ledger-http
         port: 8080
       health:
         protocol: http
         path: /healthz
         expected_status: 200
+    - kind: tauth_tenant
+      id: authentication
+      capability: tauth.tenants
+      version: 1
+      tenant:
+        id: ledger
+        display_name: Ledger
+        origins:
+          - https://ledger.mprlab.com
+        google_web_client_id:
+          resource: private
+          output: tauth-google-client-id
+        jwt_signing_key:
+          resource: private
+          output: tauth-jwt-signing-key
+        cookie:
+          domain: ledger-api.mprlab.com
+          session_name: ledger_session
+          refresh_name: ledger_refresh
+    - kind: caddy_route
+      id: api
+      hostname: ledger-api.mprlab.com
+      listener: https
+      handlers:
+        - id: authentication
+          path_prefix: /auth
+          upstream: tauth.http
+        - id: profile
+          path_prefix: /me
+          upstream: tauth.http
+        - id: control-plane
+          path_prefix: /api
+          upstream: ledger.http
+        - id: browser-config
+          path_prefix: /config-ui.yaml
+          upstream: ledger.http
+        - id: health
+          path_prefix: /healthz
+          upstream: ledger.http
+      tls:
+        mode: automatic
+    - kind: health_check
+      id: api-health
+      protocol: http
+      url: https://ledger-api.mprlab.com/healthz
+      expected_status: 200
+    - kind: github_pages
+      id: frontend
+      repository: tyemirov/ledger
+      branch: gh-pages
+      domain: ledger.mprlab.com
+      url: https://ledger.mprlab.com/
+      source:
+        kind: container
+        context: .
+        dockerfile: Dockerfile
+        target: pages
+      verification:
+        path: /.mprlab-release.json

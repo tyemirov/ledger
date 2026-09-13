@@ -4,7 +4,7 @@
 
 This document defines the canonical backend architecture for P001. The backend implementation follows this contract.
 
-The exact hosted TAuth and route profile and the production migration owner mapping remain operator inputs. Ledger does not infer these values.
+The hosted profile uses a GitHub Pages frontend at `https://ledger.mprlab.com`. The API and browser authentication origin is `https://ledger-api.mprlab.com`. The production migration owner mapping remains an operator input. Ledger does not infer migration ownership.
 
 ## Product Goal
 
@@ -70,13 +70,14 @@ Tenant credential authenticates an application client for one Ledger tenant. It 
 ```text
 Browser
   |
-  | TAuth session
+  | GitHub Pages frontend
+  | credentialed HTTPS
   v
-Ledger control plane ----> UserAccount service ----> UserAccount store
+API gateway -----------> Ledger control plane ----> UserAccount service ----> UserAccount store
   |                               |
-  |                               +-------------> Ledger tenant store
+  |                               +-------------------------------> Ledger tenant store
   |
-  +---- validates sessions through the published TAuth validator
+  +---- routes browser authentication to TAuth
 
 Application client
   |
@@ -86,6 +87,8 @@ Ledger gRPC data plane --> accounting service ------> Ledger account store
 ```
 
 The control plane manages UserAccount and Ledger tenant resources. It validates TAuth sessions before resource authorization.
+
+The hosted frontend and API use separate origins. The browser sends credentials with each protected API request. Ledger returns credentialed CORS headers only for the exact frontend origin.
 
 The data plane performs credit operations. It resolves a tenant credential to one Ledger tenant before an accounting operation.
 
@@ -450,7 +453,7 @@ The backend uses these independent implementation slices:
 4. Add the persistent tenant credential registry and data plane authentication.
 5. Add the bounded migration and remove the static tenant contract.
 6. Serve the browser workspace and HTTP capability from the Ledger runtime.
-7. Add the exact public route after the hosted route profile is available.
+7. Add the selected public route and TAuth tenant to the production manifest.
 
 B001 is resolved in the credential-backed data plane boundary. `Batch` reads the nested account tenant before authentication.
 
@@ -469,8 +472,18 @@ B001 is resolved in the credential-backed data plane boundary. `Batch` reads the
 - Retain a disabled identity's UserAccount and tenant ownership until a separate retention policy changes this rule.
 - Run one `ledgerd` process with separate HTTP and gRPC listeners.
 - Serve the F001 browser workspace, `/config-ui.yaml`, and the control plane from the HTTP listener.
+- Use `https://ledger.mprlab.com` as the GitHub Pages frontend origin.
+- Use `https://ledger-api.mprlab.com` as the API and browser authentication origin.
+- Use `ledger` as the TAuth tenant ID and `tauth` as the accepted issuer.
+- Use `ledger_session` and `ledger_refresh` cookies with the `ledger-api.mprlab.com` domain.
+- Route `/auth` and `/me` to `tauth.http`. Route `/api`, `/config-ui.yaml`, and `/healthz` to `ledger.http`.
+- Permit credentialed CORS requests only from `https://ledger.mprlab.com`.
+- Publish the frontend as an immutable GitHub Pages resource from the Ledger release.
+- Use automatic API TLS and check `https://ledger-api.mprlab.com/healthz` after deployment.
+- Use the Google Identity Services credential exchange at `/auth/google`. Do not configure a Google redirect callback for this flow.
 
 ## Required Operator Inputs
 
-- Provide the exact Ledger TAuth tenant, public origin, cookie name, issuer, and hosted route profile.
+- Register `https://ledger.mprlab.com` as an authorized JavaScript origin on Google web client `611549676198-d8800qv64voofseor1qod1euto5duivu.apps.googleusercontent.com`.
+- Provide the production database URL and TAuth signing key through the ignored mode-0600 deployment input.
 - Provide one complete owner mapping for the bounded migration. The mapping must include every legacy configured tenant, including a tenant that has no Ledger account row.

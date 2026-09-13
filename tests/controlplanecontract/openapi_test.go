@@ -13,14 +13,20 @@ func TestOpenAPIContract(test *testing.T) {
 		test.Fatalf("read OpenAPI: %v", err)
 	}
 	var document struct {
-		OpenAPI string                          `yaml:"openapi"`
-		Paths   map[string]map[string]yaml.Node `yaml:"paths"`
+		OpenAPI string `yaml:"openapi"`
+		Servers []struct {
+			URL string `yaml:"url"`
+		} `yaml:"servers"`
+		Paths map[string]map[string]yaml.Node `yaml:"paths"`
 	}
 	if err := yaml.Unmarshal(raw, &document); err != nil {
 		test.Fatalf("parse OpenAPI: %v", err)
 	}
 	if document.OpenAPI != "3.1.0" {
 		test.Fatalf("OpenAPI version is %q", document.OpenAPI)
+	}
+	if len(document.Servers) != 1 || document.Servers[0].URL != "https://ledger-api.mprlab.com" {
+		test.Fatalf("OpenAPI servers are %#v", document.Servers)
 	}
 	want := map[string][]string{
 		"/config-ui.yaml":                      {"get"},
