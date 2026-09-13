@@ -13,6 +13,19 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## BugFixes
 
+- [x] [B007] (P1) Remove the `rg` dependency from the Pages artifact check.
+  Goal: Make `make test-pages` operate with the tools that GitHub CI provides.
+  GitHub run `34777609913` stopped at `Makefile:92` with `/bin/sh: 9: rg: not found`.
+  The source commit was `b5e8e2028bf9c8c6559bb7651e1b19af8b6257ff`.
+  Requirements:
+  - Use `grep -F` for the API origin check in the Pages artifact.
+  - Keep the artifact file checks and API origin unchanged.
+  Validation:
+  - Before the change, `make test-pages` returned error 127 without `rg` on `PATH`.
+  - After the change, the same command returned exit code 0 with the same `PATH`.
+  - Local `make ci` returned exit code 0, including eight browser tests and the Pages artifact check.
+  - GitHub CI has not verified this change.
+
 - [!] [B003] (P1) Publish the current mpr-ui browser configuration contract.
   Goal:
   The `mpr-ui@latest` configuration loader accepts the canonical provider map that Ledger uses.
