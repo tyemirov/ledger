@@ -1,5 +1,10 @@
 // @ts-check
 
+import { BROWSER_PROFILE } from "./profile.js";
+
+/** @param {string} path */
+const apiURL = (path) => new URL(path, `${BROWSER_PROFILE.apiOrigin}/`).toString();
+
 export const AUTH_STATES = Object.freeze({
   LOADING: "loading",
   AUTHENTICATED: "authenticated",
@@ -34,8 +39,8 @@ export const MPR_UI = Object.freeze({
 });
 
 export const API = Object.freeze({
-  USER_ACCOUNT: "/api/user-account",
-  TENANTS: "/api/tenants",
+  USER_ACCOUNT: apiURL("/api/user-account"),
+  TENANTS: apiURL("/api/tenants"),
   TENANT_PAGE_SIZE: 50,
   CSRF_HEADER: "X-Ledger-CSRF",
   IDEMPOTENCY_HEADER: "Idempotency-Key",

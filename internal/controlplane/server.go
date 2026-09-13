@@ -21,6 +21,8 @@ const (
 	csrfHeader        = "X-Ledger-CSRF"
 	idempotencyHeader = "Idempotency-Key"
 	requestIDHeader   = "X-Request-ID"
+	corsAllowHeaders  = "Content-Type, Idempotency-Key, X-Ledger-CSRF, X-Request-ID"
+	corsAllowMethods  = "DELETE, GET, POST, PUT"
 	defaultPageSize   = 50
 	maximumPageSize   = 200
 )
@@ -199,7 +201,58 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}()
 	observed.Header().Set("Cache-Control", "private, no-store")
 	observed.Header().Set("X-Content-Type-Options", "nosniff")
+	if !handler.authorizeCrossOrigin(observed, request) {
+		return
+	}
 	handler.mux.ServeHTTP(observed, request)
+}
+
+func (handler *Handler) authorizeCrossOrigin(response http.ResponseWriter, request *http.Request) bool {
+	origin := request.Header.Get("Origin")
+	if origin != "" && origin != handler.publicOrigin {
+		writeError(response, http.StatusForbidden, "origin_rejected", "The request origin is not allowed.", requestID(request))
+		return false
+	}
+	if origin == handler.publicOrigin {
+		response.Header().Set("Access-Control-Allow-Origin", handler.publicOrigin)
+		response.Header().Set("Access-Control-Allow-Credentials", "true")
+		response.Header().Add("Vary", "Origin")
+	}
+	if request.Method != http.MethodOptions {
+		return true
+	}
+	if origin == "" || !strings.HasPrefix(request.URL.Path, "/api/") {
+		http.NotFound(response, request)
+		return false
+	}
+	requestedMethod := request.Header.Get("Access-Control-Request-Method")
+	switch requestedMethod {
+	case http.MethodDelete, http.MethodGet, http.MethodPost, http.MethodPut:
+	default:
+		response.Header().Set("Allow", corsAllowMethods)
+		writeError(response, http.StatusMethodNotAllowed, "cors_method_rejected", "The requested method is not allowed.", requestID(request))
+		return false
+	}
+	allowedHeaders := map[string]struct{}{
+		"content-type":    {},
+		"idempotency-key": {},
+		"x-ledger-csrf":   {},
+		"x-request-id":    {},
+	}
+	for _, name := range strings.Split(request.Header.Get("Access-Control-Request-Headers"), ",") {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" {
+			continue
+		}
+		if _, ok := allowedHeaders[name]; !ok {
+			writeError(response, http.StatusForbidden, "cors_header_rejected", "A requested header is not allowed.", requestID(request))
+			return false
+		}
+	}
+	response.Header().Set("Access-Control-Allow-Headers", corsAllowHeaders)
+	response.Header().Set("Access-Control-Allow-Methods", corsAllowMethods)
+	response.WriteHeader(http.StatusNoContent)
+	return false
 }
 
 func (handler *Handler) health(response http.ResponseWriter, request *http.Request) {
@@ -248,7 +301,7 @@ func (handler *Handler) authenticate(response http.ResponseWriter, request *http
 }
 
 func (handler *Handler) authorizeMutation(response http.ResponseWriter, request *http.Request, requestID string, bodyRequired bool) bool {
-	if strings.TrimRight(strings.TrimSpace(request.Header.Get("Origin")), "/") != handler.publicOrigin {
+	if request.Header.Get("Origin") != handler.publicOrigin {
 		writeError(response, http.StatusForbidden, "origin_rejected", "The request origin is not allowed.", requestID)
 		return false
 	}
