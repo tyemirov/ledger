@@ -30,9 +30,13 @@ It is intentionally **application-agnostic** — you decide when and why credits
 ## Architecture
 
 ```text
-Browser --> mpr-ui and TAuth --> Ledger HTTP control plane
-                                      |
-Application client --> private gRPC --+--> PostgreSQL or SQLite
+Browser --> GitHub Pages frontend
+   |
+   | credentialed HTTPS
+   v
+ledger-api gateway --> mpr-ui and TAuth + Ledger HTTP control plane
+                                              |
+Application client --------> private gRPC ----+--> PostgreSQL or SQLite
 ```
 
 * `pkg/ledger` – core domain logic (ledger) reusable as a Go module
@@ -113,7 +117,7 @@ service:
 
 auth:
   jwt_signing_key: "${TAUTH_JWT_SIGNING_KEY}"
-  jwt_issuer: "${TAUTH_JWT_ISSUER}"
+  jwt_issuer: "tauth"
   tauth_tenant_id: "${TAUTH_TENANT_ID}"
   session_cookie_name: "${TAUTH_SESSION_COOKIE_NAME}"
   public_origin: "${LEDGER_PUBLIC_ORIGIN}"
@@ -122,17 +126,17 @@ ui:
   description: "Ledger"
   tauth_url: "${TAUTH_URL}"
   google_client_id: "${TAUTH_GOOGLE_CLIENT_ID}"
-  login_path: "${TAUTH_LOGIN_PATH}"
-  logout_path: "${TAUTH_LOGOUT_PATH}"
-  nonce_path: "${TAUTH_NONCE_PATH}"
-  session_path: "${TAUTH_SESSION_PATH}"
+  login_path: "/auth/google"
+  logout_path: "/auth/logout"
+  nonce_path: "/auth/nonce"
+  session_path: "/auth/session"
 ```
 
 Static tenants and plaintext configuration secrets are not supported. An authenticated person provisions one UserAccount, creates named tenants, and creates or revokes each tenant credential through the HTTP control plane.
 
 Environment variables:
 
-The committed configuration requires `DATABASE_URL`, `LEDGER_PUBLIC_ORIGIN`, `TAUTH_GOOGLE_CLIENT_ID`, `TAUTH_JWT_ISSUER`, `TAUTH_JWT_SIGNING_KEY`, `TAUTH_LOGIN_PATH`, `TAUTH_LOGOUT_PATH`, `TAUTH_NONCE_PATH`, `TAUTH_SESSION_COOKIE_NAME`, `TAUTH_SESSION_PATH`, `TAUTH_TENANT_ID`, and `TAUTH_URL`. Listener addresses are explicit configuration fields.
+The runtime configuration accepts `DATABASE_URL`, `LEDGER_PUBLIC_ORIGIN`, `TAUTH_GOOGLE_CLIENT_ID`, `TAUTH_JWT_SIGNING_KEY`, `TAUTH_SESSION_COOKIE_NAME`, `TAUTH_TENANT_ID`, and `TAUTH_URL`. The production manifest supplies the fixed public origins as tracked values. It gets the TAuth tenant ID, cookie name, Google client ID, and signing key from its `tauth_tenant` resource. Listener addresses and TAuth paths are explicit configuration fields.
 
 ### HTTP control plane
 
@@ -160,18 +164,43 @@ make publish
 make deploy
 ```
 
-All three commands delegate to the exact sibling `../mprlab-gateway`. Ledger
-declares its Go container and a new retained `ledger-data` volume.
+All three commands use the installed `mprlab-gateway` runtime.
+Each command passes the application Git root through `--app-root`.
+Make sure that `mprlab-gateway` is on `PATH`.
+Use `MPRLAB_GATEWAY_EXECUTABLE` to select an explicit installed command path.
+Keep operator inventory and private config under `MPRLAB_GATEWAY_OPERATOR_ROOT`.
+The default operator root is `$HOME/.config/mprlab-gateway`.
+
+Use `make test-installed-gateway` for the Make wrapper integration checks.
+Use `make test-gateway-plan` to validate the current tracked source through the installed Gateway planner.
+This check commits a disposable Git fixture and plans its release without publication or deployment.
+
+Ledger declares its Go container and a new retained `ledger-data` volume.
 The manifest retires the legacy `mprlab-nginx-gateway/ledger-api` service.
-It also declares the non-secret configuration and the `ledger.grpc` endpoint.
+It also declares the non-secret configuration, `ledger.grpc`, and `ledger.http` capabilities.
 `.mprlab/deploy/resources.yml` is the only tracked production declaration. That manifest
 uses the permanent versionless contract and contains the SemVer release policy. Its one service
-declares singular gateway placement and binds the database plus the required TAuth, browser, and public-origin values through one typed `private_values` resource. The exact values live only in the ignored mode-0600
-`.mprlab/deploy/.env` input, which is excluded from the Ledger Docker build
-context and read only by deployment. Release and publication do not read it.
+declares singular gateway placement and binds the database plus the required TAuth, browser, and public-origin values through typed resources. The exact private values live only in the ignored mode-0600
+`.mprlab/deploy/.env` input. The Docker build excludes this file. Only deployment reads it.
+Release and publication do not read it.
 The legacy volume remains untouched. The gateway owns release sealing,
 immutable publication, deployment convergence, and retry verification. Ledger
 has no Node lifecycle dependency.
+
+### Hosted profile
+
+The hosted application uses two origins:
+
+- `https://ledger.mprlab.com` is the immutable GitHub Pages frontend.
+- `https://ledger-api.mprlab.com` is the Caddy-routed API and authentication origin.
+
+The API route sends `/auth` and `/me` to `tauth.http`. It sends `/api`, `/config-ui.yaml`, and `/healthz` to `ledger.http`. The gRPC capability stays private. The public health check is `https://ledger-api.mprlab.com/healthz`.
+
+The route provisions the TAuth tenant `ledger`. It uses `ledger_session` and `ledger_refresh` cookies with the `ledger-api.mprlab.com` domain. The browser sends credentialed requests to the API origin. Ledger and TAuth allow only the exact frontend origin.
+
+The browser exchanges the Google Identity Services credential at `/auth/google` on the API origin. It does not use a Google redirect callback. Google web client `611549676198-d8800qv64voofseor1qod1euto5duivu.apps.googleusercontent.com` must authorize `https://ledger.mprlab.com` as a JavaScript origin.
+
+The ignored production input must define `DATABASE_URL`, `TAUTH_GOOGLE_CLIENT_ID`, and `TAUTH_JWT_SIGNING_KEY`. The manifest supplies `LEDGER_PUBLIC_ORIGIN` as `https://ledger.mprlab.com`. It supplies `TAUTH_URL` as `https://ledger-api.mprlab.com`.
 
 ```bash
 go run ./cmd/credit --config configs/config.ledger.yml
