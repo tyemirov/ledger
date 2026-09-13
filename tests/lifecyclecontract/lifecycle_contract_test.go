@@ -30,6 +30,7 @@ type lifecycleResource struct {
 	Kind            string             `yaml:"kind"`
 	ID              string             `yaml:"id"`
 	Bindings        map[string]string  `yaml:"bindings"`
+	Capability      string             `yaml:"capability"`
 	Placement       *servicePlacement  `yaml:"placement"`
 	Profiles        *[]string          `yaml:"profiles"`
 	RetiredServices []retiredService   `yaml:"retired_services"`
@@ -42,6 +43,60 @@ type lifecycleResource struct {
 	Service         string             `yaml:"service"`
 	Endpoint        capabilityEndpoint `yaml:"endpoint"`
 	Health          capabilityHealth   `yaml:"health"`
+	Tenant          tauthTenant        `yaml:"tenant"`
+	Hostname        string             `yaml:"hostname"`
+	Listener        string             `yaml:"listener"`
+	Handlers        []routeHandler     `yaml:"handlers"`
+	TLS             routeTLS           `yaml:"tls"`
+	Protocol        string             `yaml:"protocol"`
+	URL             string             `yaml:"url"`
+	ExpectedStatus  int                `yaml:"expected_status"`
+	Repository      string             `yaml:"repository"`
+	Branch          string             `yaml:"branch"`
+	Domain          string             `yaml:"domain"`
+	Source          pagesSource        `yaml:"source"`
+	Verification    pagesVerification  `yaml:"verification"`
+}
+
+type outputReference struct {
+	Resource string `yaml:"resource"`
+	Output   string `yaml:"output"`
+}
+
+type tauthTenant struct {
+	ID                string          `yaml:"id"`
+	DisplayName       string          `yaml:"display_name"`
+	Origins           []string        `yaml:"origins"`
+	GoogleWebClientID outputReference `yaml:"google_web_client_id"`
+	JWTSigningKey     outputReference `yaml:"jwt_signing_key"`
+	Cookie            tauthCookie     `yaml:"cookie"`
+}
+
+type tauthCookie struct {
+	Domain      string `yaml:"domain"`
+	SessionName string `yaml:"session_name"`
+	RefreshName string `yaml:"refresh_name"`
+}
+
+type routeHandler struct {
+	ID         string `yaml:"id"`
+	PathPrefix string `yaml:"path_prefix"`
+	Upstream   string `yaml:"upstream"`
+}
+
+type routeTLS struct {
+	Mode string `yaml:"mode"`
+}
+
+type pagesSource struct {
+	Kind       string `yaml:"kind"`
+	Context    string `yaml:"context"`
+	Dockerfile string `yaml:"dockerfile"`
+	Target     string `yaml:"target"`
+}
+
+type pagesVerification struct {
+	Path string `yaml:"path"`
 }
 
 type retiredService struct {
@@ -88,6 +143,7 @@ type environmentBinding struct {
 	Resource string `yaml:"resource"`
 	Output   string `yaml:"output"`
 	Secret   string `yaml:"secret"`
+	Value    string `yaml:"value"`
 }
 
 type runtimeAsset struct {
@@ -168,24 +224,15 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	if _, statError := os.Stat(filepath.Join(repositoryRoot, ".mprlab", "release.yml")); !os.IsNotExist(statError) {
 		testingContext.Fatalf("obsolete release policy file remains: %v", statError)
 	}
-	if len(manifest.Resources) != 4 {
-		testingContext.Fatalf("expected four production resources, got %d", len(manifest.Resources))
+	if len(manifest.Resources) != 8 {
+		testingContext.Fatalf("expected eight production resources, got %d", len(manifest.Resources))
 	}
 
 	privateResource := requireResource(testingContext, manifest.Resources, "private_values", "private")
 	expectedBindings := map[string]string{
-		"database-url":              "DATABASE_URL",
-		"ledger-public-origin":      "LEDGER_PUBLIC_ORIGIN",
-		"tauth-jwt-issuer":          "TAUTH_JWT_ISSUER",
-		"tauth-jwt-signing-key":     "TAUTH_JWT_SIGNING_KEY",
-		"tauth-google-client-id":    "TAUTH_GOOGLE_CLIENT_ID",
-		"tauth-login-path":          "TAUTH_LOGIN_PATH",
-		"tauth-logout-path":         "TAUTH_LOGOUT_PATH",
-		"tauth-nonce-path":          "TAUTH_NONCE_PATH",
-		"tauth-session-cookie-name": "TAUTH_SESSION_COOKIE_NAME",
-		"tauth-session-path":        "TAUTH_SESSION_PATH",
-		"tauth-tenant-id":           "TAUTH_TENANT_ID",
-		"tauth-url":                 "TAUTH_URL",
+		"database-url":           "DATABASE_URL",
+		"tauth-jwt-signing-key":  "TAUTH_JWT_SIGNING_KEY",
+		"tauth-google-client-id": "TAUTH_GOOGLE_CLIENT_ID",
 	}
 	if !reflect.DeepEqual(privateResource.Bindings, expectedBindings) {
 		testingContext.Fatalf("unexpected private bindings: %#v", privateResource.Bindings)
@@ -217,17 +264,12 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	}
 	expectedEnvironment := map[string]environmentBinding{
 		"DATABASE_URL":              {Resource: "private", Output: "database-url"},
-		"LEDGER_PUBLIC_ORIGIN":      {Resource: "private", Output: "ledger-public-origin"},
-		"TAUTH_JWT_ISSUER":          {Resource: "private", Output: "tauth-jwt-issuer"},
-		"TAUTH_JWT_SIGNING_KEY":     {Resource: "private", Output: "tauth-jwt-signing-key"},
-		"TAUTH_GOOGLE_CLIENT_ID":    {Resource: "private", Output: "tauth-google-client-id"},
-		"TAUTH_LOGIN_PATH":          {Resource: "private", Output: "tauth-login-path"},
-		"TAUTH_LOGOUT_PATH":         {Resource: "private", Output: "tauth-logout-path"},
-		"TAUTH_NONCE_PATH":          {Resource: "private", Output: "tauth-nonce-path"},
-		"TAUTH_SESSION_COOKIE_NAME": {Resource: "private", Output: "tauth-session-cookie-name"},
-		"TAUTH_SESSION_PATH":        {Resource: "private", Output: "tauth-session-path"},
-		"TAUTH_TENANT_ID":           {Resource: "private", Output: "tauth-tenant-id"},
-		"TAUTH_URL":                 {Resource: "private", Output: "tauth-url"},
+		"LEDGER_PUBLIC_ORIGIN":      {Value: "https://ledger.mprlab.com"},
+		"TAUTH_JWT_SIGNING_KEY":     {Resource: "authentication", Output: "jwt-signing-key"},
+		"TAUTH_GOOGLE_CLIENT_ID":    {Resource: "authentication", Output: "google-web-client-id"},
+		"TAUTH_SESSION_COOKIE_NAME": {Resource: "authentication", Output: "session-cookie-name"},
+		"TAUTH_TENANT_ID":           {Resource: "authentication", Output: "tenant-id"},
+		"TAUTH_URL":                 {Value: "https://ledger-api.mprlab.com"},
 	}
 	if !reflect.DeepEqual(ledgerService.Environment, expectedEnvironment) {
 		testingContext.Fatalf("unexpected service environment: %#v", ledgerService.Environment)
@@ -259,24 +301,126 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	if httpCapability.Name != "ledger.http" || httpCapability.Version != 1 || httpCapability.Project != "runtime" || httpCapability.Service != "ledger-api" {
 		testingContext.Fatalf("unexpected HTTP runtime capability: %#v", httpCapability)
 	}
-	if httpCapability.Endpoint != (capabilityEndpoint{Scope: "same_host", Scheme: "http", Alias: "ledger-api", Port: 8080}) || httpCapability.Health != (capabilityHealth{Protocol: "http", Path: "/healthz", ExpectedStatus: 200}) {
+	if httpCapability.Endpoint != (capabilityEndpoint{Scope: "same_host", Scheme: "http", Alias: "ledger-http", Port: 8080}) || httpCapability.Health != (capabilityHealth{Protocol: "http", Path: "/healthz", ExpectedStatus: 200}) {
 		testingContext.Fatalf("unexpected HTTP capability endpoint or health: %#v %#v", httpCapability.Endpoint, httpCapability.Health)
+	}
+
+	tauthResource := requireResource(testingContext, manifest.Resources, "tauth_tenant", "authentication")
+	if tauthResource.Capability != "tauth.tenants" || tauthResource.Version != 1 {
+		testingContext.Fatalf("unexpected TAuth tenant capability: %#v", tauthResource)
+	}
+	expectedTAuthTenant := tauthTenant{
+		ID:                "ledger",
+		DisplayName:       "Ledger",
+		Origins:           []string{"https://ledger.mprlab.com"},
+		GoogleWebClientID: outputReference{Resource: "private", Output: "tauth-google-client-id"},
+		JWTSigningKey:     outputReference{Resource: "private", Output: "tauth-jwt-signing-key"},
+		Cookie:            tauthCookie{Domain: "ledger-api.mprlab.com", SessionName: "ledger_session", RefreshName: "ledger_refresh"},
+	}
+	if !reflect.DeepEqual(tauthResource.Tenant, expectedTAuthTenant) {
+		testingContext.Fatalf("unexpected TAuth tenant: %#v", tauthResource.Tenant)
+	}
+
+	apiRoute := requireResource(testingContext, manifest.Resources, "caddy_route", "api")
+	if apiRoute.Hostname != "ledger-api.mprlab.com" || apiRoute.Listener != "https" || apiRoute.TLS != (routeTLS{Mode: "automatic"}) {
+		testingContext.Fatalf("unexpected API route: %#v", apiRoute)
+	}
+	expectedHandlers := []routeHandler{
+		{ID: "authentication", PathPrefix: "/auth", Upstream: "tauth.http"},
+		{ID: "profile", PathPrefix: "/me", Upstream: "tauth.http"},
+		{ID: "control-plane", PathPrefix: "/api", Upstream: "ledger.http"},
+		{ID: "browser-config", PathPrefix: "/config-ui.yaml", Upstream: "ledger.http"},
+		{ID: "health", PathPrefix: "/healthz", Upstream: "ledger.http"},
+	}
+	if !reflect.DeepEqual(apiRoute.Handlers, expectedHandlers) {
+		testingContext.Fatalf("unexpected API route handlers: %#v", apiRoute.Handlers)
+	}
+
+	apiHealth := requireResource(testingContext, manifest.Resources, "health_check", "api-health")
+	if apiHealth.Protocol != "http" || apiHealth.URL != "https://ledger-api.mprlab.com/healthz" || apiHealth.ExpectedStatus != 200 {
+		testingContext.Fatalf("unexpected API health check: %#v", apiHealth)
+	}
+
+	frontend := requireResource(testingContext, manifest.Resources, "github_pages", "frontend")
+	if frontend.Repository != "tyemirov/ledger" || frontend.Branch != "gh-pages" || frontend.Domain != "ledger.mprlab.com" || frontend.URL != "https://ledger.mprlab.com/" {
+		testingContext.Fatalf("unexpected frontend resource: %#v", frontend)
+	}
+	if frontend.Source != (pagesSource{Kind: "container", Context: ".", Dockerfile: "Dockerfile", Target: "pages"}) || frontend.Verification != (pagesVerification{Path: "/.mprlab-release.json"}) {
+		testingContext.Fatalf("unexpected frontend source or verification: %#v %#v", frontend.Source, frontend.Verification)
+	}
+
+	runtimeConfiguration := string(readFile(testingContext, filepath.Join(repositoryRoot, "configs", "config.ledger.yml")))
+	for _, requiredFragment := range []string{
+		`jwt_issuer: "tauth"`,
+		`login_path: "/auth/google"`,
+		`logout_path: "/auth/logout"`,
+		`nonce_path: "/auth/nonce"`,
+		`session_path: "/auth/session"`,
+	} {
+		if !strings.Contains(runtimeConfiguration, requiredFragment) {
+			testingContext.Fatalf("runtime configuration is missing canonical fragment %q", requiredFragment)
+		}
+	}
+	for _, obsoleteVariable := range []string{
+		"TAUTH_JWT_ISSUER",
+		"TAUTH_LOGIN_PATH",
+		"TAUTH_LOGOUT_PATH",
+		"TAUTH_NONCE_PATH",
+		"TAUTH_SESSION_PATH",
+	} {
+		if strings.Contains(runtimeConfiguration, obsoleteVariable) {
+			testingContext.Fatalf("runtime configuration retains obsolete variable %q", obsoleteVariable)
+		}
+	}
+	pagesConfiguration := string(readFile(testingContext, filepath.Join(repositoryRoot, "internal", "controlplane", "web", "config-ui.yaml")))
+	for _, requiredFragment := range []string{
+		`- "https://ledger.mprlab.com"`,
+		`tauthUrl: "https://ledger-api.mprlab.com"`,
+		`tenantId: "ledger"`,
+		`providers:`,
+		`clientId: "611549676198-d8800qv64voofseor1qod1euto5duivu.apps.googleusercontent.com"`,
+		`loginPath: "/auth/google"`,
+		`noncePath: "/auth/nonce"`,
+		`apple:`,
+		`password:`,
+	} {
+		if !strings.Contains(pagesConfiguration, requiredFragment) {
+			testingContext.Fatalf("Pages authentication configuration is missing %q", requiredFragment)
+		}
+	}
+	pagesTemplate := string(readFile(testingContext, filepath.Join(repositoryRoot, "internal", "controlplane", "web", "index.html")))
+	for _, requiredFragment := range []string{
+		`https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js`,
+		`data-config-url="/config-ui.yaml"`,
+		`data-mpr-ui-bundle-src="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.js"`,
+	} {
+		if !strings.Contains(pagesTemplate, requiredFragment) {
+			testingContext.Fatalf("Pages template is missing %q", requiredFragment)
+		}
+	}
+	pagesProfile := string(readFile(testingContext, filepath.Join(repositoryRoot, "internal", "controlplane", "web", "js", "profile.js")))
+	for _, requiredFragment := range []string{
+		`"http://localhost:8000": Object.freeze({ apiOrigin: "http://localhost:8000" })`,
+		`"https://ledger.mprlab.com": Object.freeze({ apiOrigin: "https://ledger-api.mprlab.com" })`,
+		`ledger_browser_profile_missing`,
+	} {
+		if !strings.Contains(pagesProfile, requiredFragment) {
+			testingContext.Fatalf("browser profile is missing %q", requiredFragment)
+		}
+	}
+	dockerfile := string(readFile(testingContext, filepath.Join(repositoryRoot, "Dockerfile")))
+	for _, requiredFragment := range []string{
+		"FROM scratch AS pages",
+		"COPY internal/controlplane/web/config-ui.yaml /config-ui.yaml",
+		"COPY internal/controlplane/web/js /assets/ledger/js",
+	} {
+		if !strings.Contains(dockerfile, requiredFragment) {
+			testingContext.Fatalf("Dockerfile is missing Pages fragment %q", requiredFragment)
+		}
 	}
 
 	requireExactIgnore(testingContext, filepath.Join(repositoryRoot, ".gitignore"), ".mprlab/deploy/.env", false)
 	requireExactIgnore(testingContext, filepath.Join(repositoryRoot, "Dockerfile.dockerignore"), ".mprlab/deploy/.env", true)
-
-	makefileContent := string(readFile(testingContext, filepath.Join(repositoryRoot, "Makefile")))
-	for _, requiredFragment := range []string{
-		"release publish deploy:",
-		`gateway_root="$$(dirname "$${application_root}")/mprlab-gateway"`,
-		"\"app-$@\"",
-		"MPRLAB_APP_ROOT",
-	} {
-		if !strings.Contains(makefileContent, requiredFragment) {
-			testingContext.Fatalf("Makefile is missing lifecycle wrapper fragment %q", requiredFragment)
-		}
-	}
 }
 
 func locateRepositoryRoot(testingContext *testing.T) string {
