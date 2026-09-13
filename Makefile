@@ -1,7 +1,7 @@
-GO_SOURCES := $(shell find . -name '*.go' -not -path "./vendor/*" -not -path "./.git/*" -not -path "*/.git/*")
-STATICCHECK_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1)
-UNIT_TEST_PACKAGES := $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1 | grep -v github.com/MarkoPoloResearchLab/ledger/tests/locallifecycle)
-PRODUCTION_PACKAGES := $(shell go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./...)
+GO_SOURCES = $(shell find . -name '*.go' -not -path "./vendor/*" -not -path "./.git/*" -not -path "*/.git/*")
+STATICCHECK_PACKAGES = $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1)
+UNIT_TEST_PACKAGES = $(shell go list ./... | grep -v github.com/MarkoPoloResearchLab/ledger/api/credit/v1 | grep -v github.com/MarkoPoloResearchLab/ledger/tests/locallifecycle)
+PRODUCTION_PACKAGES = $(shell go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./...)
 INTEGRATION_TEST_PACKAGES := ./tests/locallifecycle
 DEADCODE_ENTRYPOINT_PACKAGES := ./cmd/credit
 NPM ?= npm
@@ -11,7 +11,7 @@ FRONTEND_DEPENDENCY_STAMP := $(PLAYWRIGHT_BROWSERS_PATH)/.ledger-frontend-depend
 
 export PLAYWRIGHT_BROWSERS_PATH
 
-.PHONY: fmt format check-format lint frontend-dependencies frontend-lint frontend-test test test-unit test-integration test-local-lifecycle ci tools check-unused-packages build-cgo-off up down
+.PHONY: fmt format check-format lint frontend-dependencies frontend-lint frontend-test test test-unit test-integration test-local-lifecycle test-pages ci tools check-unused-packages build-cgo-off up down
 
 fmt: check-format
 
@@ -81,12 +81,23 @@ test-unit:
 	go test $(UNIT_TEST_PACKAGES) -coverprofile=coverage.out -covermode=count
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 100.0) { print "coverage below 100%"; exit 1 } }'
 
-test-integration: frontend-test test-local-lifecycle
+test-integration: test-installed-gateway frontend-test test-local-lifecycle test-pages
 
 test-local-lifecycle:
 	bash -n demo/up.sh demo/down.sh
 	LEDGER_LOCAL_LEDGER_ENV_FILE=/dev/null LEDGER_LOCAL_TAUTH_ENV_FILE=/dev/null docker compose --file demo/docker-compose.yml --project-name ledger-local config --quiet
 	go test $(INTEGRATION_TEST_PACKAGES) -count=1
+
+test-pages:
+	@set -eu; \
+	pages_output="$$(mktemp -d)"; \
+	trap 'rm -rf "$$pages_output"' EXIT; \
+	docker build --target pages --output "type=local,dest=$$pages_output" .; \
+	test -f "$$pages_output/index.html"; \
+	test -f "$$pages_output/config-ui.yaml"; \
+	test -f "$$pages_output/assets/ledger/styles.css"; \
+	test -f "$$pages_output/assets/ledger/js/app.js"; \
+	rg -F 'https://ledger-api.mprlab.com' "$$pages_output/config-ui.yaml" "$$pages_output/assets/ledger/js/profile.js" >/dev/null
 
 up:
 	@./demo/up.sh
@@ -102,18 +113,18 @@ tools:
 	@command -v errcheck >/dev/null 2>&1 || go install github.com/kisielk/errcheck@latest
 	@command -v deadcode >/dev/null 2>&1 || go install golang.org/x/tools/cmd/deadcode@latest
 
+MPRLAB_GATEWAY_EXECUTABLE ?= mprlab-gateway
+
 .PHONY: release publish deploy
 
 release publish deploy:
 	@application_root="$$(git rev-parse --show-toplevel)"; \
-	gateway_root="$$(dirname "$${application_root}")/mprlab-gateway"; \
-	if [ ! -d "$${gateway_root}" ]; then \
-		printf "required sibling gateway is missing: %s; clone mprlab-gateway at exactly %s\n" \
-			"$${gateway_root}" "$${gateway_root}" >&2; \
+	if ! command -v "$(MPRLAB_GATEWAY_EXECUTABLE)" >/dev/null 2>&1; then \
+		printf 'Gateway runtime is unavailable: %s. Install a released runtime and add its command directory to PATH.\n' \
+			"$(MPRLAB_GATEWAY_EXECUTABLE)" >&2; \
 		exit 2; \
 	fi; \
-	$(MAKE) --no-print-directory -C "$${gateway_root}" "app-$@" \
-		MPRLAB_APP_ROOT="$${application_root}"
+	exec "$(MPRLAB_GATEWAY_EXECUTABLE)" "app-$@" --app-root "$${application_root}"
 
 .PHONY: prepare-shared-ui test-shared-ui
 prepare-shared-ui:
@@ -121,3 +132,11 @@ prepare-shared-ui:
 
 test-shared-ui: frontend-dependencies prepare-shared-ui
 	cd $(FRONTEND_DIRECTORY) && $(NPM) test -- shared-ui.spec.js $(SHARED_UI_TEST_ARGS)
+
+.PHONY: test-installed-gateway
+test-installed-gateway:
+	bash tests/installed-gateway.sh
+
+.PHONY: test-gateway-plan
+test-gateway-plan:
+	bash tests/gateway-plan.sh
