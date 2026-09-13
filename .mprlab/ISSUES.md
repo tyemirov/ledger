@@ -69,6 +69,19 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Persistent credentials authenticate the nested tenant before the handler runs.
   - Every handler compares the authenticated tenant with its addressed tenant.
 
+- [x] [B006] Give the HTTP capability a unique runtime alias.
+  Goal: Make the Ledger manifest valid for installed Gateway planning.
+  Requirements:
+  - Keep `ledger-api` as the gRPC alias.
+  - Use `ledger-http` as the HTTP alias for the same service.
+  - Keep public routes bound to the `ledger.http` capability.
+  Validation:
+  - Installed Gateway planning rejected the duplicate `ledger-api` alias.
+  - `make test-gateway-plan` reproduced this error from a disposable Git fixture with the current tracked source.
+  - The corrected `make test-gateway-plan` passed with installed Gateway v4.0.3.
+  - Final `make ci` passed.
+
+
 ## Improvements
 
 - [x] [I027] (P1) Standardize HTTP health at `/healthz`.
@@ -110,14 +123,37 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Updated local probe timing and the OpenAPI contract.
   - `make ci` passed, including browser and local lifecycle tests.
 
-- [ ] [I025] (P1) {F001,F002} Complete the one-time production UserAccount migration.
+- [ ] [I026] (P1) {I025,F001,F002,F003} Deploy and accept the UserAccount runtime.
+  Goal:
+  I026 deploys the completed UserAccount runtime after the one-time production migration.
+  It does not own application configuration or data migration.
+  Requirements:
+  - Start production deployment only after I025 is resolved.
+  - Use the exact hosted profile and manifest that F002 defines.
+  - Use the canonical Ledger release, publication, and deployment lifecycle.
+  - Keep source CI, release, publication, deployment, runtime, and public acceptance results separate.
+  Deliverables:
+  - Deploy the exact published Ledger image and selected configuration.
+  - Activate each migrated application through an official F003 client with its canonical tenant ID and tenant credential.
+  - Record production deployment and client verification without private values.
+  Validation:
+  - Verify the frontend and `/config-ui.yaml` at `https://ledger.mprlab.com` after deployment.
+  - Verify `https://ledger-api.mprlab.com/healthz` after deployment.
+  - Verify browser authentication through the Ledger TAuth tenant and selected Google web client.
+  - Verify credentialed frontend requests can use the protected API.
+  - Verify the session and refresh cookies use the selected names, domain boundary, `Secure`, `HttpOnly`, and `SameSite` behavior.
+  - Verify the backend authorization boundary and authenticated workspace.
+  - Verify the UserAccount lists each approved migrated Ledger tenant.
+  - Request a balance through each updated production application and its official F003 client.
+  - Verify each old static credential and legacy tenant ID is rejected.
+
+- [ ] [I025] (P1) {F001,F002,F003} Complete the one-time production UserAccount migration.
   Goal:
   I025 authorizes one migration of the retained production data.
   It does not add a migration capability to normal startup or deployment.
   The 2026-09-02 production audit found legacy tenant data in the retained SQLite database.
   The database contains seven `hecate` accounts, four `ps` accounts, and 41 ledger entries.
   The migration preserves all accounting history and gives each approved UserAccount its Ledger tenants.
-  Each current client uses its canonical tenant ID and tenant credential after deployment.
   Requirements:
   - Use the retained `ledger-data` SQLite database as the only production migration source.
   - Select one production TAuth tenant for the Ledger workspace.
@@ -140,9 +176,6 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Do not call the migration from Ledger startup, `make deploy`, or a recurring deployment step.
   - Do not add migration input to the normal runtime contract.
   - Keep application-specific migration logic out of `mprlab-gateway`.
-  - Stage each canonical tenant ID and tenant credential in its client before runtime activation.
-  - Use each client repository's canonical private deployment input.
-  - Activate Ledger and each client in one controlled production sequence.
   - Reject each old tenant ID and static credential after the migration.
   - Do not add dual reads, dual writes, legacy credentials, or compatibility paths.
   - Remove the migration command, private input, and temporary operator automation after production verification.
@@ -150,8 +183,6 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Prepare one temporary Ledger-owned operator procedure for the existing migration command.
   - Prepare one validated private owner mapping for all configured legacy tenants.
   - Prepare canonical tenant identifiers and credentials for PoodleScanner, Hecate, and NameSignal.
-  - Update each client through its repository-owned deployment contract.
-  - Remove the obsolete static tenant secrets from the Ledger deployment input.
   - Delete all temporary migration code, targets, files, and documentation after production verification.
   - Keep the final runtime and deployment contracts free of migration behavior.
   - Record the production migration and client verification results without secret values.
@@ -163,15 +194,12 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Record current account, entry, reservation, and balance values immediately before production migration.
   - Compare each recorded value with the canonical database after migration.
   - Verify each Ledger account references its approved canonical Ledger tenant.
-  - Authenticate through the selected production TAuth tenant and open the same UserAccount.
-  - Verify the UserAccount lists each approved migrated Ledger tenant.
-  - Request a balance through each updated production client and its canonical tenant credential.
-  - Verify each old static credential and legacy tenant ID is rejected.
+  - Verify the canonical database contains no legacy tenant ID or plaintext tenant secret.
   - Verify no private mapping value appears in Git, logs, plans, receipts, or browser data.
   - Verify normal startup does not do or schedule a data migration.
   - Verify subsequent deployments require only the canonical schema and normal runtime inputs.
   - Verify the repository contains no migration command, target, mapping file, or startup migration branch.
-  - Record source CI, release, publication, deployment, runtime, and client acceptance as separate results.
+  - Record source CI, migration artifact, production mutation, and database verification as separate results.
   - Remove the migration command only after all production checks pass.
 
 - [x] [I024] (P0) Use the permanent versionless selected application manifest.
@@ -212,6 +240,23 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Changed files: `.mprlab/deploy/resources.yml`, `.mprlab/ISSUES.md`,
     `CHANGELOG.md`, `README.md`, and
     `tests/lifecyclecontract/lifecycle_contract_test.go`.
+
+- [x] [I028] {B006} Use the installed Gateway runtime.
+  Goal: Run the application lifecycle through the installed `mprlab-gateway` command.
+  Requirements:
+  - Keep `make release`, `make publish`, and `make deploy` as the public commands.
+  - Pass the application Git root through `--app-root`.
+  - Use `MPRLAB_GATEWAY_EXECUTABLE` for an explicit installed command path.
+  - Keep inventory and private config under `MPRLAB_GATEWAY_OPERATOR_ROOT`.
+  - Run Go source and package queries only when the selected Make target requires them.
+  Validation:
+  - The public Make integration test reproduced the required sibling-checkout failure.
+  - After the wrapper change, the integration test exposed unrelated development-tool queries during Make initialization.
+  - `make test-installed-gateway` and final `make ci` passed.
+  - `make test-gateway-plan` accepted the edited manifest with installed Gateway v4.0.3.
+  - Governor reported existing managed-content drift in `.mprlab/POLICY.md` and `.mprlab/AGENTS.DOCKER.md`.
+  - Release, publication, and deployment were not run.
+
 
 ## Maintenance
 
@@ -399,7 +444,85 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## Features
 
-- [-] [F001] (P1) {F002} Add the authenticated Ledger workspace.
+- [ ] [F003] (P1) Add official Ledger data-plane clients.
+  Goal:
+  Applications use one Ledger-owned client contract for private gRPC credit operations.
+  Ledger supplies Go and Python packages and one standalone executable from the canonical protobuf contract.
+  Requirements:
+  - Use `api/credit/v1/credit.proto` as the only RPC schema.
+  - Generate the Go and Python transport types from this schema.
+  - Keep generated transport types behind each supported client API.
+  - Treat direct generated-stub use as an unsupported application integration.
+  - Keep the private gRPC data plane. Do not add an HTTP mirror.
+  - Keep the browser control-plane client outside this client suite.
+  - Provide the complete `CreditService` operation set in each client.
+  - Require a gRPC target, tenant ID, tenant credential, ledger ID, and transport mode during construction.
+  - Validate all configuration once at the client boundary.
+  - Add the tenant credential as Bearer authorization metadata to every RPC.
+  - Construct each account reference from the configured tenant ID and ledger ID.
+  - Require operation data, resource IDs, and idempotency keys as method inputs.
+  - Require caller-owned idempotency keys for each retry-sensitive mutation.
+  - Propagate Go contexts and Python cancellation or timeout values to gRPC.
+  - Do not retry a mutation without the original idempotency key and an explicit retry policy.
+  - Preserve canonical gRPC status codes and causes in typed client errors.
+  - Require an explicit secure or plaintext transport selection. Do not infer a fallback.
+  - Never expose the tenant credential in logs, errors, command arguments, output, or examples.
+  - Close each owned gRPC connection or channel explicitly.
+  - Keep equivalent behavior for shared operations in all three clients.
+  - Complete the Hecate, NameSignal, and PoodleScanner client changes before F003 is resolved.
+  - Replace direct generated-stub construction in application runtime code, tools, and live tests.
+  - Remove application-owned gRPC dialing, Bearer metadata injection, account references, and status translation that the official client owns.
+  - Keep each application's credit policy and application API behavior in its application repository.
+  Deliverables:
+  - Add `pkg/ledgerclient` as the public Go client package.
+  - Add a validated Go configuration type, constructor, operation methods, typed errors, and close operation.
+  - Add `clients/python` as the typed `mprlab_ledger` Python distribution.
+  - Provide synchronous and asyncio Python clients with one validated configuration contract.
+  - Build Python source and wheel distributions from the Ledger release version.
+  - Add `cmd/ledgerctl` as the standalone executable.
+  - Implement each `ledgerctl` operation through `pkg/ledgerclient`.
+  - Read the CLI tenant credential from `LEDGER_TENANT_CREDENTIAL` only.
+  - Use JSON input and output for structured CLI operations.
+  - Return stable nonzero exit codes and typed error output for failures.
+  - Add deterministic protobuf generation and stale-artifact checks to the Makefile.
+  - Add the Python distributions and multi-platform `ledgerctl` binaries to the Ledger release artifacts.
+  - Publish one Ledger release that contains the official Go client before the application changes.
+  - Update Hecate billing and server code to use `pkg/ledgerclient`.
+  - Update the NameSignal Ledger wrapper, server, command tools, and live tests to use `pkg/ledgerclient`.
+  - Update the PoodleScanner credit service and tests to use `pkg/ledgerclient`.
+  - Resolve the Ledger module through an `@latest` package input in each application repository.
+  - Update each application config and deployment contract for the official client configuration.
+  - Remove each obsolete application credential injector and direct `CreditServiceClient` constructor.
+  - Replace raw gRPC stub and metadata examples with official client examples.
+  - Document the Go, Python, and CLI configuration and lifecycle contracts.
+  - Add the applicable Python stack guide before Python source enters the repository.
+  Validation:
+  - Start the real Ledger server with SQLite for client acceptance tests.
+  - Exercise every `CreditService` RPC through the Go package.
+  - Exercise every `CreditService` RPC through the Python package.
+  - Exercise every `CreditService` RPC through `ledgerctl`.
+  - Verify valid, missing, malformed, revoked, and tenant-mismatched credentials.
+  - Verify idempotent mutation replay with the original caller-owned key.
+  - Verify cancellation, deadlines, unavailable transport, and canonical error preservation.
+  - Verify each client rejects incomplete or invalid configuration before a connection attempt.
+  - Verify no client result, log, error, process argument, or example contains a tenant credential.
+  - Build and install the Python distributions in a clean virtual environment.
+  - Build each declared `ledgerctl` platform artifact and run its public entry point.
+  - Regenerate protobuf artifacts and verify that the repository has no diff.
+  - Run Hecate credit operations through its real application entry point and the official client.
+  - Verify Hecate uses `Grant`, `Spend`, and `GetBalance` without direct stub construction.
+  - Run NameSignal credit operations and command tools through the official client.
+  - Verify NameSignal uses `Grant`, `Reserve`, and `GetBalance` without direct stub construction.
+  - Run PoodleScanner credit operations through its real application entry point and the official client.
+  - Verify PoodleScanner uses `Grant`, `Spend`, `Refund`, `Reserve`, `Batch`, and `GetBalance` without direct stub construction.
+  - Verify each application rejects missing or invalid client configuration before a connection attempt.
+  - Verify each application keeps its tenant credential out of logs, errors, command arguments, and test artifacts.
+  - Verify each application deployment keeps `ledger.grpc` private and supplies no Ledger credential to a browser.
+  - Verify tracked application code and documentation contain no direct Ledger gRPC client implementation.
+  - Run `make ci` in Ledger, Hecate, NameSignal, and PoodleScanner after the last integration change.
+  - Record source CI, release, publication, application changes, and runtime verification as separate results.
+
+- [x] [F001] (P1) {F002} Add the authenticated Ledger workspace.
   Goal:
   An authenticated user can provision one UserAccount and manage any number of owned Ledger tenants in one secure browser workspace.
   Requirements:
@@ -477,11 +600,6 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Move focus into each opened dialog and return focus to its opening control.
   - Make an inactive dialog surface unavailable to keyboard and accessibility APIs.
   - Use short status transitions and remove nonessential motion for `prefers-reduced-motion`.
-  - Serve the workspace, `/config-ui.yaml`, and control plane from Ledger-owned deployment resources.
-  - Keep the private gRPC capability separate from the public browser route.
-  - Declare the public route, health check, configuration, and required private values in the Ledger manifest.
-  - Keep each Ledger-specific route and setting out of the generic gateway contract.
-  - Use the exact selected deployment profile without an inferred production hostname.
   Deliverables:
   - Add the production Ledger browser entry point, checked modules, semantic markup, and MPR style tokens.
   - Add the canonical `mpr-ui` bootstrap and the app-owned `/config-ui.yaml` representation.
@@ -491,7 +609,6 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Add one-time credential disclosure, copy, listing, creation, and revocation flows.
   - Add the tenant integration panel with current gRPC and Go library guidance.
   - Remove the obsolete wallet demo UI and its direct TAuth integration path.
-  - Update the local composition and selected deployment manifest for the browser route.
   - Update the OpenAPI document, browser types, user documentation, and deployment documentation together.
   - Add Playwright coverage through the real browser entry point and real HTTP server.
   Validation:
@@ -514,10 +631,18 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Inspect the real workspace at 1280, 900, and 390 pixels.
   - Prove the inspected viewports have no horizontal page overflow.
   - Run the repository frontend checks and `make ci` after the last application change.
-  - Record source CI, release, publication, deployment, runtime, and public browser acceptance as separate results.
-  - Verify the public frontend, browser authentication, backend authorization, and authenticated workspace after deployment.
+  Resolution:
+  - Ledger serves the browser frontend, `/config-ui.yaml`, and the control plane from one HTTP listener.
+  - The browser uses `mpr-ui@latest` and TAuth as its only authentication authority.
+  - The accepted localhost run completed Google login without an injected cookie.
+  - The authenticated browser opened the UserAccount tenant workspace.
+  - Browser tests cover tenant actions, credential actions, pagination, focus, layout, and secret handling.
+  - Backend tests cover TAuth session validation, owner isolation, idempotency, and authorization.
+  - The local runtime provides the real Ledger, TAuth, SQLite, and same-origin proxy services.
+  - F002 owns the hosted profile and production manifest.
+  - I026 owns production deployment and public acceptance after I025.
 
-- [x] [F002] (P1) {P001,B001} Implement the UserAccount backend architecture.
+- [!] [F002] (P1) {P001,B001,B003} Implement the UserAccount backend architecture.
   Goal:
   An authenticated person can provision one UserAccount and manage any number of owned Ledger tenants through a secure control plane.
   Requirements:
@@ -525,17 +650,44 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Keep browser identity in TAuth and accounting operations on private gRPC.
   - Remove static tenant configuration and plaintext tenant secrets.
   - Reject a legacy database until the bounded migration succeeds.
+  - Use `https://ledger.mprlab.com` as the GitHub Pages frontend origin.
+  - Use `https://ledger-api.mprlab.com` as the API and browser authentication origin.
+  - Treat the hosted frontend and API as separate origins.
+  - Use `ledger` as the TAuth tenant ID and `tauth` as the accepted issuer.
+  - Use `ledger_session` and `ledger_refresh` cookies with the `ledger-api.mprlab.com` domain.
+  - Register `https://ledger.mprlab.com` as an authorized JavaScript origin in Google web client `611549676198-d8800qv64voofseor1qod1euto5duivu.apps.googleusercontent.com`.
+  - Use the Google Identity Services credential exchange at `/auth/google` without a Google redirect callback.
+  - Declare one `github_pages` resource for the frontend.
+  - Declare one public `caddy_route` for the API.
+  - Route `/auth` and `/me` to `tauth.http`.
+  - Route `/api`, `/config-ui.yaml`, and `/healthz` to `ledger.http`.
+  - Send browser API requests to the exact API origin with credentials.
+  - Permit credentialed CORS requests only from the exact frontend origin.
+  - Keep the private `ledger.grpc` capability separate from the public browser route.
+  - Use automatic TLS and declare `https://ledger-api.mprlab.com/healthz` as the public health check.
+  Deliverables:
+  - Add the exact Pages resource, API route, TAuth tenant, and health check to the production manifest.
+  - Add the exact hosted browser profile and static authentication configuration.
+  - Add exact-origin CORS handling to the Ledger HTTP boundary.
+  - Keep the public origin and TAuth URL as tracked production manifest values.
+  - Add the database URL, Google client ID, and TAuth signing key to the ignored mode-0600 production input.
+  - Remove the obsolete static tenant secret keys from the production input.
   Validation:
   - Exercise the HTTP control plane with a real server, real database, and signed TAuth cookies.
   - Exercise persistent tenant credentials through the real gRPC entrypoint.
   - Verify owner isolation, idempotency, one-time secret disclosure, credential revocation, and `Batch` authentication.
   - Migrate a real legacy fixture and retain its accounting history.
+  - Validate the selected manifest with the current gateway contract.
+  - Verify the public route references the exact HTTP capability.
   - Run `make ci` after the last backend change.
+  Blocked: B003 is unresolved. The production input lacks the Google client ID and TAuth signing key. It retains obsolete static tenant secret keys.
   Resolution:
   - Ledger now stores UserAccounts, owner-scoped tenants, credential digests, idempotency decisions, and append-only control events.
   - One process serves the TAuth-protected HTTP control plane and credential-protected gRPC data plane on separate listeners.
   - The mode-0600 migration validates the complete owner mapping before mutation and rejects a rerun.
   - Static tenant configuration and plaintext tenant authentication are removed.
+  - The production manifest declares the exact Ledger TAuth tenant, Pages frontend, API route, and public health check.
+  - The committed runtime configuration fixes the canonical issuer and TAuth handler paths instead of treating them as private deployment inputs.
 
 ## Planning
 *do not implement yet*
@@ -560,4 +712,4 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   Resolution:
   - `docs/user-account-backend-design.md` defines the canonical UserAccount, tenant, credential, API, authorization, audit, and migration boundaries.
   - The design selects explicit provisioning, owner-only named tenants, separate revocable credentials, exact-origin mutation protection, and one process with two listeners.
-  - The exact hosted TAuth profile and production owner mapping remain required operator inputs.
+  - The production owner mapping remains a required operator input.
