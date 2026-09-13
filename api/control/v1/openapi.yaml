@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: TAuth-protected UserAccount, tenant, and credential resources.
 servers:
-  - url: /
+  - url: https://ledger-api.mprlab.com
 security:
   - tauthSession: []
 paths:
