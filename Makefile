@@ -97,7 +97,7 @@ test-pages:
 	test -f "$$pages_output/config-ui.yaml"; \
 	test -f "$$pages_output/assets/ledger/styles.css"; \
 	test -f "$$pages_output/assets/ledger/js/app.js"; \
-	rg -F 'https://ledger-api.mprlab.com' "$$pages_output/config-ui.yaml" "$$pages_output/assets/ledger/js/profile.js" >/dev/null
+	grep -F 'https://ledger-api.mprlab.com' "$$pages_output/config-ui.yaml" "$$pages_output/assets/ledger/js/profile.js" >/dev/null
 
 up:
 	@./demo/up.sh
