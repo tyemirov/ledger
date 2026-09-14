@@ -13,6 +13,38 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## BugFixes
 
+- [x] [B008] (P1) Resolve the intermittent server startup failure in browser tests.
+  Goal: The real Ledger server returns HTTP 200 before the browser tests start.
+  The release CI stopped when both viewport tests exceeded the five-second wait for `/healthz`.
+  Local `make test-shared-ui` reproduced both failures before the diagnostic change.
+  Requirements:
+  - Identify the cause of the intermittent startup failure.
+  - Keep the server output and process status in each test failure.
+  - Keep the original error as the diagnostic cause.
+  - Correct the startup failure without an increase to the timeout.
+  Validation:
+  - The test now includes server output, exit code, signal, and URL in failure diagnostics.
+  - Ten repeated frontend suites passed all 80 tests after the diagnostic change.
+  - A build with a distinct Go build ID passed both viewport tests.
+  - Local `make ci` passed all required checks, including eight browser tests and the Pages artifact check.
+  - The initial investigation did not identify the cause. Those successful runs did not prove a correction to the startup failure.
+  - Release, publication, and deployment were not repeated.
+  Resolution:
+  - The macOS system log identifies both executable paths from the failed release at 14:05 on 2026-09-14.
+  - At 14:05:37.796 and 14:05:44.822, AppleSystemPolicy recorded an interrupted wait after the test sent SIGTERM.
+  - XProtect then reported that the temporary executable files no longer existed.
+  - The test deleted each executable before the macOS evaluation completed.
+  - The first local reproduction recorded the same sequence.
+  - Both browser targets now build the Linux runtime image from the current checkout through the production Dockerfile.
+  - Each viewport test starts that exact image ID with a separate container, database, and configuration file.
+  - The health check still requires HTTP 200 within five seconds.
+  - Failure diagnostics include container state, server output, and the original error.
+  - Each test removes its container after completion or failure.
+  - Twenty browser scenarios passed with four workers after the container change.
+  - An injected invalid database scheme failed with exit code 1 and the exact server error in the test output.
+  - The failed test removed its container. The valid database configuration was then restored.
+  - Final local `make ci` passed after the container change, including all eight browser tests and the Pages artifact check.
+
 - [x] [B007] (P1) Remove the `rg` dependency from the Pages artifact check.
   Goal: Make `make test-pages` operate with the tools that GitHub CI provides.
   GitHub run `34777609913` stopped at `Makefile:92` with `/bin/sh: 9: rg: not found`.
