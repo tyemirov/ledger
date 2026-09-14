@@ -8,6 +8,7 @@ coverage.out
 node_modules/
 test-results/
 *.png
+!/internal/controlplane/web/apple-touch-icon.png
 .cache/
 
 docs/mpr-ui
