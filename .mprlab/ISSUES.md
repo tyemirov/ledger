@@ -13,6 +13,23 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## BugFixes
 
+- [x] [B009] (P1) Include the Apple touch icon in the repository.
+  Goal: Each fresh checkout serves the required Apple touch icon without a missing-file error.
+  GitHub run `34902053931` failed at commit `77e3624cdbdaeb0aae49a6151d35957ce8253dcf` before the browser tests.
+  Run `34896515584` recorded the same failure on `master`.
+  The HTTP test reported `embedded browser file "web/apple-touch-icon.png" is unavailable`.
+  The local PNG existed, but the `*.png` ignore rule excluded it from Git.
+  Requirements:
+  - Track the existing Apple touch icon.
+  - Add an exception for this asset to the PNG ignore rule.
+  - Keep the HTTP asset contract and the existing regression test.
+  Validation:
+  - With the local icon absent, `make test-unit UNIT_TEST_PACKAGES=./internal/controlplane` reproduced the GitHub failure.
+  - The reproduction restored the local icon after the test.
+  - The existing HTTP asset test passed with the tracked icon.
+  - Local `make ci` passed, including all eight browser tests and the Pages artifact check.
+  Resolution: Git now includes the existing PNG and its exact ignore-rule exception.
+
 - [x] [B008] (P1) Resolve the intermittent server startup failure in browser tests.
   Goal: The real Ledger server returns HTTP 200 before the browser tests start.
   The release CI stopped when both viewport tests exceeded the five-second wait for `/healthz`.
