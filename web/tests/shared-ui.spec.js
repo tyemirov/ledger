@@ -1,12 +1,13 @@
 // @ts-check
 import { test, expect } from "@playwright/test";
-import { spawn, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { installSharedUI } from "../shared-ui-candidate.js";
 
 test.use({ actionTimeout: 5000 });
@@ -15,7 +16,13 @@ const root = path.resolve(import.meta.dirname, "../..");
 const key = "ledger-browser-test-signing-key";
 const profile = { user_id: "ledger-browser-user", user_email: "ledger@example.test", display: "Ledger Test User" };
 let directory;
-let binary;
+let serverImage;
+const executeFile = promisify(execFile);
+
+/** @param {...string} args */
+function docker(...args) {
+  return executeFile("docker", args, { cwd: root, encoding: "utf8", timeout: 30_000 });
+}
 
 async function reservePort() {
   const server = createServer();
@@ -33,8 +40,9 @@ function sessionToken() {
 
 test.beforeAll(async () => {
   directory = await mkdtemp(path.join(os.tmpdir(), "ledger-shared-ui-"));
-  binary = path.join(directory, "ledger");
-  execFileSync("go", ["build", "-o", binary, "./cmd/credit"], { cwd: root, timeout: 30_000 });
+  const imageIDFile = process.env.LEDGER_BROWSER_IMAGE_ID_FILE;
+  if (!imageIDFile) throw new Error("LEDGER_BROWSER_IMAGE_ID_FILE is required; run make test-shared-ui or make frontend-test");
+  serverImage = (await readFile(imageIDFile, "utf8")).trim();
 });
 test.afterAll(async () => { if (directory) await rm(directory, { recursive: true, force: true }); });
 
@@ -44,9 +52,9 @@ for (const width of [390, 1280]) {
     const baseURL = `http://127.0.0.1:${port}`;
     const config = path.join(directory, `config-${width}.yml`);
     await writeFile(config, `service:
-  database_url: "sqlite://${directory}/${width}.db"
+  database_url: "sqlite:///tmp/ledger.db"
   grpc_listen_addr: "127.0.0.1:0"
-  http_listen_addr: "127.0.0.1:${port}"
+  http_listen_addr: "0.0.0.0:8080"
 auth:
   jwt_signing_key: "${key}"
   jwt_issuer: "tauth"
@@ -62,14 +70,14 @@ ui:
   nonce_path: "/auth/nonce"
   session_path: "/auth/session"
 `);
-    const child = spawn(binary, ["--config", config], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
-    let output = "";
-    child.stdout.on("data", chunk => { output += chunk; });
-    child.stderr.on("data", chunk => { output += chunk; });
+    const created = await docker("create", "--publish", `127.0.0.1:${port}:8080`, serverImage, "/srv/ledgerd", "--config", "/srv/config.yml");
+    const container = created.stdout.trim();
+    let healthError;
     try {
+      await docker("cp", config, `${container}:/srv/config.yml`);
+      await docker("start", container);
       await expect.poll(async () => {
-        if (child.exitCode !== null) throw new Error(`ledger_server_exit:${output}`);
-        try { return (await fetch(`${baseURL}/healthz`)).status; } catch { return 0; }
+        try { return (await fetch(`${baseURL}/healthz`)).status; } catch (error) { healthError = error; return 0; }
       }).toBe(200);
       await installSharedUI(context);
       const alpine = await readFile(path.join(root, "web/node_modules/alpinejs/dist/module.esm.js"));
@@ -146,12 +154,12 @@ ui:
       await expect(page.getByRole('region', { name: 'Ledger workspace' })).toBeHidden();
       expect(active).toBe(false);
       expect((await context.request.get(`${baseURL}/api/user-account`)).status()).toBe(401);
+    } catch (error) {
+      const state = await docker("inspect", "--format", "{{json .State}}", container);
+      const output = await docker("logs", container);
+      throw new Error(`ledger_server:${baseURL}:container=${container}:state=${state.stdout.trim()}:health=${healthError?.cause}\n${output.stdout}${output.stderr}`, { cause: error });
     } finally {
-      if (child.exitCode === null) {
-        const stopped = once(child, "exit");
-        child.kill("SIGTERM");
-        await stopped;
-      }
+      await docker("rm", "--force", container);
     }
   });
 }
