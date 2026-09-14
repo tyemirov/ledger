@@ -8,8 +8,10 @@ NPM ?= npm
 FRONTEND_DIRECTORY := web
 PLAYWRIGHT_BROWSERS_PATH := $(CURDIR)/$(FRONTEND_DIRECTORY)/node_modules/.cache/ms-playwright
 FRONTEND_DEPENDENCY_STAMP := $(PLAYWRIGHT_BROWSERS_PATH)/.ledger-frontend-dependencies
+LEDGER_BROWSER_IMAGE_ID_FILE := $(CURDIR)/$(FRONTEND_DIRECTORY)/node_modules/.cache/ledger-browser-image-id
 
 export PLAYWRIGHT_BROWSERS_PATH
+export LEDGER_BROWSER_IMAGE_ID_FILE
 
 .PHONY: fmt format check-format lint frontend-dependencies frontend-lint frontend-test test test-unit test-integration test-local-lifecycle test-pages ci tools check-unused-packages build-cgo-off up down
 
@@ -72,7 +74,7 @@ $(FRONTEND_DEPENDENCY_STAMP): $(FRONTEND_DIRECTORY)/package.json $(FRONTEND_DIRE
 frontend-lint: frontend-dependencies
 	cd $(FRONTEND_DIRECTORY) && $(NPM) run lint
 
-frontend-test: frontend-dependencies prepare-shared-ui
+frontend-test: frontend-dependencies prepare-shared-ui prepare-browser-server
 	cd $(FRONTEND_DIRECTORY) && $(NPM) test -- $(FRONTEND_TEST_ARGS)
 
 test: test-unit test-integration
@@ -128,11 +130,15 @@ release publish deploy:
 	fi; \
 	exec "$(MPRLAB_GATEWAY_EXECUTABLE)" "app-$@" --app-root "$${application_root}"
 
-.PHONY: prepare-shared-ui test-shared-ui
+.PHONY: prepare-shared-ui prepare-browser-server test-shared-ui
+prepare-browser-server: frontend-dependencies
+	@mkdir -p "$(dir $(LEDGER_BROWSER_IMAGE_ID_FILE))"
+	docker build --iidfile "$(LEDGER_BROWSER_IMAGE_ID_FILE)" .
+
 prepare-shared-ui:
 	cd $(FRONTEND_DIRECTORY) && node --input-type=module -e 'import { prepareSharedUI } from "./shared-ui-candidate.js"; await prepareSharedUI();'
 
-test-shared-ui: frontend-dependencies prepare-shared-ui
+test-shared-ui: frontend-dependencies prepare-shared-ui prepare-browser-server
 	cd $(FRONTEND_DIRECTORY) && $(NPM) test -- shared-ui.spec.js $(SHARED_UI_TEST_ARGS)
 
 .PHONY: test-installed-gateway
