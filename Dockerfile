@@ -22,6 +22,8 @@ FROM scratch AS pages
 COPY internal/controlplane/web/index.html /index.html
 COPY internal/controlplane/web/config-ui.yaml /config-ui.yaml
 COPY internal/controlplane/web/styles.css /assets/ledger/styles.css
+COPY internal/controlplane/web/icon.svg /assets/ledger/icon.svg
+COPY internal/controlplane/web/apple-touch-icon.png /assets/ledger/apple-touch-icon.png
 COPY internal/controlplane/web/js /assets/ledger/js
 
 # runtime stage
