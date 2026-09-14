@@ -50,11 +50,16 @@ func (handler *Handler) workspace(response http.ResponseWriter, _ *http.Request)
 func (handler *Handler) workspaceAsset(response http.ResponseWriter, request *http.Request) {
 	name := strings.TrimPrefix(request.URL.Path, browserAssetPrefix)
 	contentType := "text/javascript; charset=utf-8"
-	if name == "styles.css" {
+	switch name {
+	case "styles.css":
 		contentType = "text/css; charset=utf-8"
+	case "icon.svg":
+		contentType = "image/svg+xml"
+	case "apple-touch-icon.png":
+		contentType = "image/png"
 	}
 	switch name {
-	case "styles.css", "js/alpine-runtime.js", "js/app.js", "js/client.js", "js/constants.js", "js/contracts.js", "js/profile.js":
+	case "icon.svg", "apple-touch-icon.png", "styles.css", "js/alpine-runtime.js", "js/app.js", "js/client.js", "js/constants.js", "js/contracts.js", "js/profile.js":
 		handler.serveBrowserFile(response, "web/"+name, contentType)
 	default:
 		http.NotFound(response, request)

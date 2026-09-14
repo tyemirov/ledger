@@ -523,6 +523,8 @@ func TestControlPlaneWorkspaceAssetsAndConfiguration(test *testing.T) {
 	for path, contentType := range map[string]string{
 		"/":                                   "text/html; charset=utf-8",
 		"/index.html":                         "text/html; charset=utf-8",
+		"/assets/ledger/icon.svg":             "image/svg+xml",
+		"/assets/ledger/apple-touch-icon.png": "image/png",
 		"/assets/ledger/styles.css":           "text/css; charset=utf-8",
 		"/assets/ledger/js/alpine-runtime.js": "text/javascript; charset=utf-8",
 		"/assets/ledger/js/app.js":            "text/javascript; charset=utf-8",

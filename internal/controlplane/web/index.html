@@ -7,6 +7,8 @@
     <meta name="description" content="Manage Ledger tenants and application credentials.">
     <meta name="robots" content="noindex, nofollow">
     <meta name="theme-color" content="#101216">
+    <link rel="icon" href="/assets/ledger/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/assets/ledger/apple-touch-icon.png">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/MarcoPoloResearchLab/mpr-ui@latest/mpr-ui.css">
     <link rel="stylesheet" href="/assets/ledger/styles.css">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -28,7 +30,7 @@
       theme-config='{"attribute":"data-mpr-theme","targets":["document","body"],"initialMode":"default-dark","modes":[{"value":"default-light","attributeValue":"light","dataset":{"data-ledger-palette":"default"}},{"value":"sunrise-light","attributeValue":"light","dataset":{"data-ledger-palette":"sunrise"}},{"value":"default-dark","attributeValue":"dark","dataset":{"data-ledger-palette":"default"}},{"value":"forest-dark","attributeValue":"dark","dataset":{"data-ledger-palette":"forest"}}]}'
     >
       <a slot="brand" class="ledger-brand" href="/" aria-label="Ledger workspace">
-        <span class="ledger-mark" aria-hidden="true">L</span>
+        <img class="ledger-mark" src="/assets/ledger/icon.svg" alt="" width="24" height="24">
         <span>Ledger</span>
       </a>
       <div slot="aux" class="header-status" x-cloak x-show="notice" role="status" aria-live="polite" aria-atomic="true">
