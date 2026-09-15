@@ -50,14 +50,25 @@ ui:
   processHandle = spawn("go", ["run", "./cmd/credit", "--config", configPath], {
     cwd: repositoryRoot,
     stdio: "ignore",
+    detached: true,
   });
   await waitForHealth(`${baseURL}/healthz`);
 });
 
 test.afterAll(async () => {
   if (processHandle && processHandle.exitCode === null) {
-    processHandle.kill("SIGTERM");
+    process.kill(-processHandle.pid, "SIGTERM");
     await new Promise((resolve) => processHandle.once("exit", resolve));
+  }
+  if (baseURL) {
+    await expect.poll(async () => {
+      try {
+        await fetch(`${baseURL}/healthz`, { signal: AbortSignal.timeout(1000) });
+        return false;
+      } catch (error) {
+        return error.cause?.code === "ECONNREFUSED";
+      }
+    }, { message: "The browser fixture must stop the Ledger HTTP server" }).toBe(true);
   }
   if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
 });
