@@ -13,6 +13,34 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## BugFixes
 
+- [-] [B010] (P0) Stop the browser fixture server after its tests.
+  Goal:
+  The browser fixture stops its Ledger server before the test command exits.
+
+  Evidence:
+  - Release v1.0.12 passed CI and sealed its artifacts on September 15, 2026.
+  - Gateway then reported `services=credit result=unexpected` and returned status 125.
+  - The workspace fixture starts `go run` and stops only its parent process.
+  - The compiled Ledger server remains active after that parent exits.
+
+  Requirements:
+  - Stop the complete process group that the fixture owns.
+  - Verify that the fixture HTTP endpoint stops accepting connections.
+  - Preserve unrelated processes and the Gateway cleanup check.
+
+  Validation:
+  - Run the focused workspace browser test before the fix.
+  - Run the focused browser tests after the fix.
+  - Run `make ci` after the final change.
+  - Repeat the canonical release and verify status 0.
+
+  Progress:
+  - The new HTTP shutdown assertion failed before the fix because the server still accepted connections.
+  - The fixture now starts one process group and sends SIGTERM to that complete group.
+  - All six workspace browser tests passed after the fix.
+  - The final `make ci` passed, including all eight browser tests and the Pages artifact check.
+  - The canonical release verification remains pending.
+
 - [x] [B009] (P1) Include the Apple touch icon in the repository.
   Goal: Each fresh checkout serves the required Apple touch icon without a missing-file error.
   GitHub run `34902053931` failed at commit `77e3624cdbdaeb0aae49a6151d35957ce8253dcf` before the browser tests.
