@@ -174,6 +174,14 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## Improvements
 
+- [x] [I029] {I025} Remove the completed production migration command.
+  The September 15 migration preserved 15 accounts, 53 entries, and all balances across three tenants.
+  Live gRPC checks verified every existing balance. The old tenant IDs and static credentials were rejected.
+  Remove the temporary command, implementation, tests, and operator instructions.
+  Keep normal startup rejection of the obsolete schema. Preserve the verified database backups.
+  Verify the public CLI rejects the removed command and run complete CI.
+  Resolved: The temporary implementation and command are removed. The public CLI regression and complete CI passed.
+
 - [x] [I027] (P1) Standardize HTTP health at `/healthz`.
   Goal:
   Make `/healthz` the canonical health endpoint for the Ledger web and API
