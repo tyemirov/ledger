@@ -19,7 +19,6 @@ import (
 	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
 	"github.com/MarkoPoloResearchLab/ledger/internal/controlplane"
 	"github.com/MarkoPoloResearchLab/ledger/internal/grpcserver"
-	"github.com/MarkoPoloResearchLab/ledger/internal/migration"
 	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
 	"github.com/MarkoPoloResearchLab/ledger/internal/tenant"
 	"github.com/MarkoPoloResearchLab/ledger/internal/useraccount"
@@ -40,7 +39,6 @@ import (
 
 const (
 	flagConfigFile    = "config"
-	flagMigrationMap  = "mapping"
 	defaultConfigFile = "config.yml"
 )
 
@@ -96,6 +94,7 @@ func newRootCommand() *cobra.Command {
 	cfg := &runtimeConfig{}
 	cmd := &cobra.Command{
 		Use:           "ledgerd",
+		Args:          cobra.NoArgs,
 		Short:         "Ledger gRPC server",
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -110,23 +109,8 @@ func newRootCommand() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().String(flagConfigFile, defaultConfigFile, "Path to mandatory configuration file")
-	cmd.AddCommand(newMigrationCommand(cfg))
 
 	return cmd
-}
-
-func newMigrationCommand(cfg *runtimeConfig) *cobra.Command {
-	command := &cobra.Command{
-		Use:   "migrate-user-accounts",
-		Short: "Migrate the legacy static tenant data once",
-		RunE: func(command *cobra.Command, _ []string) error {
-			mappingPath, _ := command.Flags().GetString(flagMigrationMap)
-			return runUserAccountMigration(command.Context(), cfg, mappingPath)
-		},
-	}
-	command.Flags().String(flagMigrationMap, "", "Path to the mode-0600 migration mapping")
-	_ = command.MarkFlagRequired(flagMigrationMap)
-	return command
 }
 
 func loadConfig(cmd *cobra.Command, cfg *runtimeConfig) error {
@@ -215,22 +199,6 @@ func runServer(ctx context.Context, cfg *runtimeConfig) error {
 	defer func() { _ = logger.Sync() }()
 
 	return runServerWithListen(ctx, cfg, logger, net.Listen)
-}
-
-func runUserAccountMigration(ctx context.Context, cfg *runtimeConfig, mappingPath string) error {
-	mapping, err := migration.Load(mappingPath)
-	if err != nil {
-		return err
-	}
-	database, cleanup, _, err := openDatabaseFunc(ctx, cfg.Service.DatabaseURL)
-	if err != nil {
-		return fmt.Errorf("database open: %w", err)
-	}
-	defer func() { _ = cleanup() }()
-	if err := migration.Apply(ctx, database, mapping); err != nil {
-		return err
-	}
-	return nil
 }
 
 func runServerWithListen(ctx context.Context, cfg *runtimeConfig, logger *zap.Logger, listen listenFunc) error {
@@ -633,7 +601,7 @@ func prepareSchema(db *gorm.DB, driver string) error {
 		return errors.New("database handle is invalid")
 	}
 	if db.Migrator().HasTable("accounts") {
-		return errors.New("legacy accounts table requires the user-account migration")
+		return errors.New("obsolete accounts table is not supported")
 	}
 	if driver == "sqlite" {
 		sqlDB, _ := db.DB()

@@ -212,15 +212,10 @@ go build -o ledgerd ./cmd/credit
 ./ledgerd --config configs/config.ledger.yml
 ```
 
-### Forward-only data migration
+### Current database contract
 
-An existing database with the legacy `accounts` table does not start. Run the bounded migration once with an explicit mode-0600 YAML mapping:
-
-```bash
-ledgerd --config configs/config.ledger.yml migrate-user-accounts --mapping /private/ledger-user-account-mapping.yml
-```
-
-The mapping declares the complete legacy tenant set, each canonical tenant UUID and name, its exact TAuth owner identity, and one canonical `ledger_<credential_uuid>_<secret>` credential. The command validates the complete mapping before mutation, retains accounting history, renames `accounts` to `ledger_accounts`, and rejects a rerun.
+Ledger accepts only the canonical UserAccount schema. It rejects an obsolete `accounts` table without mutation.
+The one-time production migration completed on September 15, 2026. The migration command is removed.
 
 ---
 

@@ -148,3 +148,7 @@ test-installed-gateway:
 .PHONY: test-gateway-plan
 test-gateway-plan:
 	bash tests/gateway-plan.sh
+
+.PHONY: test-removed-migration
+test-removed-migration:
+	go test ./tests/locallifecycle -run '^TestRemovedMigrationCommand$$' -count=1

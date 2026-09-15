@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -565,8 +564,8 @@ func TestPrepareSchemaRejectsLegacyAccounts(test *testing.T) {
 	if err := database.Exec(`CREATE TABLE accounts (account_id text PRIMARY KEY)`).Error; err != nil {
 		test.Fatalf("create legacy accounts: %v", err)
 	}
-	if err := prepareSchema(database, "sqlite"); err == nil || !strings.Contains(err.Error(), "migration") {
-		test.Fatalf("expected migration requirement, got %v", err)
+	if err := prepareSchema(database, "sqlite"); err == nil || !strings.Contains(err.Error(), "obsolete accounts table") {
+		test.Fatalf("expected obsolete schema rejection, got %v", err)
 	}
 }
 
@@ -1573,85 +1572,6 @@ service:
 	_ = cmd.Flags().Set(flagConfigFile, configFile)
 	if err := loadConfig(cmd, cfg); err == nil || !strings.Contains(err.Error(), "http_listen_addr") {
 		test.Fatalf("expected HTTP listen error, got %v", err)
-	}
-}
-
-func TestRunUserAccountMigration(test *testing.T) {
-	if err := runUserAccountMigration(context.Background(), &runtimeConfig{}, filepath.Join(test.TempDir(), "missing")); err == nil {
-		test.Fatalf("missing mapping succeeded")
-	}
-	mappingPath := filepath.Join(test.TempDir(), "mapping.yml")
-	credentialID := "0196f0ec-3e80-7a54-bd2b-56cfe90bf811"
-	secretPart := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
-	content := `legacy_tenant_ids: [legacy]
-tenants:
-  - legacy_tenant_id: legacy
-    tenant_id: 0196f0ec-3e80-7a54-bd2b-56cfe90bf801
-    name: Migrated
-    owner:
-      user_account_id: 0196f0ec-3e80-7a54-bd2b-56cfe90bf810
-      auth_issuer: tauth
-      auth_tenant_id: mprlab
-      auth_user_id: owner
-    credential_id: ` + credentialID + `
-    credential_secret: ledger_` + credentialID + `_` + secretPart + "\n"
-	mappingFile, err := os.Create(mappingPath)
-	if err != nil {
-		test.Fatalf("create mapping: %v", err)
-	}
-	if _, err := mappingFile.WriteString(content); err != nil {
-		test.Fatalf("write mapping: %v", err)
-	}
-	if err := mappingFile.Close(); err != nil {
-		test.Fatalf("close mapping: %v", err)
-	}
-	badDatabaseConfig := configuredRuntime("http://%zz", ":1", ":2")
-	if err := runUserAccountMigration(context.Background(), badDatabaseConfig, mappingPath); err == nil || !strings.Contains(err.Error(), "database open") {
-		test.Fatalf("expected database open error, got %v", err)
-	}
-
-	emptyDatabasePath := filepath.Join(test.TempDir(), "empty.db")
-	emptyConfig := configuredRuntime("sqlite://"+emptyDatabasePath, ":1", ":2")
-	if err := runUserAccountMigration(context.Background(), emptyConfig, mappingPath); err == nil {
-		test.Fatalf("migration without legacy schema succeeded")
-	}
-
-	databasePath := filepath.Join(test.TempDir(), "legacy.db")
-	database, err := gorm.Open(sqlite.Open(databasePath), &gorm.Config{})
-	if err != nil {
-		test.Fatalf("open legacy database: %v", err)
-	}
-	if err := database.Exec(`CREATE TABLE accounts (account_id text PRIMARY KEY, tenant_id text NOT NULL, user_id text NOT NULL, ledger_id text NOT NULL, created_at datetime NOT NULL)`).Error; err != nil {
-		test.Fatalf("create legacy accounts: %v", err)
-	}
-	if err := database.Exec(`CREATE TABLE ledger_entries (entry_id text PRIMARY KEY, account_id text NOT NULL, type text NOT NULL, amount_cents integer NOT NULL, idempotency_key text NOT NULL, metadata blob NOT NULL, created_at datetime NOT NULL)`).Error; err != nil {
-		test.Fatalf("create legacy entries: %v", err)
-	}
-	if err := database.Exec(`CREATE TABLE reservations (account_id text NOT NULL, reservation_id text NOT NULL, amount_cents integer NOT NULL, status text NOT NULL, created_at datetime NOT NULL, updated_at datetime NOT NULL, PRIMARY KEY (account_id, reservation_id))`).Error; err != nil {
-		test.Fatalf("create legacy reservations: %v", err)
-	}
-	if err := database.Exec(`INSERT INTO accounts(account_id, tenant_id, user_id, ledger_id, created_at) VALUES (?, ?, ?, ?, ?)`, "0196f0ec-3e80-7a54-bd2b-56cfe90bf900", "legacy", "user", "default", time.Now().UTC()).Error; err != nil {
-		test.Fatalf("insert legacy account: %v", err)
-	}
-	sqlDatabase, _ := database.DB()
-	_ = sqlDatabase.Close()
-	configuration := configuredRuntime("sqlite://"+databasePath, ":1", ":2")
-	if err := runUserAccountMigration(context.Background(), configuration, mappingPath); err != nil {
-		test.Fatalf("run migration: %v", err)
-	}
-	verified, cleanup, _, err := openDatabase(context.Background(), configuration.Service.DatabaseURL)
-	if err != nil {
-		test.Fatalf("reopen migrated database: %v", err)
-	}
-	defer func() { _ = cleanup() }()
-	if !verified.Migrator().HasTable("ledger_accounts") || verified.Migrator().HasTable("accounts") {
-		test.Fatalf("migration did not rename accounts")
-	}
-
-	command := newMigrationCommand(configuration)
-	_ = command.Flags().Set(flagMigrationMap, filepath.Join(test.TempDir(), "missing"))
-	if err := command.RunE(command, nil); err == nil {
-		test.Fatalf("migration command ignored mapping error")
 	}
 }
 
