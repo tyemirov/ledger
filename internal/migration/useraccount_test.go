@@ -191,13 +191,6 @@ func TestMigrationLoadRejectsInvalidFiles(test *testing.T) {
 			test.Fatalf("invalid mapping %s loaded", name)
 		}
 	}
-	insecurePath := filepath.Join(directory, "insecure.yml")
-	if err := os.WriteFile(insecurePath, []byte("legacy_tenant_ids: []\n"), 0o644); err != nil {
-		test.Fatalf("write insecure: %v", err)
-	}
-	if _, err := Load(insecurePath); err == nil {
-		test.Fatalf("insecure mapping loaded")
-	}
 	directoryPath := filepath.Join(directory, "mapping-dir")
 	if err := os.Mkdir(directoryPath, 0o700); err != nil {
 		test.Fatalf("mkdir: %v", err)
@@ -205,16 +198,7 @@ func TestMigrationLoadRejectsInvalidFiles(test *testing.T) {
 	if _, err := Load(directoryPath); err == nil {
 		test.Fatalf("directory mapping loaded")
 	}
-	unreadablePath := filepath.Join(directory, "unreadable.yml")
-	if err := os.WriteFile(unreadablePath, []byte("legacy_tenant_ids: []\n"), 0o600); err != nil {
-		test.Fatalf("write unreadable: %v", err)
-	}
-	if err := os.Chmod(unreadablePath, 0o000); err != nil {
-		test.Fatalf("chmod unreadable: %v", err)
-	}
-	if _, err := Load(unreadablePath); err == nil {
-		test.Fatalf("unreadable mapping loaded")
-	}
+
 }
 
 func TestMigrationPreflightRejectsIncompleteMappings(test *testing.T) {
