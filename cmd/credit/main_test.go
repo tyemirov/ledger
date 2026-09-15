@@ -1595,8 +1595,15 @@ tenants:
       auth_user_id: owner
     credential_id: ` + credentialID + `
     credential_secret: ledger_` + credentialID + `_` + secretPart + "\n"
-	if err := os.WriteFile(mappingPath, []byte(content), 0o600); err != nil {
+	mappingFile, err := os.Create(mappingPath)
+	if err != nil {
+		test.Fatalf("create mapping: %v", err)
+	}
+	if _, err := mappingFile.WriteString(content); err != nil {
 		test.Fatalf("write mapping: %v", err)
+	}
+	if err := mappingFile.Close(); err != nil {
+		test.Fatalf("close mapping: %v", err)
 	}
 	badDatabaseConfig := configuredRuntime("http://%zz", ":1", ":2")
 	if err := runUserAccountMigration(context.Background(), badDatabaseConfig, mappingPath); err == nil || !strings.Contains(err.Error(), "database open") {

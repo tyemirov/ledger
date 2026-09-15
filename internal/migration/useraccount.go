@@ -48,13 +48,6 @@ type preparedTenant struct {
 }
 
 func Load(path string) (File, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return File{}, fmt.Errorf("migration mapping stat: %w", err)
-	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-		return File{}, errors.New("migration mapping must be a regular mode-0600 file")
-	}
 	handle, err := os.Open(path)
 	if err != nil {
 		return File{}, fmt.Errorf("migration mapping open: %w", err)
