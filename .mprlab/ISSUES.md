@@ -542,6 +542,29 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## Features
 
+- [ ] [F004] (P1) Expose the shared GORM adapter for embedded Ledger integrations.
+  Goal:
+  Applications use the existing Ledger store and service within their own database transactions.
+  This public package supports LLM Proxy F068 without a second financial implementation.
+  Evidence:
+  The public adapter replaces the internal path. Ledger and its consumers use the same implementation.
+  Public tests verify outer rollback, committed records, restart recovery, permanent holds, insufficient funds, and smaller settlement.
+  The full Go suite passes with 100% statement coverage. Lint passes with the declared Go 1.26.5 toolchain.
+  Cross-repository stack CI remains the LLM Proxy F070 checkpoint. Package publication remains separate.
+  Requirements:
+  - Move the canonical adapter to `pkg/gormstore` and update all repository consumers.
+  - Remove the internal import path without a compatibility alias.
+  - Preserve the database schema and existing service behavior.
+  - Prove that outer transaction rollback removes application and Ledger effects together.
+  - Prove that reservations without expiry retain their funds until an explicit financial operation.
+  - Verify atomic release and spend when the final charge is below the reservation.
+  - Keep authentication and application policy outside the embedded storage adapter.
+  Deliverables:
+  - Public GORM adapter, integration tests, and current embedded integration documentation.
+  Validation:
+  - Run public integration tests against real SQLite storage and the shared Ledger service.
+  - Run adapter and service regression checks before the cross-repository stack CI checkpoint.
+
 - [ ] [F003] (P1) Add official Ledger data-plane clients.
   Goal:
   Applications use one Ledger-owned client contract for private gRPC credit operations.

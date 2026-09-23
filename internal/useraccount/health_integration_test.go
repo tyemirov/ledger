@@ -3,8 +3,8 @@ package useraccount_test
 import (
 	"testing"
 
-	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
 	"github.com/MarkoPoloResearchLab/ledger/internal/useraccount"
+	"github.com/MarkoPoloResearchLab/ledger/pkg/gormstore"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )

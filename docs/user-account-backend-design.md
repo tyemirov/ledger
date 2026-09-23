@@ -334,7 +334,7 @@ Use narrow internal packages with these responsibilities:
 - `internal/tauth`: TAuth session validation adapter.
 - `internal/useraccount`: UserAccount domain types and application service.
 - `internal/tenant`: Ledger tenant domain types and application service.
-- `internal/store/gormstore`: Current database adapters for the new store interfaces.
+- `pkg/gormstore`: Current database adapters for the new store interfaces.
 - `cmd/credit`: Runtime composition for the control plane and data plane.
 
 Use smart constructors for each identifier, identity, idempotency key, and tenant creation command.

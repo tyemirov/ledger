@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
 	"github.com/MarkoPoloResearchLab/ledger/internal/tenant"
 	"github.com/MarkoPoloResearchLab/ledger/internal/useraccount"
+	"github.com/MarkoPoloResearchLab/ledger/pkg/gormstore"
 	"github.com/glebarez/sqlite"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/tyemirov/tauth/pkg/sessionvalidator"

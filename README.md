@@ -40,7 +40,7 @@ Application client --------> private gRPC ----+--> PostgreSQL or SQLite
 ```
 
 * `pkg/ledger` – core domain logic (ledger) reusable as a Go module
-* `internal/store/gormstore` – database-backed implementation of `ledger.Store` (SQLite/PostgreSQL via GORM)
+* `pkg/gormstore` – database-backed implementation of `ledger.Store` (SQLite/PostgreSQL via GORM)
 * `internal/grpcserver` – gRPC API bindings
 * `internal/controlplane` – authenticated HTTP resources and the browser workspace
 * `internal/useraccount` – UserAccount and Ledger tenant ownership rules
