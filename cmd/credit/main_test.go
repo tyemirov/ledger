@@ -18,8 +18,8 @@ import (
 
 	"github.com/MarkoPoloResearchLab/ledger/api/credit/v1"
 	"github.com/MarkoPoloResearchLab/ledger/internal/controlplane"
-	"github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
 	"github.com/MarkoPoloResearchLab/ledger/internal/tenant"
+	"github.com/MarkoPoloResearchLab/ledger/pkg/gormstore"
 	"github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
 	"github.com/glebarez/sqlite"
 	"github.com/spf13/viper"

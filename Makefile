@@ -152,3 +152,7 @@ test-gateway-plan:
 .PHONY: test-removed-migration
 test-removed-migration:
 	go test ./tests/locallifecycle -run '^TestRemovedMigrationCommand$$' -count=1
+
+.PHONY: test-embedded-store
+test-embedded-store:
+	go test ./tests/embeddedstore -count=1

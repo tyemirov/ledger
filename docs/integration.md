@@ -52,7 +52,7 @@ Key components:
 ```go
 import (
     "github.com/MarkoPoloResearchLab/ledger/pkg/ledger"
-    "github.com/MarkoPoloResearchLab/ledger/internal/store/gormstore"
+    "github.com/MarkoPoloResearchLab/ledger/pkg/gormstore"
 )
 
 func newLedgerService(db *gorm.DB, clock func() int64) (*ledger.Service, error) {
@@ -62,11 +62,31 @@ func newLedgerService(db *gorm.DB, clock func() int64) (*ledger.Service, error) 
 ```
 
 * `ledger.Service` defines operations (`Grant`, `Spend`, `Refund`, `Reserve`, `Capture`, `Release`, `Balance`, `Batch`, `ListEntries`, `GetReservationState`, `ListReservationStates`).
-* `ledger.Store` is the storage interface. Use `internal/store/gormstore` for GORM-backed projects. Custom stores can satisfy the interface to target other databases.
+* `ledger.Store` is the storage interface. Use `pkg/gormstore` for GORM-backed projects. Custom stores can satisfy the interface to target other databases.
 * Validation happens at the edge: construct `ledger.TenantID`, `ledger.UserID`, `ledger.LedgerID`, `ledger.PositiveAmountCents`, `ledger.ReservationID`, `ledger.IdempotencyKey`, and `ledger.MetadataJSON` before invoking the service.
 * Store implementations consume `ledger.EntryInput` values and return `ledger.Entry` records; use the smart constructors (`NewEntryInput`, `NewEntry`, `NewReservation`) to enforce invariants.
 
 When embedding, reuse your existing application database and transaction management. Because the ledger code does not spawn goroutines or hold globals, you can scope it per request or as a singleton.
+
+Use `gormstore.New(transaction)` with the GORM handle from the caller's transaction.
+Construct the Ledger service from that store before the related financial operation.
+Ledger transaction callbacks use that handle. An outer rollback removes both application records and Ledger effects.
+Use the original database handle only for independent operations.
+
+The embedding application owns authentication, authorization, and account namespace selection.
+The adapter does not start Ledger's HTTP control plane or gRPC server.
+For a new embedded database, initialize `gormstore.LedgerAccount`, `gormstore.LedgerEntry`, and `gormstore.Reservation` through the application's schema procedure.
+Existing databases use the application's controlled migration procedure.
+
+A reservation with expiry zero remains active until an explicit capture or release.
+Use this contract when dispatched work has an uncertain result.
+Request timeouts must not release those funds without a financial decision.
+For a smaller final charge, one atomic `Batch` can release the reservation and spend the measured amount.
+If the spend fails, the batch rolls back the release. The original hold remains active.
+The application must keep its settlement identity and Ledger effects in the same outer transaction for replay control.
+
+`make test-embedded-store` verifies this contract with real SQLite storage and the public Ledger service.
+It covers outer rollback, committed records, restart recovery, permanent holds, insufficient funds, and a smaller final charge.
 
 Example edge construction:
 
