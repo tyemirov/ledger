@@ -4,28 +4,27 @@ mprlab_resources:
   release:
     scheme: semver
   resources:
-    - kind: private_values
-      id: private
+    private:
+      kind: private_values
       bindings:
         database-url: DATABASE_URL
         tauth-jwt-signing-key: TAUTH_JWT_SIGNING_KEY
         tauth-google-client-id: TAUTH_GOOGLE_CLIENT_ID
-    - kind: compose_project
-      id: runtime
+    runtime:
+      kind: compose_project
       retired_services:
-        - project: mprlab-nginx-gateway
-          service: ledger-api
+        mprlab-nginx-gateway/ledger-api: {}
       images:
-        - id: ledger-image
+        ledger-image:
           repository: ghcr.io/tyemirov/ledger
           build:
             context: .
             dockerfile: Dockerfile
             platforms:
-              - linux/amd64
-              - linux/arm64
+            - linux/amd64
+            - linux/arm64
       services:
-        - id: ledger-api
+        ledger-api:
           image: ledger-image
           placement:
             group: gateway
@@ -51,27 +50,27 @@ mprlab_resources:
             TAUTH_URL:
               value: https://ledger-api.mprlab.com
           assets:
-            - source: configs/config.ledger.yml
-              target: /srv/config.yml
-              mode: "0444"
+            /srv/config.yml:
+              source: configs/config.ledger.yml
+              mode: '0444'
           mounts:
-            - volume: data
-              target: /srv/data
+            /srv/data:
+              volume: data
               read_only: false
           ports:
-            - container_port: 50051
-            - container_port: 8080
+            '50051': {}
+            '8080': {}
           readiness:
             protocol: http
             port: 8080
             path: /healthz
             expected_status: 200
       volumes:
-        - id: data
+        data:
           name: ledger-data
           retention: retain
-    - kind: runtime_capability
-      id: grpc
+    grpc:
+      kind: runtime_capability
       name: ledger.grpc
       version: 1
       project: runtime
@@ -83,8 +82,8 @@ mprlab_resources:
         port: 50051
       health:
         protocol: tcp
-    - kind: runtime_capability
-      id: http
+    http:
+      kind: runtime_capability
       name: ledger.http
       version: 1
       project: runtime
@@ -98,15 +97,15 @@ mprlab_resources:
         protocol: http
         path: /healthz
         expected_status: 200
-    - kind: tauth_tenant
-      id: authentication
+    authentication:
+      kind: tauth_tenant
       capability: tauth.tenants
       version: 1
       tenant:
         id: ledger
         display_name: Ledger
         origins:
-          - https://ledger.mprlab.com
+        - https://ledger.mprlab.com
         google_web_client_id:
           resource: private
           output: tauth-google-client-id
@@ -117,35 +116,35 @@ mprlab_resources:
           domain: ledger-api.mprlab.com
           session_name: ledger_session
           refresh_name: ledger_refresh
-    - kind: caddy_route
-      id: api
+    api:
+      kind: caddy_route
       hostname: ledger-api.mprlab.com
       listener: https
       handlers:
-        - id: authentication
+        authentication:
           path_prefix: /auth
           upstream: tauth.http
-        - id: profile
+        profile:
           path_prefix: /me
           upstream: tauth.http
-        - id: control-plane
+        control-plane:
           path_prefix: /api
           upstream: ledger.http
-        - id: browser-config
+        browser-config:
           path_prefix: /config-ui.yaml
           upstream: ledger.http
-        - id: health
+        health:
           path_prefix: /healthz
           upstream: ledger.http
       tls:
         mode: automatic
-    - kind: health_check
-      id: api-health
+    api-health:
+      kind: health_check
       protocol: http
       url: https://ledger-api.mprlab.com/healthz
       expected_status: 200
-    - kind: github_pages
-      id: frontend
+    frontend:
+      kind: github_pages
       repository: tyemirov/ledger
       branch: gh-pages
       domain: ledger.mprlab.com

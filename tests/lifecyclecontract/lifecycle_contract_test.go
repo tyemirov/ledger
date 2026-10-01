@@ -17,9 +17,9 @@ type manifestEnvelope struct {
 }
 
 type applicationManifest struct {
-	Owner     string              `yaml:"owner"`
-	Release   releasePolicy       `yaml:"release"`
-	Resources []lifecycleResource `yaml:"resources"`
+	Owner     string                       `yaml:"owner"`
+	Release   releasePolicy                `yaml:"release"`
+	Resources map[string]lifecycleResource `yaml:"resources"`
 }
 
 type releasePolicy struct {
@@ -27,35 +27,34 @@ type releasePolicy struct {
 }
 
 type lifecycleResource struct {
-	Kind            string             `yaml:"kind"`
-	ID              string             `yaml:"id"`
-	Bindings        map[string]string  `yaml:"bindings"`
-	Capability      string             `yaml:"capability"`
-	Placement       *servicePlacement  `yaml:"placement"`
-	Profiles        *[]string          `yaml:"profiles"`
-	RetiredServices []retiredService   `yaml:"retired_services"`
-	Images          []containerImage   `yaml:"images"`
-	Services        []composeService   `yaml:"services"`
-	Volumes         []retainedVolume   `yaml:"volumes"`
-	Name            string             `yaml:"name"`
-	Version         int                `yaml:"version"`
-	Project         string             `yaml:"project"`
-	Service         string             `yaml:"service"`
-	Endpoint        capabilityEndpoint `yaml:"endpoint"`
-	Health          capabilityHealth   `yaml:"health"`
-	Tenant          tauthTenant        `yaml:"tenant"`
-	Hostname        string             `yaml:"hostname"`
-	Listener        string             `yaml:"listener"`
-	Handlers        []routeHandler     `yaml:"handlers"`
-	TLS             routeTLS           `yaml:"tls"`
-	Protocol        string             `yaml:"protocol"`
-	URL             string             `yaml:"url"`
-	ExpectedStatus  int                `yaml:"expected_status"`
-	Repository      string             `yaml:"repository"`
-	Branch          string             `yaml:"branch"`
-	Domain          string             `yaml:"domain"`
-	Source          pagesSource        `yaml:"source"`
-	Verification    pagesVerification  `yaml:"verification"`
+	Kind            string                    `yaml:"kind"`
+	Bindings        map[string]string         `yaml:"bindings"`
+	Capability      string                    `yaml:"capability"`
+	Placement       *servicePlacement         `yaml:"placement"`
+	Profiles        *[]string                 `yaml:"profiles"`
+	RetiredServices map[string]retiredService `yaml:"retired_services"`
+	Images          map[string]containerImage `yaml:"images"`
+	Services        map[string]composeService `yaml:"services"`
+	Volumes         map[string]retainedVolume `yaml:"volumes"`
+	Name            string                    `yaml:"name"`
+	Version         int                       `yaml:"version"`
+	Project         string                    `yaml:"project"`
+	Service         string                    `yaml:"service"`
+	Endpoint        capabilityEndpoint        `yaml:"endpoint"`
+	Health          capabilityHealth          `yaml:"health"`
+	Tenant          tauthTenant               `yaml:"tenant"`
+	Hostname        string                    `yaml:"hostname"`
+	Listener        string                    `yaml:"listener"`
+	Handlers        map[string]routeHandler   `yaml:"handlers"`
+	TLS             routeTLS                  `yaml:"tls"`
+	Protocol        string                    `yaml:"protocol"`
+	URL             string                    `yaml:"url"`
+	ExpectedStatus  int                       `yaml:"expected_status"`
+	Repository      string                    `yaml:"repository"`
+	Branch          string                    `yaml:"branch"`
+	Domain          string                    `yaml:"domain"`
+	Source          pagesSource               `yaml:"source"`
+	Verification    pagesVerification         `yaml:"verification"`
 }
 
 type outputReference struct {
@@ -79,7 +78,6 @@ type tauthCookie struct {
 }
 
 type routeHandler struct {
-	ID         string `yaml:"id"`
 	PathPrefix string `yaml:"path_prefix"`
 	Upstream   string `yaml:"upstream"`
 }
@@ -100,12 +98,9 @@ type pagesVerification struct {
 }
 
 type retiredService struct {
-	Project string `yaml:"project"`
-	Service string `yaml:"service"`
 }
 
 type containerImage struct {
-	ID         string         `yaml:"id"`
 	Repository string         `yaml:"repository"`
 	Build      containerBuild `yaml:"build"`
 }
@@ -117,13 +112,12 @@ type containerBuild struct {
 }
 
 type composeService struct {
-	ID          string                        `yaml:"id"`
 	Image       string                        `yaml:"image"`
 	Placement   servicePlacement              `yaml:"placement"`
 	Environment map[string]environmentBinding `yaml:"environment"`
-	Assets      []runtimeAsset                `yaml:"assets"`
-	Mounts      []volumeMount                 `yaml:"mounts"`
-	Ports       []servicePort                 `yaml:"ports"`
+	Assets      map[string]runtimeAsset       `yaml:"assets"`
+	Mounts      map[string]volumeMount        `yaml:"mounts"`
+	Ports       map[string]servicePort        `yaml:"ports"`
 	Readiness   serviceReadiness              `yaml:"readiness"`
 }
 
@@ -148,22 +142,18 @@ type environmentBinding struct {
 
 type runtimeAsset struct {
 	Source string `yaml:"source"`
-	Target string `yaml:"target"`
 	Mode   string `yaml:"mode"`
 }
 
 type volumeMount struct {
 	Volume   string `yaml:"volume"`
-	Target   string `yaml:"target"`
 	ReadOnly bool   `yaml:"read_only"`
 }
 
 type servicePort struct {
-	ContainerPort int `yaml:"container_port"`
 }
 
 type retainedVolume struct {
-	ID        string `yaml:"id"`
 	Name      string `yaml:"name"`
 	Retention string `yaml:"retention"`
 }
@@ -242,24 +232,24 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	if composeResource.Placement != nil || composeResource.Profiles != nil {
 		testingContext.Fatal("Compose placement must exist only on services and profiles must be absent")
 	}
-	if !reflect.DeepEqual(composeResource.RetiredServices, []retiredService{{Project: "mprlab-nginx-gateway", Service: "ledger-api"}}) {
+	if !reflect.DeepEqual(composeResource.RetiredServices, map[string]retiredService{"mprlab-nginx-gateway/ledger-api": {}}) {
 		testingContext.Fatalf("unexpected retired services: %#v", composeResource.RetiredServices)
 	}
 	if len(composeResource.Images) != 1 {
 		testingContext.Fatalf("expected one image, got %d", len(composeResource.Images))
 	}
-	ledgerImage := composeResource.Images[0]
-	if ledgerImage.ID != "ledger-image" || ledgerImage.Repository != "ghcr.io/tyemirov/ledger" {
+	ledgerImage := composeResource.Images["ledger-image"]
+	if ledgerImage.Repository != "ghcr.io/tyemirov/ledger" {
 		testingContext.Fatalf("unexpected image declaration: %#v", ledgerImage)
 	}
-	if ledgerImage.Build.Context != "." || ledgerImage.Build.Dockerfile != "Dockerfile" || !reflect.DeepEqual(ledgerImage.Build.Platforms, []string{"linux/amd64", "linux/arm64"}) {
+	if ledgerImage.Build.Context != "." || ledgerImage.Build.Dockerfile != "Dockerfile" || !slices.Equal(sortedLifecycleStrings(ledgerImage.Build.Platforms), []string{"linux/amd64", "linux/arm64"}) {
 		testingContext.Fatalf("unexpected image build declaration: %#v", ledgerImage.Build)
 	}
 	if len(composeResource.Services) != 1 {
 		testingContext.Fatalf("expected one service, got %d", len(composeResource.Services))
 	}
-	ledgerService := composeResource.Services[0]
-	if ledgerService.ID != "ledger-api" || ledgerService.Image != "ledger-image" || ledgerService.Placement != (servicePlacement{Group: "gateway", Cardinality: "one"}) {
+	ledgerService := composeResource.Services["ledger-api"]
+	if ledgerService.Image != "ledger-image" || ledgerService.Placement != (servicePlacement{Group: "gateway", Cardinality: "one"}) {
 		testingContext.Fatalf("unexpected Ledger service declaration: %#v", ledgerService)
 	}
 	expectedEnvironment := map[string]environmentBinding{
@@ -274,19 +264,19 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	if !reflect.DeepEqual(ledgerService.Environment, expectedEnvironment) {
 		testingContext.Fatalf("unexpected service environment: %#v", ledgerService.Environment)
 	}
-	if !reflect.DeepEqual(ledgerService.Assets, []runtimeAsset{{Source: "configs/config.ledger.yml", Target: "/srv/config.yml", Mode: "0444"}}) {
+	if !reflect.DeepEqual(ledgerService.Assets, map[string]runtimeAsset{"/srv/config.yml": {Source: "configs/config.ledger.yml", Mode: "0444"}}) {
 		testingContext.Fatalf("unexpected runtime assets: %#v", ledgerService.Assets)
 	}
-	if !reflect.DeepEqual(ledgerService.Mounts, []volumeMount{{Volume: "data", Target: "/srv/data", ReadOnly: false}}) {
+	if !reflect.DeepEqual(ledgerService.Mounts, map[string]volumeMount{"/srv/data": {Volume: "data", ReadOnly: false}}) {
 		testingContext.Fatalf("unexpected volume mounts: %#v", ledgerService.Mounts)
 	}
-	if !reflect.DeepEqual(ledgerService.Ports, []servicePort{{ContainerPort: 50051}, {ContainerPort: 8080}}) {
+	if !reflect.DeepEqual(ledgerService.Ports, map[string]servicePort{"50051": {}, "8080": {}}) {
 		testingContext.Fatalf("unexpected service ports: %#v", ledgerService.Ports)
 	}
 	if ledgerService.Readiness != (serviceReadiness{Protocol: "http", Port: 8080, Path: "/healthz", ExpectedStatus: 200}) {
 		testingContext.Fatalf("unexpected service readiness: %#v", ledgerService.Readiness)
 	}
-	if !reflect.DeepEqual(composeResource.Volumes, []retainedVolume{{ID: "data", Name: "ledger-data", Retention: "retain"}}) {
+	if !reflect.DeepEqual(composeResource.Volumes, map[string]retainedVolume{"data": {Name: "ledger-data", Retention: "retain"}}) {
 		testingContext.Fatalf("unexpected retained volumes: %#v", composeResource.Volumes)
 	}
 
@@ -325,12 +315,12 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	if apiRoute.Hostname != "ledger-api.mprlab.com" || apiRoute.Listener != "https" || apiRoute.TLS != (routeTLS{Mode: "automatic"}) {
 		testingContext.Fatalf("unexpected API route: %#v", apiRoute)
 	}
-	expectedHandlers := []routeHandler{
-		{ID: "authentication", PathPrefix: "/auth", Upstream: "tauth.http"},
-		{ID: "profile", PathPrefix: "/me", Upstream: "tauth.http"},
-		{ID: "control-plane", PathPrefix: "/api", Upstream: "ledger.http"},
-		{ID: "browser-config", PathPrefix: "/config-ui.yaml", Upstream: "ledger.http"},
-		{ID: "health", PathPrefix: "/healthz", Upstream: "ledger.http"},
+	expectedHandlers := map[string]routeHandler{
+		"authentication": {PathPrefix: "/auth", Upstream: "tauth.http"},
+		"profile":        {PathPrefix: "/me", Upstream: "tauth.http"},
+		"control-plane":  {PathPrefix: "/api", Upstream: "ledger.http"},
+		"browser-config": {PathPrefix: "/config-ui.yaml", Upstream: "ledger.http"},
+		"health":         {PathPrefix: "/healthz", Upstream: "ledger.http"},
 	}
 	if !reflect.DeepEqual(apiRoute.Handlers, expectedHandlers) {
 		testingContext.Fatalf("unexpected API route handlers: %#v", apiRoute.Handlers)
@@ -441,10 +431,10 @@ func readFile(testingContext *testing.T, path string) []byte {
 	return content
 }
 
-func requireResource(testingContext *testing.T, resources []lifecycleResource, kind string, id string) lifecycleResource {
+func requireResource(testingContext *testing.T, resources map[string]lifecycleResource, kind string, id string) lifecycleResource {
 	testingContext.Helper()
-	for _, resource := range resources {
-		if resource.Kind == kind && resource.ID == id {
+	if resource, exists := resources[id]; exists {
+		if resource.Kind == kind {
 			return resource
 		}
 	}
@@ -491,4 +481,10 @@ func requireExactIgnore(testingContext *testing.T, path string, privatePath stri
 			}
 		}
 	}
+}
+
+func sortedLifecycleStrings(values []string) []string {
+	result := slices.Clone(values)
+	slices.Sort(result)
+	return result
 }
