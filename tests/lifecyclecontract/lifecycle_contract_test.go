@@ -17,9 +17,22 @@ type manifestEnvelope struct {
 }
 
 type applicationManifest struct {
-	Owner     string                       `yaml:"owner"`
-	Release   releasePolicy                `yaml:"release"`
-	Resources map[string]lifecycleResource `yaml:"resources"`
+	Owner      string                        `yaml:"owner"`
+	Defaults   map[string]map[string]string  `yaml:"defaults"`
+	Operations map[string]executionOperation `yaml:"operations"`
+	Release    releasePolicy                 `yaml:"release"`
+	Resources  map[string]lifecycleResource  `yaml:"resources"`
+}
+
+type executionOperation struct {
+	Polling pollingPolicy `yaml:"polling"`
+}
+type pollingPolicy struct {
+	Initial      string `yaml:"initial"`
+	Maximum      string `yaml:"maximum"`
+	Increment    string `yaml:"increment"`
+	Multiplier   int    `yaml:"multiplier"`
+	AttemptLimit int    `yaml:"attempt_limit"`
 }
 
 type releasePolicy struct {
@@ -188,7 +201,7 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	requireMappingKeys(
 		testingContext,
 		mappingValue(testingContext, documentNode.Content[0], "mprlab_resources"),
-		[]string{"owner", "release", "resources"},
+		[]string{"ci", "defaults", "operations", "owner", "release", "resources"},
 	)
 	requireMappingKeys(
 		testingContext,
@@ -205,6 +218,20 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 		testingContext.Fatalf("decode deployment manifest: %v", unmarshalError)
 	}
 	manifest := envelope.MPRLabResources
+	expectedDefaults := map[string]map[string]string{"timeouts": {"startup": "30s", "completion": "30m", "readiness": "30s", "request": "15s", "shutdown": "5s"}}
+	if !reflect.DeepEqual(manifest.Defaults, expectedDefaults) {
+		testingContext.Fatalf("unexpected execution defaults: %#v", manifest.Defaults)
+	}
+	expectedPolling := pollingPolicy{Initial: "1s", Maximum: "5s", Increment: "0s", Multiplier: 2, AttemptLimit: 360}
+	expectedOperations := []string{"app_lifecycle.repository_read", "app-release", "app-publish", "app-deploy"}
+	if len(manifest.Operations) != len(expectedOperations) {
+		testingContext.Fatalf("unexpected execution operations: %#v", manifest.Operations)
+	}
+	for _, operation := range expectedOperations {
+		if actual, exists := manifest.Operations[operation]; !exists || actual.Polling != expectedPolling {
+			testingContext.Fatalf("unexpected observation policy for %s: %#v", operation, actual)
+		}
+	}
 	if manifest.Owner != "ledger" {
 		testingContext.Fatalf("unexpected manifest owner: %q", manifest.Owner)
 	}
