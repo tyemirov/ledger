@@ -164,6 +164,8 @@ type volumeMount struct {
 }
 
 type servicePort struct {
+	HostPort int    `yaml:"host_port"`
+	Scope    string `yaml:"scope"`
 }
 
 type retainedVolume struct {
@@ -241,8 +243,8 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	if _, statError := os.Stat(filepath.Join(repositoryRoot, ".mprlab", "release.yml")); !os.IsNotExist(statError) {
 		testingContext.Fatalf("obsolete release policy file remains: %v", statError)
 	}
-	if len(manifest.Resources) != 8 {
-		testingContext.Fatalf("expected eight production resources, got %d", len(manifest.Resources))
+	if len(manifest.Resources) != 10 {
+		testingContext.Fatalf("expected ten production resources, got %d", len(manifest.Resources))
 	}
 
 	privateResource := requireResource(testingContext, manifest.Resources, "private_values", "private")
@@ -297,7 +299,7 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	if !reflect.DeepEqual(ledgerService.Mounts, map[string]volumeMount{"/srv/data": {Volume: "data", ReadOnly: false}}) {
 		testingContext.Fatalf("unexpected volume mounts: %#v", ledgerService.Mounts)
 	}
-	if !reflect.DeepEqual(ledgerService.Ports, map[string]servicePort{"50051": {}, "8080": {}}) {
+	if !reflect.DeepEqual(ledgerService.Ports, map[string]servicePort{"50051": {HostPort: 50051, Scope: "private_lan"}, "8080": {HostPort: 18082, Scope: "private_lan"}}) {
 		testingContext.Fatalf("unexpected service ports: %#v", ledgerService.Ports)
 	}
 	if ledgerService.Readiness != (serviceReadiness{Protocol: "http", Port: 8080, Path: "/healthz", ExpectedStatus: 200}) {
@@ -320,6 +322,25 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	}
 	if httpCapability.Endpoint != (capabilityEndpoint{Scope: "same_host", Scheme: "http", Alias: "ledger-http", Port: 8080}) || httpCapability.Health != (capabilityHealth{Protocol: "http", Path: "/healthz", ExpectedStatus: 200}) {
 		testingContext.Fatalf("unexpected HTTP capability endpoint or health: %#v %#v", httpCapability.Endpoint, httpCapability.Health)
+	}
+
+	for _, expected := range []struct {
+		id     string
+		name   string
+		scheme string
+		port   int
+		health capabilityHealth
+	}{
+		{"grpc-private-lan", "ledger.grpc.private-lan", "grpc", 50051, capabilityHealth{Protocol: "tcp"}},
+		{"http-private-lan", "ledger.http.private-lan", "http", 18082, capabilityHealth{Protocol: "http", Path: "/healthz", ExpectedStatus: 200}},
+	} {
+		capability := requireResource(testingContext, manifest.Resources, "runtime_capability", expected.id)
+		if capability.Name != expected.name || capability.Version != 1 || capability.Project != "runtime" || capability.Service != "ledger-api" {
+			testingContext.Fatalf("unexpected private LAN capability: %#v", capability)
+		}
+		if capability.Endpoint != (capabilityEndpoint{Scope: "private_lan", Scheme: expected.scheme, Port: expected.port}) || capability.Health != expected.health {
+			testingContext.Fatalf("unexpected private LAN endpoint or health: %#v", capability)
+		}
 	}
 
 	tauthResource := requireResource(testingContext, manifest.Resources, "tauth_tenant", "authentication")

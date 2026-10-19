@@ -94,8 +94,12 @@ mprlab_resources:
               volume: data
               read_only: false
           ports:
-            '50051': {}
-            '8080': {}
+            '50051':
+              host_port: 50051
+              scope: private_lan
+            '8080':
+              host_port: 18082
+              scope: private_lan
           readiness:
             protocol: http
             port: 8080
@@ -192,6 +196,32 @@ mprlab_resources:
         target: pages
       verification:
         path: /.mprlab-release.json
+    grpc-private-lan:
+      kind: runtime_capability
+      name: ledger.grpc.private-lan
+      version: 1
+      project: runtime
+      service: ledger-api
+      endpoint:
+        scope: private_lan
+        scheme: grpc
+        port: 50051
+      health:
+        protocol: tcp
+    http-private-lan:
+      kind: runtime_capability
+      name: ledger.http.private-lan
+      version: 1
+      project: runtime
+      service: ledger-api
+      endpoint:
+        scope: private_lan
+        scheme: http
+        port: 18082
+      health:
+        protocol: http
+        path: /healthz
+        expected_status: 200
   ci:
     enabled: true
     command:
