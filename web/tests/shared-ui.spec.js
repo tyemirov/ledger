@@ -113,6 +113,7 @@ ui:
       });
       await page.setViewportSize({ width, height: 900 });
       await page.goto(baseURL);
+      await expect(page.locator("mpr-footer")).toHaveAttribute("theme-control", /"kind":"quadrant"/);
       await expect(page.locator('mpr-header[data-mpr-auth-status="unauthenticated"]')).toBeVisible();
       expect(await page.evaluate(() => Boolean(window.isSecureContext && navigator.locks && crypto.subtle))).toBe(true);
       await page.getByRole("button", { name: "Documentation", exact: true }).click();
