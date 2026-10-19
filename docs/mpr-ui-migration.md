@@ -17,7 +17,7 @@ The workspace releases its loading overlay after authentication recovery.
 
 ## Candidate Qualification
 
-The test candidate is `768f25936497c5aabd426197d21c2100b6e5d9a1`.
+The current test candidate is `d29f43b96991ff409db968f56e6b3fc57b6d20e0` (`v4.3.5`).
 `web/shared-ui-candidate.js` records and verifies all asset SHA-256 values.
 The test cache stays under `web/node_modules`.
 The production asset URLs remain unchanged.
@@ -36,12 +36,14 @@ The first candidate run failed because the documentation menu was absent.
 A subsequent run found that the loading overlay blocked logout after authentication recovery.
 The source changes correct both failures.
 
-Local `make ci` passed on September 9, 2026.
+The B003 candidate was `768f25936497c5aabd426197d21c2100b6e5d9a1`.
+Local `make ci` passed for B003 on September 9, 2026.
 It passed static analysis, the Go coverage gate, eight browser scenarios, local lifecycle checks, and the Pages artifact check.
 The validation log is `/tmp/ledger-b003-b069-ci.log`.
 
 ## Related Working Changes
 
+This section records the B003 preparation state on September 9, 2026.
 F002 has separate, uncommitted Pages, profile, CORS, deployment, and API changes in the primary checkout.
 B003 reuses the existing nested producer change and YAML script correction.
 B003 does not include the remaining F002 changes.
@@ -66,3 +68,12 @@ No public runtime or cache result is established for Ledger.
 8. Complete real Google login, restoration, protected workspace actions, and logout.
 9. Record the deployed release identity and public browser results.
 10. Close B003 only after its publication and public acceptance gates pass.
+
+## Theme Control
+
+I030 uses the explicit quadrant under the `theme-control` contract.
+The header and footer share all four modes and the `ledger:theme` storage key.
+The quadrant order is default-light, sunrise-light, default-dark, and forest-dark.
+Production asset URLs retain `@latest`.
+Central browser acceptance verified pointer selection, keyboard selection, and reload for each mode.
+Repository CI verified the real page with the pinned `v4.3.5` assets.

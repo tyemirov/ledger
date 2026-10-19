@@ -174,6 +174,15 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## Improvements
 
+- [x] [I030] (P1) Use the explicit shared theme control contract
+  Goal: Complete the repository part of shared I010.
+  Requirements: The quadrant retains all four palette modes. The header and footer use the same catalog and storage key.
+  Deliverables: Replace obsolete selectors and declare `ledger:theme` as the application storage key.
+  Validation: The public browser tests and `CI=1 GOTOOLCHAIN=go1.26.5 make ci </dev/null` passed.
+  Central browser acceptance verified pointer selection, keyboard selection, and reload for every mode.
+  Final repository CI verified the real page with the pinned `v4.3.5` assets.
+  Resolution: The explicit control, complete catalog, and application storage key agree.
+
 - [x] [I029] {I025} Remove the completed production migration command.
   The September 15 migration preserved 15 accounts, 53 entries, and all balances across three tenants.
   Live gRPC checks verified every existing balance. The old tenant IDs and static credentials were rejected.
