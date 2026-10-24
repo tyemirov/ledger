@@ -1,6 +1,9 @@
 ---
 mprlab_resources:
   owner: ledger
+  hosts:
+    tutosh:
+      ansible_become_password: DEPLOY_SUDO_PASSWORD_TUTOSH
   release:
     scheme: semver
   defaults:
@@ -39,6 +42,14 @@ mprlab_resources:
         increment: 0s
         multiplier: 2
         attempt_limit: 360
+  environment_file: .mprlab/deploy/.env
+  inputs:
+    DATABASE_URL: ${DATABASE_URL}
+    TAUTH_GOOGLE_CLIENT_ID: ${TAUTH_GOOGLE_CLIENT_ID}
+    TAUTH_JWT_SIGNING_KEY: ${TAUTH_JWT_SIGNING_KEY}
+    DEPLOY_SUDO_PASSWORD_TUTOSH: ${DEPLOY_SUDO_PASSWORD_TUTOSH}
+    MPRLAB_TAUTH_MANAGEMENT_URL: ${MPRLAB_TAUTH_MANAGEMENT_URL}
+    MPRLAB_TAUTH_PROVISIONING_CREDENTIALS: ${MPRLAB_TAUTH_PROVISIONING_CREDENTIALS}
   resources:
     private:
       kind: private_values

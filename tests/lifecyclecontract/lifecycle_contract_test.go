@@ -17,11 +17,14 @@ type manifestEnvelope struct {
 }
 
 type applicationManifest struct {
-	Owner      string                        `yaml:"owner"`
-	Defaults   map[string]map[string]string  `yaml:"defaults"`
-	Operations map[string]executionOperation `yaml:"operations"`
-	Release    releasePolicy                 `yaml:"release"`
-	Resources  map[string]lifecycleResource  `yaml:"resources"`
+	EnvironmentFile string                        `yaml:"environment_file"`
+	Inputs          map[string]string             `yaml:"inputs"`
+	Hosts           map[string]map[string]string  `yaml:"hosts"`
+	Owner           string                        `yaml:"owner"`
+	Defaults        map[string]map[string]string  `yaml:"defaults"`
+	Operations      map[string]executionOperation `yaml:"operations"`
+	Release         releasePolicy                 `yaml:"release"`
+	Resources       map[string]lifecycleResource  `yaml:"resources"`
 }
 
 type executionOperation struct {
@@ -203,7 +206,7 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	requireMappingKeys(
 		testingContext,
 		mappingValue(testingContext, documentNode.Content[0], "mprlab_resources"),
-		[]string{"ci", "defaults", "operations", "owner", "release", "resources"},
+		[]string{"ci", "defaults", "environment_file", "hosts", "inputs", "operations", "owner", "release", "resources"},
 	)
 	requireMappingKeys(
 		testingContext,
@@ -220,6 +223,24 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 		testingContext.Fatalf("decode deployment manifest: %v", unmarshalError)
 	}
 	manifest := envelope.MPRLabResources
+	if manifest.EnvironmentFile != ".mprlab/deploy/.env" {
+		testingContext.Fatalf("unexpected environment source: %q", manifest.EnvironmentFile)
+	}
+	expectedInputs := map[string]string{
+		"MPRLAB_TAUTH_MANAGEMENT_URL":           "${MPRLAB_TAUTH_MANAGEMENT_URL}",
+		"MPRLAB_TAUTH_PROVISIONING_CREDENTIALS": "${MPRLAB_TAUTH_PROVISIONING_CREDENTIALS}",
+		"DATABASE_URL":                          "${DATABASE_URL}",
+		"TAUTH_GOOGLE_CLIENT_ID":                "${TAUTH_GOOGLE_CLIENT_ID}",
+		"TAUTH_JWT_SIGNING_KEY":                 "${TAUTH_JWT_SIGNING_KEY}",
+		"DEPLOY_SUDO_PASSWORD_TUTOSH":           "${DEPLOY_SUDO_PASSWORD_TUTOSH}",
+	}
+	if !reflect.DeepEqual(manifest.Inputs, expectedInputs) {
+		testingContext.Fatalf("unexpected captured inputs: %#v", manifest.Inputs)
+	}
+	expectedHosts := map[string]map[string]string{"tutosh": {"ansible_become_password": "DEPLOY_SUDO_PASSWORD_TUTOSH"}}
+	if !reflect.DeepEqual(manifest.Hosts, expectedHosts) {
+		testingContext.Fatalf("unexpected host input bindings: %#v", manifest.Hosts)
+	}
 	expectedDefaults := map[string]map[string]string{"timeouts": {"startup": "30s", "completion": "30m", "readiness": "30s", "request": "15s", "shutdown": "5s"}}
 	if !reflect.DeepEqual(manifest.Defaults, expectedDefaults) {
 		testingContext.Fatalf("unexpected execution defaults: %#v", manifest.Defaults)
