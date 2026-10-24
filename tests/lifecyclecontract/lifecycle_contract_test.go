@@ -227,10 +227,12 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 		testingContext.Fatalf("unexpected environment source: %q", manifest.EnvironmentFile)
 	}
 	expectedInputs := map[string]string{
-		"DATABASE_URL":                "${DATABASE_URL}",
-		"TAUTH_GOOGLE_CLIENT_ID":      "${TAUTH_GOOGLE_CLIENT_ID}",
-		"TAUTH_JWT_SIGNING_KEY":       "${TAUTH_JWT_SIGNING_KEY}",
-		"DEPLOY_SUDO_PASSWORD_TUTOSH": "${DEPLOY_SUDO_PASSWORD_TUTOSH}",
+		"MPRLAB_TAUTH_MANAGEMENT_URL":           "${MPRLAB_TAUTH_MANAGEMENT_URL}",
+		"MPRLAB_TAUTH_PROVISIONING_CREDENTIALS": "${MPRLAB_TAUTH_PROVISIONING_CREDENTIALS}",
+		"DATABASE_URL":                          "${DATABASE_URL}",
+		"TAUTH_GOOGLE_CLIENT_ID":                "${TAUTH_GOOGLE_CLIENT_ID}",
+		"TAUTH_JWT_SIGNING_KEY":                 "${TAUTH_JWT_SIGNING_KEY}",
+		"DEPLOY_SUDO_PASSWORD_TUTOSH":           "${DEPLOY_SUDO_PASSWORD_TUTOSH}",
 	}
 	if !reflect.DeepEqual(manifest.Inputs, expectedInputs) {
 		testingContext.Fatalf("unexpected captured inputs: %#v", manifest.Inputs)
