@@ -180,9 +180,20 @@ The manifest retires the legacy `mprlab-nginx-gateway/ledger-api` service.
 It also declares the non-secret configuration, `ledger.grpc`, and `ledger.http` capabilities.
 `.mprlab/deploy/resources.yml` is the only tracked production declaration. That manifest
 uses the permanent versionless contract and contains the SemVer release policy. Its one service
-declares singular gateway placement and binds the database plus the required TAuth, browser, and public-origin values through typed resources. The exact private values live only in the ignored mode-0600
-`.mprlab/deploy/.env` input. The Docker build excludes this file. Only deployment reads it.
-Release and publication do not read it.
+declares singular gateway placement and binds the database plus the required TAuth, browser, and public-origin values through typed resources.
+
+The manifest selects the ignored `.mprlab/deploy/.env` file through `environment_file`.
+This field is optional.
+When the manifest has no `environment_file` field, Gateway uses only process values.
+If the process and selected file supply the same input, Gateway uses the process value.
+If Gateway cannot read the selected file, it rejects the manifest even when process values are available.
+
+Gateway reads the manifest inputs one time at the manifest boundary.
+It validates the configuration before CI, builds, host contact, or provider effects.
+Gateway gives the validated configuration to all subsequent lifecycle operations.
+A missing necessary input stops the lifecycle operation.
+The Docker build does not include the selected file.
+
 The legacy volume remains untouched. The gateway owns release sealing,
 immutable publication, deployment convergence, and retry verification. Ledger
 has no Node lifecycle dependency.
@@ -200,7 +211,16 @@ The route provisions the TAuth tenant `ledger`. It uses `ledger_session` and `le
 
 The browser exchanges the Google Identity Services credential at `/auth/google` on the API origin. It does not use a Google redirect callback. Google web client `611549676198-d8800qv64voofseor1qod1euto5duivu.apps.googleusercontent.com` must authorize `https://ledger.mprlab.com` as a JavaScript origin.
 
-The ignored production input must define `DATABASE_URL`, `TAUTH_GOOGLE_CLIENT_ID`, and `TAUTH_JWT_SIGNING_KEY`. The manifest supplies `LEDGER_PUBLIC_ORIGIN` as `https://ledger.mprlab.com`. It supplies `TAUTH_URL` as `https://ledger-api.mprlab.com`.
+The manifest has these six inputs:
+
+- `DATABASE_URL`
+- `TAUTH_GOOGLE_CLIENT_ID`
+- `TAUTH_JWT_SIGNING_KEY`
+- `DEPLOY_SUDO_PASSWORD_TUTOSH`
+- `MPRLAB_TAUTH_MANAGEMENT_URL`
+- `MPRLAB_TAUTH_PROVISIONING_CREDENTIALS`
+
+The manifest supplies `LEDGER_PUBLIC_ORIGIN` as `https://ledger.mprlab.com`. It supplies `TAUTH_URL` as `https://ledger-api.mprlab.com`.
 
 ```bash
 go run ./cmd/credit --config configs/config.ledger.yml
