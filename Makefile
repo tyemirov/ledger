@@ -83,7 +83,7 @@ test-unit:
 	go test $(UNIT_TEST_PACKAGES) -coverprofile=coverage.out -covermode=count
 	go tool cover -func=coverage.out | awk 'END { if ($$3+0 < 100.0) { print "coverage below 100%"; exit 1 } }'
 
-test-integration: test-installed-gateway frontend-test test-local-lifecycle test-pages
+test-integration: test-go-analyzers test-installed-gateway frontend-test test-local-lifecycle test-pages
 
 test-local-lifecycle:
 	bash -n demo/up.sh demo/down.sh
@@ -112,10 +112,11 @@ down:
 ci: check-format lint test
 
 tools:
-	@command -v staticcheck >/dev/null 2>&1 || go install honnef.co/go/tools/cmd/staticcheck@latest
-	@command -v ineffassign >/dev/null 2>&1 || go install github.com/gordonklaus/ineffassign@latest
-	@command -v errcheck >/dev/null 2>&1 || go install github.com/kisielk/errcheck@latest
-	@command -v deadcode >/dev/null 2>&1 || go install golang.org/x/tools/cmd/deadcode@latest
+	@bash scripts/ensure-go-analyzers.sh \
+		staticcheck=honnef.co/go/tools/cmd/staticcheck@latest \
+		ineffassign=github.com/gordonklaus/ineffassign@latest \
+		errcheck=github.com/kisielk/errcheck@latest \
+		deadcode=golang.org/x/tools/cmd/deadcode@latest
 
 MPRLAB_GATEWAY_EXECUTABLE ?= mprlab-gateway
 
@@ -156,3 +157,7 @@ test-removed-migration:
 .PHONY: test-embedded-store
 test-embedded-store:
 	go test ./tests/embeddedstore -count=1
+
+.PHONY: test-go-analyzers
+test-go-analyzers:
+	bash tests/go-analyzers.sh
