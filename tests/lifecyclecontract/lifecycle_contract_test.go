@@ -12,402 +12,97 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-type manifestEnvelope struct {
-	MPRLabResources applicationManifest `yaml:"mprlab_resources"`
-}
-
-type applicationManifest struct {
-	EnvironmentFile string                        `yaml:"environment_file"`
-	Inputs          map[string]string             `yaml:"inputs"`
-	Hosts           map[string]map[string]string  `yaml:"hosts"`
-	Owner           string                        `yaml:"owner"`
-	Defaults        map[string]map[string]string  `yaml:"defaults"`
-	Operations      map[string]executionOperation `yaml:"operations"`
-	Release         releasePolicy                 `yaml:"release"`
-	Resources       map[string]lifecycleResource  `yaml:"resources"`
-}
-
-type executionOperation struct {
-	Polling pollingPolicy `yaml:"polling"`
-}
-type pollingPolicy struct {
-	Initial      string `yaml:"initial"`
-	Maximum      string `yaml:"maximum"`
-	Increment    string `yaml:"increment"`
-	Multiplier   int    `yaml:"multiplier"`
-	AttemptLimit int    `yaml:"attempt_limit"`
-}
-
-type releasePolicy struct {
-	Scheme string `yaml:"scheme"`
-}
-
-type lifecycleResource struct {
-	Kind            string                    `yaml:"kind"`
-	Bindings        map[string]string         `yaml:"bindings"`
-	Capability      string                    `yaml:"capability"`
-	Placement       *servicePlacement         `yaml:"placement"`
-	Profiles        *[]string                 `yaml:"profiles"`
-	RetiredServices map[string]retiredService `yaml:"retired_services"`
-	Images          map[string]containerImage `yaml:"images"`
-	Services        map[string]composeService `yaml:"services"`
-	Volumes         map[string]retainedVolume `yaml:"volumes"`
-	Name            string                    `yaml:"name"`
-	Version         int                       `yaml:"version"`
-	Project         string                    `yaml:"project"`
-	Service         string                    `yaml:"service"`
-	Endpoint        capabilityEndpoint        `yaml:"endpoint"`
-	Health          capabilityHealth          `yaml:"health"`
-	Tenant          tauthTenant               `yaml:"tenant"`
-	Hostname        string                    `yaml:"hostname"`
-	Listener        string                    `yaml:"listener"`
-	Handlers        map[string]routeHandler   `yaml:"handlers"`
-	TLS             routeTLS                  `yaml:"tls"`
-	Protocol        string                    `yaml:"protocol"`
-	URL             string                    `yaml:"url"`
-	ExpectedStatus  int                       `yaml:"expected_status"`
-	Repository      string                    `yaml:"repository"`
-	Branch          string                    `yaml:"branch"`
-	Domain          string                    `yaml:"domain"`
-	Source          pagesSource               `yaml:"source"`
-	Verification    pagesVerification         `yaml:"verification"`
-}
-
-type outputReference struct {
-	Resource string `yaml:"resource"`
-	Output   string `yaml:"output"`
-}
-
-type tauthTenant struct {
-	ID                string          `yaml:"id"`
-	DisplayName       string          `yaml:"display_name"`
-	Origins           []string        `yaml:"origins"`
-	GoogleWebClientID outputReference `yaml:"google_web_client_id"`
-	JWTSigningKey     outputReference `yaml:"jwt_signing_key"`
-	Cookie            tauthCookie     `yaml:"cookie"`
-}
-
-type tauthCookie struct {
-	Domain      string `yaml:"domain"`
-	SessionName string `yaml:"session_name"`
-	RefreshName string `yaml:"refresh_name"`
-}
-
-type routeHandler struct {
-	PathPrefix string `yaml:"path_prefix"`
-	Upstream   string `yaml:"upstream"`
-}
-
-type routeTLS struct {
-	Mode string `yaml:"mode"`
-}
-
-type pagesSource struct {
-	Kind       string `yaml:"kind"`
-	Context    string `yaml:"context"`
-	Dockerfile string `yaml:"dockerfile"`
-	Target     string `yaml:"target"`
-}
-
-type pagesVerification struct {
-	Path string `yaml:"path"`
-}
-
-type retiredService struct {
-}
-
-type containerImage struct {
-	Repository string         `yaml:"repository"`
-	Build      containerBuild `yaml:"build"`
-}
-
-type containerBuild struct {
-	Context    string   `yaml:"context"`
-	Dockerfile string   `yaml:"dockerfile"`
-	Platforms  []string `yaml:"platforms"`
-}
-
-type composeService struct {
-	Image       string                        `yaml:"image"`
-	Placement   servicePlacement              `yaml:"placement"`
-	Environment map[string]environmentBinding `yaml:"environment"`
-	Assets      map[string]runtimeAsset       `yaml:"assets"`
-	Mounts      map[string]volumeMount        `yaml:"mounts"`
-	Ports       map[string]servicePort        `yaml:"ports"`
-	Readiness   serviceReadiness              `yaml:"readiness"`
-}
-
-type serviceReadiness struct {
-	Protocol       string `yaml:"protocol"`
-	Port           int    `yaml:"port"`
-	Path           string `yaml:"path"`
-	ExpectedStatus int    `yaml:"expected_status"`
-}
-
-type servicePlacement struct {
-	Group       string `yaml:"group"`
-	Cardinality string `yaml:"cardinality"`
-}
-
-type environmentBinding struct {
-	Resource string `yaml:"resource"`
-	Output   string `yaml:"output"`
-	Secret   string `yaml:"secret"`
-	Value    string `yaml:"value"`
-}
-
-type runtimeAsset struct {
-	Source string `yaml:"source"`
-	Mode   string `yaml:"mode"`
-}
-
-type volumeMount struct {
-	Volume   string `yaml:"volume"`
-	ReadOnly bool   `yaml:"read_only"`
-}
-
-type servicePort struct {
-	HostPort int    `yaml:"host_port"`
-	Scope    string `yaml:"scope"`
-}
-
-type retainedVolume struct {
-	Name      string `yaml:"name"`
-	Retention string `yaml:"retention"`
-}
-
-type capabilityEndpoint struct {
-	Scope  string `yaml:"scope"`
-	Scheme string `yaml:"scheme"`
-	Alias  string `yaml:"alias"`
-	Port   int    `yaml:"port"`
-}
-
-type capabilityHealth struct {
-	Protocol       string `yaml:"protocol"`
-	Path           string `yaml:"path"`
-	ExpectedStatus int    `yaml:"expected_status"`
-}
-
 func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	testingContext.Parallel()
 	repositoryRoot := locateRepositoryRoot(testingContext)
-	manifestPath := filepath.Join(repositoryRoot, ".mprlab", "deploy", "resources.yml")
-	manifestBytes := readFile(testingContext, manifestPath)
-	if strings.Contains(string(manifestBytes), "\n          visibility:") {
-		testingContext.Fatal("application image retains removed visibility field")
+	manifestBytes := readFile(testingContext, filepath.Join(repositoryRoot, ".mprlab", "deploy", "resources.yml"))
+	manifest := currentManifestContract(testingContext, manifestBytes)
+	requireCurrentContractYAML(testingContext, "release", manifest["release"], `scheme: semver`)
+	environment := currentContractMap(testingContext, manifest["environment"])
+	requireCurrentContractYAML(testingContext, "environment.source", environment["source"], `.mprlab/deploy/.env`)
+	requireCurrentContractYAML(testingContext, "environment.private_inputs", environment["private_inputs"], `
+- {id: database-url, variable: DATABASE_URL}
+- {id: deploy-sudo-password-tutosh, variable: DEPLOY_SUDO_PASSWORD_TUTOSH}
+- {id: mprlab-tauth-management-url, variable: MPRLAB_TAUTH_MANAGEMENT_URL}
+- {id: mprlab-tauth-provisioning-credentials, variable: MPRLAB_TAUTH_PROVISIONING_CREDENTIALS}
+- {id: tauth-google-client-id, variable: TAUTH_GOOGLE_CLIENT_ID}
+- {id: tauth-jwt-signing-key, variable: TAUTH_JWT_SIGNING_KEY}
+`)
+	requireCurrentContractYAML(testingContext, "owner", manifest["owner"], `ledger`)
+	lifecycle := currentContractMap(testingContext, manifest["lifecycle"])
+	requireCurrentContractYAML(testingContext, "lifecycle.defaults", lifecycle["defaults"], `timeouts: {startup: 30s, completion: 30m, readiness: 30s, request: 15s, shutdown: 5s}`)
+	requireCurrentContractYAML(testingContext, "lifecycle.operations", lifecycle["operations"], `
+- {name: app_lifecycle.repository_read, polling: {initial: 1s, maximum: 5s, increment: 0s, multiplier: 2, attempt_limit: 360}}
+- {name: app-release, polling: {initial: 1s, maximum: 5s, increment: 0s, multiplier: 2, attempt_limit: 360}}
+- {name: app-publish, polling: {initial: 1s, maximum: 5s, increment: 0s, multiplier: 2, attempt_limit: 360}}
+- {name: app-deploy, polling: {initial: 1s, maximum: 5s, increment: 0s, multiplier: 2, attempt_limit: 360}}
+`)
+	requireCurrentContractYAML(testingContext, "lifecycle.observations", lifecycle["observations"], `http: [{id: api-health, protocol: http, url: https://ledger-api.mprlab.com/healthz, expected_status: 200}]`)
+	artifacts := currentContractMap(testingContext, manifest["artifacts"])
+	requireCurrentContractYAML(testingContext, "artifacts.container_images", artifacts["container_images"], `[{id: ledger-image, build: {context: ., dockerfile: Dockerfile, platforms: [linux/amd64, linux/arm64]}}]`)
+	requireCurrentContractYAML(testingContext, "artifacts.web_bundles", artifacts["web_bundles"], `[{id: frontend, format: directory, source: {kind: container, context: ., dockerfile: Dockerfile, target: pages}}]`)
+	publications := currentContractMap(testingContext, manifest["publications"])
+	requireCurrentContractYAML(testingContext, "publications.ghcr", publications["ghcr"], `images: [{id: ledger-image, artifact: ledger-image, repository: ghcr.io/tyemirov/ledger}]`)
+	requireCurrentContractYAML(testingContext, "publications.github_pages", publications["github_pages"], `sites: [{id: frontend, artifact: frontend, repository: tyemirov/ledger, branch: gh-pages, domain: ledger.mprlab.com, marker: {path: /.mprlab-release.json}}]`)
+	targets := currentContractMap(testingContext, manifest["targets"])
+	requireCurrentContractYAML(testingContext, "targets.access", targets["access"], `hosts: [{host: tutosh, elevation_password: {input: deploy-sudo-password-tutosh}}]`)
+	compose := currentContractMap(testingContext, targets["docker_compose"])
+	if projects, ok := compose["projects"].([]any); !ok || len(projects) != 1 {
+		testingContext.Fatal("exactly one runtime project is required")
 	}
-
-	var documentNode yaml.Node
-	if unmarshalError := yaml.Unmarshal(manifestBytes, &documentNode); unmarshalError != nil {
-		testingContext.Fatalf("parse deployment manifest: %v", unmarshalError)
+	project := currentContractDeclaration(testingContext, compose["projects"], "runtime")
+	if _, exists := project["placement"]; exists {
+		testingContext.Fatal("Compose placement must exist only on services")
 	}
-	requireMappingKeys(testingContext, documentNode.Content[0], []string{"mprlab_resources"})
-	requireMappingKeys(
-		testingContext,
-		mappingValue(testingContext, documentNode.Content[0], "mprlab_resources"),
-		[]string{"ci", "defaults", "environment_file", "hosts", "inputs", "operations", "owner", "release", "resources"},
-	)
-	requireMappingKeys(
-		testingContext,
-		mappingValue(
-			testingContext,
-			mappingValue(testingContext, documentNode.Content[0], "mprlab_resources"),
-			"release",
-		),
-		[]string{"scheme"},
-	)
-
-	var envelope manifestEnvelope
-	if unmarshalError := yaml.Unmarshal(manifestBytes, &envelope); unmarshalError != nil {
-		testingContext.Fatalf("decode deployment manifest: %v", unmarshalError)
+	if _, exists := project["profiles"]; exists {
+		testingContext.Fatal("Compose project profiles must be absent")
 	}
-	manifest := envelope.MPRLabResources
-	if manifest.EnvironmentFile != ".mprlab/deploy/.env" {
-		testingContext.Fatalf("unexpected environment source: %q", manifest.EnvironmentFile)
+	requireCurrentContractYAML(testingContext, "runtime.retired_services", project["retired_services"], `[{project: mprlab-nginx-gateway, service: ledger-api}]`)
+	requireCurrentContractYAML(testingContext, "runtime.volumes", project["volumes"], `[{id: data, name: ledger-data, retention: retain}]`)
+	if services, ok := project["services"].([]any); !ok || len(services) != 1 {
+		testingContext.Fatal("exactly one ledger-api service is required")
 	}
-	expectedInputs := map[string]string{
-		"MPRLAB_TAUTH_MANAGEMENT_URL":           "${MPRLAB_TAUTH_MANAGEMENT_URL}",
-		"MPRLAB_TAUTH_PROVISIONING_CREDENTIALS": "${MPRLAB_TAUTH_PROVISIONING_CREDENTIALS}",
-		"DATABASE_URL":                          "${DATABASE_URL}",
-		"TAUTH_GOOGLE_CLIENT_ID":                "${TAUTH_GOOGLE_CLIENT_ID}",
-		"TAUTH_JWT_SIGNING_KEY":                 "${TAUTH_JWT_SIGNING_KEY}",
-		"DEPLOY_SUDO_PASSWORD_TUTOSH":           "${DEPLOY_SUDO_PASSWORD_TUTOSH}",
+	service := currentContractDeclaration(testingContext, project["services"], "ledger-api")
+	requireCurrentContractYAML(testingContext, "ledger-api.image", service["image"], `publication: ledger-image`)
+	requireCurrentContractYAML(testingContext, "ledger-api.placement", service["placement"], `group: gateway
+cardinality: one`)
+	requireCurrentContractYAML(testingContext, "ledger-api.environment", service["environment"], `
+- {name: DATABASE_URL, input: database-url}
+- {name: LEDGER_PUBLIC_ORIGIN, value: https://ledger.mprlab.com}
+- {name: TAUTH_JWT_SIGNING_KEY, input: tauth-jwt-signing-key}
+- {name: TAUTH_GOOGLE_CLIENT_ID, input: tauth-google-client-id}
+- {name: TAUTH_SESSION_COOKIE_NAME, value: ledger_session}
+- {name: TAUTH_TENANT_ID, value: ledger}
+- {name: TAUTH_URL, value: https://ledger-api.mprlab.com}
+`)
+	requireCurrentContractYAML(testingContext, "ledger-api.assets", service["assets"], `[{source: configs/config.ledger.yml, target: /srv/config.yml}]`)
+	requireCurrentContractYAML(testingContext, "ledger-api.mounts", service["mounts"], `[{target: /srv/data, volume: data, read_only: false}]`)
+	requireCurrentContractYAML(testingContext, "ledger-api.ports", service["ports"], `[{container_port: 50051, host_port: 50051, scope: private_lan}, {container_port: 8080, host_port: 18082, scope: private_lan}]`)
+	requireCurrentContractYAML(testingContext, "ledger-api.readiness", service["readiness"], `endpoint: readiness`)
+	requireCurrentContractYAML(testingContext, "ledger-api.endpoints", service["endpoints"], `
+- {id: grpc, name: ledger.grpc, version: 1, endpoint: {scope: same_host, scheme: grpc, alias: ledger-api, port: 50051}, health: {protocol: tcp}}
+- {id: grpc-private-lan, name: ledger.grpc.private-lan, version: 1, endpoint: {scope: private_lan, scheme: grpc, port: 50051}, health: {protocol: tcp}}
+- {id: http, name: ledger.http, version: 1, endpoint: {scope: same_host, scheme: http, alias: ledger-http, port: 8080}, health: {protocol: http, path: /healthz, expected_status: 200}}
+- {id: http-private-lan, name: ledger.http.private-lan, version: 1, endpoint: {scope: private_lan, scheme: http, port: 18082}, health: {protocol: http, path: /healthz, expected_status: 200}}
+- {id: readiness, name: ledger.readiness.runtime.ledger-api, version: 1, endpoint: {scope: same_host, scheme: http, alias: runtime-ledger-api-readiness, port: 8080}, health: {protocol: http, path: /healthz, expected_status: 200}}
+`)
+	ingress := currentContractMap(testingContext, currentContractMap(testingContext, targets["ingress"])["caddy"])
+	requireCurrentContractYAML(testingContext, "ingress.caddy.routes", ingress["routes"], `
+- id: api
+  hostname: ledger-api.mprlab.com
+  listener: https
+  tls: {mode: automatic}
+  handlers:
+  - {id: authentication, path_prefix: /auth, upstream: tauth.http}
+  - {id: profile, path_prefix: /me, upstream: tauth.http}
+  - {id: control-plane, path_prefix: /api, upstream: ledger.http}
+  - {id: browser-config, path_prefix: /config-ui.yaml, upstream: ledger.http}
+  - {id: health, path_prefix: /healthz, upstream: ledger.http}
+`)
+	requireCurrentContractYAML(testingContext, "targets.github_pages", targets["github_pages"], `sites: [{id: frontend, publication: frontend, url: https://ledger.mprlab.com/}]`)
+	if _, err := os.Stat(filepath.Join(repositoryRoot, ".mprlab", "release.yml")); !os.IsNotExist(err) {
+		testingContext.Fatalf("obsolete release policy file remains: %v", err)
 	}
-	if !reflect.DeepEqual(manifest.Inputs, expectedInputs) {
-		testingContext.Fatalf("unexpected captured inputs: %#v", manifest.Inputs)
-	}
-	expectedHosts := map[string]map[string]string{"tutosh": {"ansible_become_password": "DEPLOY_SUDO_PASSWORD_TUTOSH"}}
-	if !reflect.DeepEqual(manifest.Hosts, expectedHosts) {
-		testingContext.Fatalf("unexpected host input bindings: %#v", manifest.Hosts)
-	}
-	expectedDefaults := map[string]map[string]string{"timeouts": {"startup": "30s", "completion": "30m", "readiness": "30s", "request": "15s", "shutdown": "5s"}}
-	if !reflect.DeepEqual(manifest.Defaults, expectedDefaults) {
-		testingContext.Fatalf("unexpected execution defaults: %#v", manifest.Defaults)
-	}
-	expectedPolling := pollingPolicy{Initial: "1s", Maximum: "5s", Increment: "0s", Multiplier: 2, AttemptLimit: 360}
-	expectedOperations := []string{"app_lifecycle.repository_read", "app-release", "app-publish", "app-deploy"}
-	if len(manifest.Operations) != len(expectedOperations) {
-		testingContext.Fatalf("unexpected execution operations: %#v", manifest.Operations)
-	}
-	for _, operation := range expectedOperations {
-		if actual, exists := manifest.Operations[operation]; !exists || actual.Polling != expectedPolling {
-			testingContext.Fatalf("unexpected observation policy for %s: %#v", operation, actual)
-		}
-	}
-	if manifest.Owner != "ledger" {
-		testingContext.Fatalf("unexpected manifest owner: %q", manifest.Owner)
-	}
-	if manifest.Release != (releasePolicy{Scheme: "semver"}) {
-		testingContext.Fatalf("unexpected release policy: %#v", manifest.Release)
-	}
-	if _, statError := os.Stat(filepath.Join(repositoryRoot, ".mprlab", "release.yml")); !os.IsNotExist(statError) {
-		testingContext.Fatalf("obsolete release policy file remains: %v", statError)
-	}
-	if len(manifest.Resources) != 10 {
-		testingContext.Fatalf("expected ten production resources, got %d", len(manifest.Resources))
-	}
-
-	privateResource := requireResource(testingContext, manifest.Resources, "private_values", "private")
-	expectedBindings := map[string]string{
-		"database-url":           "DATABASE_URL",
-		"tauth-jwt-signing-key":  "TAUTH_JWT_SIGNING_KEY",
-		"tauth-google-client-id": "TAUTH_GOOGLE_CLIENT_ID",
-	}
-	if !reflect.DeepEqual(privateResource.Bindings, expectedBindings) {
-		testingContext.Fatalf("unexpected private bindings: %#v", privateResource.Bindings)
-	}
-
-	composeResource := requireResource(testingContext, manifest.Resources, "compose_project", "runtime")
-	if composeResource.Placement != nil || composeResource.Profiles != nil {
-		testingContext.Fatal("Compose placement must exist only on services and profiles must be absent")
-	}
-	if !reflect.DeepEqual(composeResource.RetiredServices, map[string]retiredService{"mprlab-nginx-gateway/ledger-api": {}}) {
-		testingContext.Fatalf("unexpected retired services: %#v", composeResource.RetiredServices)
-	}
-	if len(composeResource.Images) != 1 {
-		testingContext.Fatalf("expected one image, got %d", len(composeResource.Images))
-	}
-	ledgerImage := composeResource.Images["ledger-image"]
-	if ledgerImage.Repository != "ghcr.io/tyemirov/ledger" {
-		testingContext.Fatalf("unexpected image declaration: %#v", ledgerImage)
-	}
-	if ledgerImage.Build.Context != "." || ledgerImage.Build.Dockerfile != "Dockerfile" || !slices.Equal(sortedLifecycleStrings(ledgerImage.Build.Platforms), []string{"linux/amd64", "linux/arm64"}) {
-		testingContext.Fatalf("unexpected image build declaration: %#v", ledgerImage.Build)
-	}
-	if len(composeResource.Services) != 1 {
-		testingContext.Fatalf("expected one service, got %d", len(composeResource.Services))
-	}
-	ledgerService := composeResource.Services["ledger-api"]
-	if ledgerService.Image != "ledger-image" || ledgerService.Placement != (servicePlacement{Group: "gateway", Cardinality: "one"}) {
-		testingContext.Fatalf("unexpected Ledger service declaration: %#v", ledgerService)
-	}
-	expectedEnvironment := map[string]environmentBinding{
-		"DATABASE_URL":              {Resource: "private", Output: "database-url"},
-		"LEDGER_PUBLIC_ORIGIN":      {Value: "https://ledger.mprlab.com"},
-		"TAUTH_JWT_SIGNING_KEY":     {Resource: "authentication", Output: "jwt-signing-key"},
-		"TAUTH_GOOGLE_CLIENT_ID":    {Resource: "authentication", Output: "google-web-client-id"},
-		"TAUTH_SESSION_COOKIE_NAME": {Resource: "authentication", Output: "session-cookie-name"},
-		"TAUTH_TENANT_ID":           {Resource: "authentication", Output: "tenant-id"},
-		"TAUTH_URL":                 {Value: "https://ledger-api.mprlab.com"},
-	}
-	if !reflect.DeepEqual(ledgerService.Environment, expectedEnvironment) {
-		testingContext.Fatalf("unexpected service environment: %#v", ledgerService.Environment)
-	}
-	if !reflect.DeepEqual(ledgerService.Assets, map[string]runtimeAsset{"/srv/config.yml": {Source: "configs/config.ledger.yml", Mode: "0444"}}) {
-		testingContext.Fatalf("unexpected runtime assets: %#v", ledgerService.Assets)
-	}
-	if !reflect.DeepEqual(ledgerService.Mounts, map[string]volumeMount{"/srv/data": {Volume: "data", ReadOnly: false}}) {
-		testingContext.Fatalf("unexpected volume mounts: %#v", ledgerService.Mounts)
-	}
-	if !reflect.DeepEqual(ledgerService.Ports, map[string]servicePort{"50051": {HostPort: 50051, Scope: "private_lan"}, "8080": {HostPort: 18082, Scope: "private_lan"}}) {
-		testingContext.Fatalf("unexpected service ports: %#v", ledgerService.Ports)
-	}
-	if ledgerService.Readiness != (serviceReadiness{Protocol: "http", Port: 8080, Path: "/healthz", ExpectedStatus: 200}) {
-		testingContext.Fatalf("unexpected service readiness: %#v", ledgerService.Readiness)
-	}
-	if !reflect.DeepEqual(composeResource.Volumes, map[string]retainedVolume{"data": {Name: "ledger-data", Retention: "retain"}}) {
-		testingContext.Fatalf("unexpected retained volumes: %#v", composeResource.Volumes)
-	}
-
-	capabilityResource := requireResource(testingContext, manifest.Resources, "runtime_capability", "grpc")
-	if capabilityResource.Name != "ledger.grpc" || capabilityResource.Version != 1 || capabilityResource.Project != "runtime" || capabilityResource.Service != "ledger-api" {
-		testingContext.Fatalf("unexpected runtime capability: %#v", capabilityResource)
-	}
-	if capabilityResource.Endpoint != (capabilityEndpoint{Scope: "same_host", Scheme: "grpc", Alias: "ledger-api", Port: 50051}) || capabilityResource.Health != (capabilityHealth{Protocol: "tcp"}) {
-		testingContext.Fatalf("unexpected capability endpoint or health: %#v %#v", capabilityResource.Endpoint, capabilityResource.Health)
-	}
-	httpCapability := requireResource(testingContext, manifest.Resources, "runtime_capability", "http")
-	if httpCapability.Name != "ledger.http" || httpCapability.Version != 1 || httpCapability.Project != "runtime" || httpCapability.Service != "ledger-api" {
-		testingContext.Fatalf("unexpected HTTP runtime capability: %#v", httpCapability)
-	}
-	if httpCapability.Endpoint != (capabilityEndpoint{Scope: "same_host", Scheme: "http", Alias: "ledger-http", Port: 8080}) || httpCapability.Health != (capabilityHealth{Protocol: "http", Path: "/healthz", ExpectedStatus: 200}) {
-		testingContext.Fatalf("unexpected HTTP capability endpoint or health: %#v %#v", httpCapability.Endpoint, httpCapability.Health)
-	}
-
-	for _, expected := range []struct {
-		id     string
-		name   string
-		scheme string
-		port   int
-		health capabilityHealth
-	}{
-		{"grpc-private-lan", "ledger.grpc.private-lan", "grpc", 50051, capabilityHealth{Protocol: "tcp"}},
-		{"http-private-lan", "ledger.http.private-lan", "http", 18082, capabilityHealth{Protocol: "http", Path: "/healthz", ExpectedStatus: 200}},
-	} {
-		capability := requireResource(testingContext, manifest.Resources, "runtime_capability", expected.id)
-		if capability.Name != expected.name || capability.Version != 1 || capability.Project != "runtime" || capability.Service != "ledger-api" {
-			testingContext.Fatalf("unexpected private LAN capability: %#v", capability)
-		}
-		if capability.Endpoint != (capabilityEndpoint{Scope: "private_lan", Scheme: expected.scheme, Port: expected.port}) || capability.Health != expected.health {
-			testingContext.Fatalf("unexpected private LAN endpoint or health: %#v", capability)
-		}
-	}
-
-	tauthResource := requireResource(testingContext, manifest.Resources, "tauth_tenant", "authentication")
-	if tauthResource.Capability != "tauth.tenants" || tauthResource.Version != 1 {
-		testingContext.Fatalf("unexpected TAuth tenant capability: %#v", tauthResource)
-	}
-	expectedTAuthTenant := tauthTenant{
-		ID:                "ledger",
-		DisplayName:       "Ledger",
-		Origins:           []string{"https://ledger.mprlab.com"},
-		GoogleWebClientID: outputReference{Resource: "private", Output: "tauth-google-client-id"},
-		JWTSigningKey:     outputReference{Resource: "private", Output: "tauth-jwt-signing-key"},
-		Cookie:            tauthCookie{Domain: "ledger-api.mprlab.com", SessionName: "ledger_session", RefreshName: "ledger_refresh"},
-	}
-	if !reflect.DeepEqual(tauthResource.Tenant, expectedTAuthTenant) {
-		testingContext.Fatalf("unexpected TAuth tenant: %#v", tauthResource.Tenant)
-	}
-
-	apiRoute := requireResource(testingContext, manifest.Resources, "caddy_route", "api")
-	if apiRoute.Hostname != "ledger-api.mprlab.com" || apiRoute.Listener != "https" || apiRoute.TLS != (routeTLS{Mode: "automatic"}) {
-		testingContext.Fatalf("unexpected API route: %#v", apiRoute)
-	}
-	expectedHandlers := map[string]routeHandler{
-		"authentication": {PathPrefix: "/auth", Upstream: "tauth.http"},
-		"profile":        {PathPrefix: "/me", Upstream: "tauth.http"},
-		"control-plane":  {PathPrefix: "/api", Upstream: "ledger.http"},
-		"browser-config": {PathPrefix: "/config-ui.yaml", Upstream: "ledger.http"},
-		"health":         {PathPrefix: "/healthz", Upstream: "ledger.http"},
-	}
-	if !reflect.DeepEqual(apiRoute.Handlers, expectedHandlers) {
-		testingContext.Fatalf("unexpected API route handlers: %#v", apiRoute.Handlers)
-	}
-
-	apiHealth := requireResource(testingContext, manifest.Resources, "health_check", "api-health")
-	if apiHealth.Protocol != "http" || apiHealth.URL != "https://ledger-api.mprlab.com/healthz" || apiHealth.ExpectedStatus != 200 {
-		testingContext.Fatalf("unexpected API health check: %#v", apiHealth)
-	}
-
-	frontend := requireResource(testingContext, manifest.Resources, "github_pages", "frontend")
-	if frontend.Repository != "tyemirov/ledger" || frontend.Branch != "gh-pages" || frontend.Domain != "ledger.mprlab.com" || frontend.URL != "https://ledger.mprlab.com/" {
-		testingContext.Fatalf("unexpected frontend resource: %#v", frontend)
-	}
-	if frontend.Source != (pagesSource{Kind: "container", Context: ".", Dockerfile: "Dockerfile", Target: "pages"}) || frontend.Verification != (pagesVerification{Path: "/.mprlab-release.json"}) {
-		testingContext.Fatalf("unexpected frontend source or verification: %#v %#v", frontend.Source, frontend.Verification)
-	}
-
 	runtimeConfiguration := string(readFile(testingContext, filepath.Join(repositoryRoot, "configs", "config.ledger.yml")))
 	for _, requiredFragment := range []string{
 		`jwt_issuer: "tauth"`,
@@ -500,43 +195,6 @@ func readFile(testingContext *testing.T, path string) []byte {
 	return content
 }
 
-func requireResource(testingContext *testing.T, resources map[string]lifecycleResource, kind string, id string) lifecycleResource {
-	testingContext.Helper()
-	if resource, exists := resources[id]; exists {
-		if resource.Kind == kind {
-			return resource
-		}
-	}
-	testingContext.Fatalf("missing resource kind=%s id=%s", kind, id)
-	return lifecycleResource{}
-}
-
-func requireMappingKeys(testingContext *testing.T, mappingNode *yaml.Node, expectedKeys []string) {
-	testingContext.Helper()
-	if mappingNode.Kind != yaml.MappingNode {
-		testingContext.Fatalf("expected YAML mapping node, got %d", mappingNode.Kind)
-	}
-	actualKeys := make([]string, 0, len(mappingNode.Content)/2)
-	for contentIndex := 0; contentIndex < len(mappingNode.Content); contentIndex += 2 {
-		actualKeys = append(actualKeys, mappingNode.Content[contentIndex].Value)
-	}
-	slices.Sort(actualKeys)
-	if !reflect.DeepEqual(actualKeys, expectedKeys) {
-		testingContext.Fatalf("unexpected mapping keys: got %v want %v", actualKeys, expectedKeys)
-	}
-}
-
-func mappingValue(testingContext *testing.T, mappingNode *yaml.Node, key string) *yaml.Node {
-	testingContext.Helper()
-	for contentIndex := 0; contentIndex < len(mappingNode.Content); contentIndex += 2 {
-		if mappingNode.Content[contentIndex].Value == key {
-			return mappingNode.Content[contentIndex+1]
-		}
-	}
-	testingContext.Fatalf("missing YAML mapping key %q", key)
-	return nil
-}
-
 func requireExactIgnore(testingContext *testing.T, path string, privatePath string, rejectNegations bool) {
 	testingContext.Helper()
 	lines := strings.Split(strings.ReplaceAll(string(readFile(testingContext, path)), "\r\n", "\n"), "\n")
@@ -556,4 +214,118 @@ func sortedLifecycleStrings(values []string) []string {
 	result := slices.Clone(values)
 	slices.Sort(result)
 	return result
+}
+
+func currentContractMap(t *testing.T, value any) map[string]any {
+	t.Helper()
+	result, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("expected native declaration mapping, got %#v", value)
+	}
+	return result
+}
+
+func currentManifestContract(t *testing.T, content []byte) map[string]any {
+	t.Helper()
+	var envelope map[string]any
+	if err := yaml.Unmarshal(content, &envelope); err != nil {
+		t.Fatalf("parse selected manifest: %v", err)
+	}
+	if len(envelope) != 1 {
+		t.Fatalf("unexpected manifest envelope: %#v", envelope)
+	}
+	actual := currentContractMap(t, envelope["mprlab_resources"])
+	keys := make([]string, 0, len(actual))
+	for key := range actual {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	expected := []string{"artifacts", "environment", "lifecycle", "owner", "publications", "release", "targets"}
+	if !reflect.DeepEqual(keys, expected) {
+		t.Fatalf("selected manifest root keys=%v want=%v", keys, expected)
+	}
+	return actual
+}
+
+func currentContractDeclaration(t *testing.T, value any, identity string) map[string]any {
+	t.Helper()
+	items, ok := value.([]any)
+	if !ok {
+		t.Fatalf("expected explicit declaration list, got %#v", value)
+	}
+	var found map[string]any
+	for _, item := range items {
+		declaration := currentContractMap(t, item)
+		if declaration["id"] == identity {
+			if found != nil {
+				t.Fatalf("duplicate declaration %s", identity)
+			}
+			found = declaration
+		}
+	}
+	if found == nil {
+		t.Fatalf("missing native declaration %s", identity)
+	}
+	return found
+}
+
+func requireCurrentContractYAML(t *testing.T, path string, actual any, expectedText string) {
+	t.Helper()
+	var expected any
+	if err := yaml.Unmarshal([]byte(expectedText), &expected); err != nil {
+		t.Fatalf("parse expected %s: %v", path, err)
+	}
+	requireCurrentContractValue(t, path, actual, expected)
+}
+
+func requireCurrentContractValue(t *testing.T, path string, actual, expected any) {
+	t.Helper()
+	switch wanted := expected.(type) {
+	case map[string]any:
+		mapping, ok := actual.(map[string]any)
+		if !ok {
+			t.Fatalf("%s requires a mapping, got %#v", path, actual)
+		}
+		if !strings.HasSuffix(path, ".assets[]") && len(mapping) != len(wanted) {
+			t.Fatalf("%s has unexpected fields: %#v", path, actual)
+		}
+		for key, value := range wanted {
+			observed, exists := mapping[key]
+			if !exists {
+				t.Fatalf("%s lacks %s", path, key)
+			}
+			requireCurrentContractValue(t, path+"."+key, observed, value)
+		}
+	case []any:
+		items, ok := actual.([]any)
+		if !ok || len(items) != len(wanted) {
+			t.Fatalf("%s list=%#v want=%#v", path, actual, wanted)
+		}
+		for index, value := range wanted {
+			observed := items[index]
+			if declaration, isMapping := value.(map[string]any); isMapping {
+				identityKey := "id"
+				if _, exists := declaration[identityKey]; !exists {
+					identityKey = "name"
+				}
+				if identity, exists := declaration[identityKey]; exists {
+					matches := 0
+					for _, candidate := range items {
+						if entry, valid := candidate.(map[string]any); valid && entry[identityKey] == identity {
+							observed = candidate
+							matches++
+						}
+					}
+					if matches != 1 {
+						t.Fatalf("%s requires one %s=%v, got %d", path, identityKey, identity, matches)
+					}
+				}
+			}
+			requireCurrentContractValue(t, path+"[]", observed, value)
+		}
+	default:
+		if !reflect.DeepEqual(actual, expected) {
+			t.Fatalf("%s=%#v want=%#v", path, actual, expected)
+		}
+	}
 }
