@@ -1,240 +1,240 @@
----
 mprlab_resources:
-  owner: ledger
-  hosts:
-    tutosh:
-      ansible_become_password: DEPLOY_SUDO_PASSWORD_TUTOSH
-  release:
-    scheme: semver
-  defaults:
-    timeouts:
-      startup: 30s
-      completion: 30m
-      readiness: 30s
-      request: 15s
-      shutdown: 5s
-  operations:
-    app_lifecycle.repository_read:
-      polling:
-        initial: 1s
-        maximum: 5s
-        increment: 0s
-        multiplier: 2
-        attempt_limit: 360
-    app-release:
-      polling:
-        initial: 1s
-        maximum: 5s
-        increment: 0s
-        multiplier: 2
-        attempt_limit: 360
-    app-publish:
-      polling:
-        initial: 1s
-        maximum: 5s
-        increment: 0s
-        multiplier: 2
-        attempt_limit: 360
-    app-deploy:
-      polling:
-        initial: 1s
-        maximum: 5s
-        increment: 0s
-        multiplier: 2
-        attempt_limit: 360
-  environment_file: .mprlab/deploy/.env
-  inputs:
-    DATABASE_URL: ${DATABASE_URL}
-    TAUTH_GOOGLE_CLIENT_ID: ${TAUTH_GOOGLE_CLIENT_ID}
-    TAUTH_JWT_SIGNING_KEY: ${TAUTH_JWT_SIGNING_KEY}
-    DEPLOY_SUDO_PASSWORD_TUTOSH: ${DEPLOY_SUDO_PASSWORD_TUTOSH}
-    MPRLAB_TAUTH_MANAGEMENT_URL: ${MPRLAB_TAUTH_MANAGEMENT_URL}
-    MPRLAB_TAUTH_PROVISIONING_CREDENTIALS: ${MPRLAB_TAUTH_PROVISIONING_CREDENTIALS}
-  resources:
-    private:
-      kind: private_values
-      bindings:
-        database-url: DATABASE_URL
-        tauth-jwt-signing-key: TAUTH_JWT_SIGNING_KEY
-        tauth-google-client-id: TAUTH_GOOGLE_CLIENT_ID
-    runtime:
-      kind: compose_project
-      retired_services:
-        mprlab-nginx-gateway/ledger-api: {}
-      images:
-        ledger-image:
-          repository: ghcr.io/tyemirov/ledger
-          build:
-            context: .
-            dockerfile: Dockerfile
-            platforms:
-            - linux/amd64
-            - linux/arm64
-      services:
-        ledger-api:
-          image: ledger-image
-          placement:
-            group: gateway
-            cardinality: one
-          environment:
-            DATABASE_URL:
-              resource: private
-              output: database-url
-            LEDGER_PUBLIC_ORIGIN:
-              value: https://ledger.mprlab.com
-            TAUTH_JWT_SIGNING_KEY:
-              resource: authentication
-              output: jwt-signing-key
-            TAUTH_GOOGLE_CLIENT_ID:
-              resource: authentication
-              output: google-web-client-id
-            TAUTH_SESSION_COOKIE_NAME:
-              resource: authentication
-              output: session-cookie-name
-            TAUTH_TENANT_ID:
-              resource: authentication
-              output: tenant-id
-            TAUTH_URL:
-              value: https://ledger-api.mprlab.com
-          assets:
-            /srv/config.yml:
-              source: configs/config.ledger.yml
-              mode: '0444'
-          mounts:
-            /srv/data:
-              volume: data
-              read_only: false
-          ports:
-            '50051':
-              host_port: 50051
-              scope: private_lan
-            '8080':
-              host_port: 18082
-              scope: private_lan
-          readiness:
-            protocol: http
-            port: 8080
-            path: /healthz
-            expected_status: 200
-      volumes:
-        data:
-          name: ledger-data
-          retention: retain
-    grpc:
-      kind: runtime_capability
-      name: ledger.grpc
-      version: 1
-      project: runtime
-      service: ledger-api
-      endpoint:
-        scope: same_host
-        scheme: grpc
-        alias: ledger-api
-        port: 50051
-      health:
-        protocol: tcp
-    http:
-      kind: runtime_capability
-      name: ledger.http
-      version: 1
-      project: runtime
-      service: ledger-api
-      endpoint:
-        scope: same_host
-        scheme: http
-        alias: ledger-http
-        port: 8080
-      health:
-        protocol: http
-        path: /healthz
-        expected_status: 200
-    authentication:
-      kind: tauth_tenant
-      capability: tauth.tenants
-      version: 1
-      tenant:
-        id: ledger
-        display_name: Ledger
-        origins:
-        - https://ledger.mprlab.com
-        google_web_client_id:
-          resource: private
-          output: tauth-google-client-id
-        jwt_signing_key:
-          resource: private
-          output: tauth-jwt-signing-key
-        cookie:
-          domain: ledger-api.mprlab.com
-          session_name: ledger_session
-          refresh_name: ledger_refresh
-    api:
-      kind: caddy_route
-      hostname: ledger-api.mprlab.com
-      listener: https
-      handlers:
-        authentication:
-          path_prefix: /auth
-          upstream: tauth.http
-        profile:
-          path_prefix: /me
-          upstream: tauth.http
-        control-plane:
-          path_prefix: /api
-          upstream: ledger.http
-        browser-config:
-          path_prefix: /config-ui.yaml
-          upstream: ledger.http
-        health:
-          path_prefix: /healthz
-          upstream: ledger.http
-      tls:
-        mode: automatic
-    api-health:
-      kind: health_check
-      protocol: http
-      url: https://ledger-api.mprlab.com/healthz
-      expected_status: 200
-    frontend:
-      kind: github_pages
-      repository: tyemirov/ledger
-      branch: gh-pages
-      domain: ledger.mprlab.com
-      url: https://ledger.mprlab.com/
-      source:
-        kind: container
-        context: .
-        dockerfile: Dockerfile
-        target: pages
-      verification:
-        path: /.mprlab-release.json
-    grpc-private-lan:
-      kind: runtime_capability
-      name: ledger.grpc.private-lan
-      version: 1
-      project: runtime
-      service: ledger-api
-      endpoint:
-        scope: private_lan
-        scheme: grpc
-        port: 50051
-      health:
-        protocol: tcp
-    http-private-lan:
-      kind: runtime_capability
-      name: ledger.http.private-lan
-      version: 1
-      project: runtime
-      service: ledger-api
-      endpoint:
-        scope: private_lan
-        scheme: http
-        port: 18082
-      health:
-        protocol: http
-        path: /healthz
-        expected_status: 200
-  ci:
-    enabled: true
-    command:
-      '0': make
-      '1': ci
+    artifacts:
+        container_images:
+            - build:
+                context: .
+                dockerfile: Dockerfile
+                platforms:
+                    - linux/amd64
+                    - linux/arm64
+              id: ledger-image
+        web_bundles:
+            - format: directory
+              id: frontend
+              source:
+                context: .
+                dockerfile: Dockerfile
+                kind: container
+                target: pages
+    environment:
+        private_inputs:
+            - id: database-url
+              variable: DATABASE_URL
+            - id: deploy-sudo-password-tutosh
+              variable: DEPLOY_SUDO_PASSWORD_TUTOSH
+            - id: mprlab-tauth-management-url
+              variable: MPRLAB_TAUTH_MANAGEMENT_URL
+            - id: mprlab-tauth-provisioning-credentials
+              variable: MPRLAB_TAUTH_PROVISIONING_CREDENTIALS
+            - id: tauth-google-client-id
+              variable: TAUTH_GOOGLE_CLIENT_ID
+            - id: tauth-jwt-signing-key
+              variable: TAUTH_JWT_SIGNING_KEY
+        source: .mprlab/deploy/.env
+    lifecycle:
+        ci:
+            command:
+                - make
+                - ci
+            enabled: true
+        defaults:
+            timeouts:
+                completion: 30m
+                readiness: 30s
+                request: 15s
+                shutdown: 5s
+                startup: 30s
+        observations:
+            http:
+                - expected_status: 200
+                  id: api-health
+                  protocol: http
+                  url: https://ledger-api.mprlab.com/healthz
+        operations:
+            - name: app-deploy
+              polling:
+                attempt_limit: 360
+                increment: 0s
+                initial: 1s
+                maximum: 5s
+                multiplier: 2
+            - name: app-publish
+              polling:
+                attempt_limit: 360
+                increment: 0s
+                initial: 1s
+                maximum: 5s
+                multiplier: 2
+            - name: app-release
+              polling:
+                attempt_limit: 360
+                increment: 0s
+                initial: 1s
+                maximum: 5s
+                multiplier: 2
+            - name: app_lifecycle.repository_read
+              polling:
+                attempt_limit: 360
+                increment: 0s
+                initial: 1s
+                maximum: 5s
+                multiplier: 2
+        private_inputs:
+            operations: []
+    owner: ledger
+    publications:
+        ghcr:
+            images:
+                - artifact: ledger-image
+                  id: ledger-image
+                  repository: ghcr.io/tyemirov/ledger
+        github_pages:
+            sites:
+                - artifact: frontend
+                  branch: gh-pages
+                  domain: ledger.mprlab.com
+                  id: frontend
+                  marker:
+                    path: /.mprlab-release.json
+                  repository: tyemirov/ledger
+    release:
+        scheme: semver
+    targets:
+        access:
+            hosts:
+                - elevation_password:
+                    input: deploy-sudo-password-tutosh
+                  host: tutosh
+        docker_compose:
+            projects:
+                - id: runtime
+                  retired_services:
+                    - project: mprlab-nginx-gateway
+                      service: ledger-api
+                  services:
+                    - assets:
+                        - mode: "0444"
+                          source: configs/config.ledger.yml
+                          target: /srv/config.yml
+                      endpoints:
+                        - endpoint:
+                            alias: ledger-api
+                            port: 50051
+                            scheme: grpc
+                            scope: same_host
+                          health:
+                            protocol: tcp
+                          id: grpc
+                          name: ledger.grpc
+                          version: 1
+                        - endpoint:
+                            port: 50051
+                            scheme: grpc
+                            scope: private_lan
+                          health:
+                            protocol: tcp
+                          id: grpc-private-lan
+                          name: ledger.grpc.private-lan
+                          version: 1
+                        - endpoint:
+                            alias: ledger-http
+                            port: 8080
+                            scheme: http
+                            scope: same_host
+                          health:
+                            expected_status: 200
+                            path: /healthz
+                            protocol: http
+                          id: http
+                          name: ledger.http
+                          version: 1
+                        - endpoint:
+                            port: 18082
+                            scheme: http
+                            scope: private_lan
+                          health:
+                            expected_status: 200
+                            path: /healthz
+                            protocol: http
+                          id: http-private-lan
+                          name: ledger.http.private-lan
+                          version: 1
+                        - endpoint:
+                            alias: runtime-ledger-api-readiness
+                            port: 8080
+                            scheme: http
+                            scope: same_host
+                          health:
+                            expected_status: 200
+                            path: /healthz
+                            protocol: http
+                          id: readiness
+                          name: ledger.readiness.runtime.ledger-api
+                          version: 1
+                      environment:
+                        - input: database-url
+                          name: DATABASE_URL
+                        - name: LEDGER_PUBLIC_ORIGIN
+                          value: https://ledger.mprlab.com
+                        - input: tauth-google-client-id
+                          name: TAUTH_GOOGLE_CLIENT_ID
+                        - input: tauth-jwt-signing-key
+                          name: TAUTH_JWT_SIGNING_KEY
+                        - name: TAUTH_SESSION_COOKIE_NAME
+                          value: ledger_session
+                        - name: TAUTH_TENANT_ID
+                          value: ledger
+                        - name: TAUTH_URL
+                          value: https://ledger-api.mprlab.com
+                      id: ledger-api
+                      image:
+                        publication: ledger-image
+                      mounts:
+                        - read_only: false
+                          target: /srv/data
+                          volume: data
+                      placement:
+                        cardinality: one
+                        group: gateway
+                      ports:
+                        - container_port: 50051
+                          host_port: 50051
+                          scope: private_lan
+                        - container_port: 8080
+                          host_port: 18082
+                          scope: private_lan
+                      readiness:
+                        endpoint: readiness
+                  volumes:
+                    - id: data
+                      name: ledger-data
+                      retention: retain
+        github_pages:
+            sites:
+                - id: frontend
+                  publication: frontend
+                  url: https://ledger.mprlab.com/
+        ingress:
+            caddy:
+                routes:
+                    - handlers:
+                        - id: authentication
+                          path_prefix: /auth
+                          upstream: tauth.http
+                        - id: browser-config
+                          path_prefix: /config-ui.yaml
+                          upstream: ledger.http
+                        - id: control-plane
+                          path_prefix: /api
+                          upstream: ledger.http
+                        - id: health
+                          path_prefix: /healthz
+                          upstream: ledger.http
+                        - id: profile
+                          path_prefix: /me
+                          upstream: tauth.http
+                      hostname: ledger-api.mprlab.com
+                      id: api
+                      listener: https
+                      tls:
+                        mode: automatic
