@@ -47,6 +47,9 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	targets := currentContractMap(testingContext, manifest["targets"])
 	requireCurrentContractYAML(testingContext, "targets.access", targets["access"], `hosts: [{host: tutosh, elevation_password: {input: deploy-sudo-password-tutosh}}]`)
 	compose := currentContractMap(testingContext, targets["docker_compose"])
+	if projects, ok := compose["projects"].([]any); !ok || len(projects) != 1 {
+		testingContext.Fatal("exactly one runtime project is required")
+	}
 	project := currentContractDeclaration(testingContext, compose["projects"], "runtime")
 	if _, exists := project["placement"]; exists {
 		testingContext.Fatal("Compose placement must exist only on services")
@@ -56,6 +59,9 @@ func TestVersionlessLifecycleContract(testingContext *testing.T) {
 	}
 	requireCurrentContractYAML(testingContext, "runtime.retired_services", project["retired_services"], `[{project: mprlab-nginx-gateway, service: ledger-api}]`)
 	requireCurrentContractYAML(testingContext, "runtime.volumes", project["volumes"], `[{id: data, name: ledger-data, retention: retain}]`)
+	if services, ok := project["services"].([]any); !ok || len(services) != 1 {
+		testingContext.Fatal("exactly one ledger-api service is required")
+	}
 	service := currentContractDeclaration(testingContext, project["services"], "ledger-api")
 	requireCurrentContractYAML(testingContext, "ledger-api.image", service["image"], `publication: ledger-image`)
 	requireCurrentContractYAML(testingContext, "ledger-api.placement", service["placement"], `group: gateway
@@ -279,6 +285,9 @@ func requireCurrentContractValue(t *testing.T, path string, actual, expected any
 		mapping, ok := actual.(map[string]any)
 		if !ok {
 			t.Fatalf("%s requires a mapping, got %#v", path, actual)
+		}
+		if !strings.HasSuffix(path, ".assets[]") && len(mapping) != len(wanted) {
+			t.Fatalf("%s has unexpected fields: %#v", path, actual)
 		}
 		for key, value := range wanted {
 			observed, exists := mapping[key]
