@@ -2,7 +2,7 @@
 
 This document is the canonical reference for the Ledger gRPC surface (`credit.v1.CreditService`) and its behavioral contracts (idempotency, refunds, batch semantics, reservation TTLs, and introspection APIs).
 
-For "how to run the service" or "how to embed the Go library", see `docs/integration.md`.
+For "how to run the service" or "how to embed the Go library", see the [integration guide](integration.md).
 
 ## Account Model
 
@@ -45,11 +45,11 @@ The ledger is append-only. Operations append immutable entries and balances are 
 
 Entry types (`Entry.type`):
 
-- `grant` (credit; may be expiring via `expires_at_unix_utc`)
+- `grant`: A credit with optional expiry through `expires_at_unix_utc`.
 - `hold` (credit hold created by `Reserve`)
-- `reverse_hold` (releases a hold; emitted by `Release` or as part of `Capture`)
-- `spend` (debit; stored as a **negative** `amount_cents`)
-- `refund` (credit linked to a prior debit; `Entry.refund_of_entry_id` points at the original debit entry)
+- `reverse_hold`: Releases a hold. `Release` or `Capture` emits this entry.
+- `spend`: A debit stored as a **negative** `amount_cents`.
+- `refund`: A credit linked to a prior debit. `Entry.refund_of_entry_id` identifies the original debit entry.
 
 Notes:
 
@@ -73,19 +73,29 @@ Reservations may carry an optional TTL (`expires_at_unix_utc`). When a reservati
 
 All mutating operations accept an `idempotency_key`. The ledger enforces uniqueness per account:
 
-- Retrying the *same* logical operation with the same key is safe.
-- Reusing a key for a *different* operation is rejected.
+- Keys identify intended operations within an account. Callers must reuse a key only for the same intended operation.
+- Duplicate handling depends on the operation and existing entry type. A reused key does not verify that the request payload matches.
 
 gRPC behavior:
 
-- Unary mutations (`Grant`, `Spend`, `Reserve`, `Refund`) return a gRPC error with code `AlreadyExists` and message `duplicate_idempotency_key` when the key already exists.
-- Reservation finalization (`Capture`, `Release`) validates reservation state first and returns `FailedPrecondition` / `reservation_closed` once the reservation is no longer `active` (captured, released, or expired). This can also happen on safe retries after a successful call.
-- Batch mutations (`Batch`) surface duplicates per-item via `BatchOperationResult.duplicate=true` (and `ok=true`).
+- `Grant` returns `AlreadyExists` with `duplicate_idempotency_key` when the key already exists.
+- `Spend` validates available funds before the entry write. A retry can return `insufficient_funds` before detection of a duplicate key.
+- `Reserve` validates available funds and creates the reservation before the entry write.
+  A retry can return `insufficient_funds` or `reservation_exists` before detection of a duplicate key.
+  For `Spend` and `Reserve`, a detected entry-key collision returns `AlreadyExists` with `duplicate_idempotency_key`.
+- `Refund` returns the existing entry when the key identifies a refund. It does not compare the new amount, original debit, or metadata.
+  A key that identifies another entry type returns `AlreadyExists`. When the caller supplies an original key, Ledger resolves that debit first.
+- `Capture` rejects finalized or expired reservations with `FailedPrecondition` / `reservation_closed` before detection of a duplicate key.
+- `Release` rejects finalized reservations with `FailedPrecondition` / `reservation_closed`. It can release an expired reservation whose status remains `active`.
+  After successful capture or release, a retry returns `reservation_closed`.
+- `Batch` can report a duplicate as successful with `duplicate=true` and `ok=true`.
+  Funds and reservation validation can fail first for spends and reservations.
+  A refund key owned by a non-refund entry returns `ok=false`, `duplicate=false`, and `error_code=duplicate_idempotency_key`.
 
 Client guidance:
 
-- Treat duplicates as success only when you are certain you are retrying the same logical operation.
-- Strongly namespace idempotency keys by operation (for example `grant:<...>`, `spend:<...>`, `refund:<...>`) to avoid accidental collisions.
+- Treat duplicates as success only for a retry of the same intended operation.
+- Use operation namespaces for idempotency keys, such as `grant:<...>`, `spend:<...>`, and `refund:<...>`, to prevent accidental collisions.
 - For `Capture` / `Release`, treat `reservation_closed` as a terminal state and use `GetReservation` to disambiguate a safe retry from a competing finalization.
 
 ## RPCs
@@ -135,7 +145,8 @@ Response:
 
 ### Capture
 
-Finalizes an `active` reservation as `captured`.
+Finalizes an `active` reservation as `captured`. The capture amount must equal the reserved amount.
+For a smaller final charge, use an atomic release-and-spend batch. See [embedded settlement](integration.md#2-embedding-the-go-library).
 
 Effects (single transaction):
 
@@ -153,6 +164,7 @@ Response:
 ### Release
 
 Finalizes an `active` reservation as `released` and appends a `reverse_hold` entry.
+An expired reservation can be released if its status is still `active`.
 
 Idempotency note: retries after a successful release may return `reservation_closed` (rather than `duplicate_idempotency_key`) because reservation state is validated before idempotency conflicts are evaluated. Use `GetReservation` to confirm the final state.
 
@@ -184,8 +196,8 @@ Executes multiple mutations against the same account in one request.
 
 Semantics:
 
-- `atomic=true`: all-or-nothing. If any operation fails, all are rolled back; operations that were undone return `error_code=rolled_back`.
-- `atomic=false` (best-effort): each operation runs independently inside one transaction using savepoints; failures are reported per-item.
+- `atomic=true`: All operations succeed together. If an operation fails, the batch rolls back all changes. Undone operations return `error_code=rolled_back`.
+- `atomic=false` (best-effort): Each operation runs independently inside one transaction with savepoints. Results report failures per item.
 
 Limits:
 
@@ -193,9 +205,9 @@ Limits:
 
 Result fields:
 
-- `ok=true`: operation applied; `entry_id` + `created_unix_utc` present.
-- `duplicate=true`: idempotent no-op success; `ok=true`, and `entry_id` may be empty.
-- `ok=false`: failed; `error_code` + `error_message` present.
+- `ok=true`: The operation applied. `entry_id` and `created_unix_utc` are present.
+- `duplicate=true`: The duplicate succeeds without another change. `ok=true`, and `entry_id` may be empty.
+- `ok=false`: The operation failed. `error_code` and `error_message` are present.
 
 Refund operations are supported via `BatchRefundOp` and follow the same "refund cannot exceed debit" invariant as the unary `Refund` RPC.
 
@@ -254,3 +266,230 @@ Unary and batch per-item errors use stable string codes that map to gRPC status 
 - `refund_exceeds_debit` (`FailedPrecondition`)
 
 For batch operations, `rolled_back` indicates an operation was undone due to `atomic=true` behavior.
+
+## grpcurl examples
+
+Start the [local runtime](../demo/README.md). Sign in, create a tenant, and create its credential.
+Install `grpcurl` and run these commands from the repository root.
+Export `LEDGER_TENANT_ID` and `LEDGER_TENANT_CREDENTIAL` through your private environment.
+`grpcurl` uses the supplied protobuf schema for these examples.
+
+Define this shell function:
+
+```bash
+ledger_rpc() {
+  grpcurl -plaintext -expand-headers -proto api/credit/v1/credit.proto \
+    -H 'authorization: Bearer ${LEDGER_TENANT_CREDENTIAL}' \
+    -d @ localhost:50051 "credit.v1.CreditService/$1"
+}
+```
+
+Use a fresh `user123` account for the examples. Run the grant before the dependent mutations.
+Use distinct keys for new operations. Follow the retry contract for an existing operation.
+Mutation responses include `entry_id` and `created_unix_utc`. `grpcurl` displays protobuf JSON field names and string-encoded 64-bit integers.
+
+### Grant credit
+
+```bash
+ledger_rpc Grant <<JSON
+{
+    "tenant_id":"${LEDGER_TENANT_ID}",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "amount_cents": 1000,
+    "idempotency_key":"grant-1",
+    "expires_at_unix_utc":0,
+    "metadata_json":"{\\"reason\\":\\"signup_bonus\\"}"
+  }
+JSON
+```
+
+### Get balance
+
+```bash
+ledger_rpc GetBalance <<JSON
+{"tenant_id":"${LEDGER_TENANT_ID}","user_id":"user123","ledger_id":"default"}
+JSON
+```
+
+After the grant above, the balance response contains:
+
+```json
+{
+  "totalCents": "1000",
+  "availableCents": "1000"
+}
+```
+
+
+### Reserve credit
+
+```bash
+ledger_rpc Reserve <<JSON
+{
+    "tenant_id":"${LEDGER_TENANT_ID}",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "amount_cents": 500,
+    "reservation_id":"order-555",
+    "idempotency_key":"reserve-1",
+    "metadata_json":"{\\"order_id\\":555}"
+  }
+JSON
+```
+
+### Capture reservation
+
+```bash
+ledger_rpc Capture <<JSON
+{
+    "tenant_id":"${LEDGER_TENANT_ID}",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "reservation_id":"order-555",
+    "idempotency_key":"capture-1",
+    "amount_cents":500,
+    "metadata_json":"{\\"order_id\\":555}"
+  }
+JSON
+```
+
+### Release reservation
+
+For this alternative outcome, reserve a separate 100 units before release:
+
+```bash
+ledger_rpc Reserve <<JSON
+{"tenant_id":"${LEDGER_TENANT_ID}","user_id":"user123","ledger_id":"default","amount_cents":100,"reservation_id":"order-release-555","idempotency_key":"reserve-release-1","metadata_json":"{}"}
+JSON
+```
+
+
+```bash
+ledger_rpc Release <<JSON
+{
+    "tenant_id":"${LEDGER_TENANT_ID}",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "reservation_id":"order-release-555",
+    "idempotency_key":"release-1",
+    "metadata_json":"{\\"order_id\\":555}"
+  }
+JSON
+```
+
+### Spend without reservation
+
+```bash
+ledger_rpc Spend <<JSON
+{
+    "tenant_id":"${LEDGER_TENANT_ID}",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "amount_cents": 200,
+    "idempotency_key":"spend-1",
+    "metadata_json":"{\\"action\\":\\"purchase\\"}"
+  }
+JSON
+```
+
+### Refund a debit (spend/capture)
+
+Refunds are first-class entries that link to an original debit entry. The ledger prevents refunds that exceed the original debit amount.
+
+```bash
+ledger_rpc Refund <<JSON
+{
+    "tenant_id":"${LEDGER_TENANT_ID}",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "original_idempotency_key":"spend-1",
+    "amount_cents": 50,
+    "idempotency_key":"refund-1",
+    "metadata_json":"{\\"reason\\":\\"reimbursement\\"}"
+  }
+JSON
+```
+
+### Batch operations
+
+Use `Batch` to execute many mutations for a single account in one request. Results report each operation separately. Recognized duplicates can return `duplicate=true`. See [idempotency](#idempotency) for state and key conflicts.
+
+```bash
+ledger_rpc Batch <<JSON
+{
+    "account": { "tenant_id":"${LEDGER_TENANT_ID}", "user_id":"user123", "ledger_id":"default" },
+    "atomic": false,
+    "operations": [
+      {
+        "operation_id": "refund-1",
+        "refund": {
+          "original_idempotency_key": "spend-1",
+          "amount_cents": 50,
+          "idempotency_key": "refund-1",
+          "metadata_json": "{\\"reason\\":\\"reimbursement\\"}"
+        }
+      },
+      {
+        "operation_id": "refund-2",
+        "refund": {
+          "original_idempotency_key": "spend-1",
+          "amount_cents": 25,
+          "idempotency_key": "refund-2",
+          "metadata_json": "{\\"reason\\":\\"reimbursement\\"}"
+        }
+      }
+    ]
+  }
+JSON
+```
+
+### Get reservation state
+
+```bash
+ledger_rpc GetReservation <<JSON
+{
+    "tenant_id":"${LEDGER_TENANT_ID}",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "reservation_id":"order-555"
+  }
+JSON
+```
+
+### List reservations
+
+```bash
+ledger_rpc ListReservations <<JSON
+{
+    "tenant_id":"${LEDGER_TENANT_ID}",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "limit": 20,
+    "statuses": ["active", "captured", "released"]
+  }
+JSON
+```
+
+### List ledger entries
+
+```bash
+ledger_rpc ListEntries <<JSON
+{
+    "tenant_id":"${LEDGER_TENANT_ID}",
+    "user_id":"user123",
+    "ledger_id":"default",
+    "types": ["refund", "spend", "grant"],
+    "idempotency_key_prefix":"refund",
+    "before_unix_utc": 1893456000,
+    "limit": 20
+  }
+JSON
+```
+
+
+## Amounts and expiry
+
+Amounts use integer `amount_cents`. Spend entries store negative amounts. Grant and refund entries store positive amounts.
+Set `expires_at_unix_utc` to `0` for permanent credits or reservations.
+Applications decide which grants have a time limit.

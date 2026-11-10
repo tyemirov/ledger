@@ -2,18 +2,18 @@
 
 This document explains how consumers can adopt the ledger either as a standalone gRPC service (`ledgerd`) or by embedding the Go library exposed from `pkg/ledger`.
 
-For a complete RPC-by-RPC reference (including idempotency, refunds, batch semantics, reservation TTLs, and stable error codes), see `docs/api.md`.
+For a complete RPC-by-RPC reference (including idempotency, refunds, batch semantics, reservation TTLs, and stable error codes), see the [gRPC API reference](api.md).
 
 ### 1. Running the gRPC microservice
 
-1. Build or download the `ledgerd` binary (`go build ./cmd/credit`).
+1. Build the `ledgerd` binary with `go build -o ledgerd ./cmd/credit`.
 2. Provide the required database, listener, TAuth, and public-origin fields in the Ledger configuration.
 
 ```bash
 ./ledgerd --config configs/config.ledger.yml
 ```
 
-SQLite databases are created automatically. For Postgres, ensure the database exists and the configured user has permission to create tables and indexes. The service applies its schema automatically via GORM on startup.
+SQLite databases are created automatically. For Postgres, make sure that the database exists and the configured user has permission to create tables and indexes. The service applies its schema automatically via GORM on startup.
 
 The server prepares the canonical schema and starts separate gRPC and HTTP listeners. Deploy the gRPC port on a private interface.
 
@@ -25,7 +25,7 @@ Use these integration steps for any language:
 * Sign in to the Ledger workspace.
 * Create a named tenant and a separate tenant credential in the selected tenant workspace.
 * **Authenticate every request** by setting the `authorization` gRPC metadata header to `Bearer <tenant_credential>`. The credential must belong to the UUID in `tenant_id`. Invalid or revoked credentials receive gRPC `Unauthenticated`. A tenant mismatch receives `PermissionDenied`.
-* Call the relevant RPCs (`GetBalance`, `Grant`, `Spend`, `Refund`, `Reserve`, `Batch`, `ListEntries`, `GetReservation`, etc.) using `tenant_id`, `user_id`, and `ledger_id` to identify the account in the ledger.
+* Call the relevant RPCs (`GetBalance`, `Grant`, `Spend`, `Refund`, `Reserve`, `Batch`, `ListEntries`, `GetReservation`, etc.) with `tenant_id`, `user_id`, and `ledger_id` to identify the account in the ledger.
 
 Example (Go):
 
@@ -35,13 +35,15 @@ ctx := metadata.NewOutgoingContext(ctx, md)
 resp, err := client.GetBalance(ctx, &creditv1.BalanceRequest{...})
 ```
 
-See `demo/README.md` for the local same-origin Ledger and TAuth composition.
+See [the local runtime](../demo/README.md) for the same-origin Ledger and TAuth composition.
 
-The browser config, resource, and error representations for the HTTP control plane are defined in `api/control/v1/openapi.yaml`.
+The browser config, resource, and error representations for the HTTP control plane are defined in the [HTTP OpenAPI contract](../api/control/v1/openapi.yaml).
 
 #### Bootstrap grants (client-managed)
 
-Ledger is intentionally client-agnostic and does not apply any implicit "new account gets credits" policy. If your application needs bootstrap credits, implement it explicitly in the client by issuing a `Grant` with a deterministic idempotency key (for example `bootstrap:<user_id>`), appropriate metadata (for example `{"reason":"account_bootstrap"}`), and treating `duplicate_idempotency_key` as a no-op success.
+Ledger is intentionally client-agnostic and does not apply any implicit "new account gets credits" policy. If your application needs bootstrap credits, issue an explicit `Grant`.
+Use a deterministic idempotency key, such as `bootstrap:<user_id>`, and metadata, such as `{"reason":"account_bootstrap"}`.
+Treat `duplicate_idempotency_key` as success only for a retry of that grant.
 
 ### 2. Embedding the Go library
 
@@ -64,7 +66,7 @@ func newLedgerService(db *gorm.DB, clock func() int64) (*ledger.Service, error) 
 * `ledger.Service` defines operations (`Grant`, `Spend`, `Refund`, `Reserve`, `Capture`, `Release`, `Balance`, `Batch`, `ListEntries`, `GetReservationState`, `ListReservationStates`).
 * `ledger.Store` is the storage interface. Use `pkg/gormstore` for GORM-backed projects. Custom stores can satisfy the interface to target other databases.
 * Validation happens at the edge: construct `ledger.TenantID`, `ledger.UserID`, `ledger.LedgerID`, `ledger.PositiveAmountCents`, `ledger.ReservationID`, `ledger.IdempotencyKey`, and `ledger.MetadataJSON` before invoking the service.
-* Store implementations consume `ledger.EntryInput` values and return `ledger.Entry` records; use the smart constructors (`NewEntryInput`, `NewEntry`, `NewReservation`) to enforce invariants.
+* Store implementations consume `ledger.EntryInput` values and return `ledger.Entry` records. Use the smart constructors (`NewEntryInput`, `NewEntry`, `NewReservation`) to enforce invariants.
 
 When embedding, reuse your existing application database and transaction management. Because the ledger code does not spawn goroutines or hold globals, you can scope it per request or as a singleton.
 
@@ -81,6 +83,7 @@ Existing databases use the application's controlled migration procedure.
 A reservation with expiry zero remains active until an explicit capture or release.
 Use this contract when dispatched work has an uncertain result.
 Request timeouts must not release those funds without a financial decision.
+
 For a smaller final charge, one atomic `Batch` can release the reservation and spend the measured amount.
 If the spend fails, the batch rolls back the release. The original hold remains active.
 The application must keep its settlement identity and Ledger effects in the same outer transaction for replay control.
@@ -123,6 +126,11 @@ At the gRPC boundary, these map to standard gRPC codes (InvalidArgument, Already
 |--------------------------------------|-----------------------------------------|
 | Multiple services / polyglot clients | Deploy `ledgerd` and call it via gRPC.  |
 | Single Go service needs credits      | Embed `pkg/ledger` + `gormstore`. |
-| Need both                            | Host `ledgerd` for general use; embed the library in Go components that need tighter coupling. |
+| Need both                            | Host `ledgerd` for general use. Embed the library in Go components that need tighter coupling. |
 
 Both approaches share the same domain code, ensuring identical business rules regardless of deployment style.
+
+## Setup and operations
+
+See [setup](setup.md) for build tools, runtime configuration, database selection, and protobuf regeneration.
+See [deployment](deployment.md) for the MPR hosted profile and Gateway lifecycle.
