@@ -129,7 +129,7 @@ release publish deploy:
 			"$(MPRLAB_GATEWAY_EXECUTABLE)" >&2; \
 		exit 2; \
 	fi; \
-	exec "$(MPRLAB_GATEWAY_EXECUTABLE)" "app-$@" --app-root "$${application_root}"
+	exec "$(MPRLAB_GATEWAY_EXECUTABLE)" "$@" --app-root "$${application_root}"
 
 .PHONY: prepare-shared-ui prepare-browser-server test-shared-ui
 prepare-browser-server: frontend-dependencies
