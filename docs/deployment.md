@@ -27,16 +27,17 @@ Use `MPRLAB_GATEWAY_EXECUTABLE` to select an explicit installed command path.
 Keep operator inventory and private configuration under `MPRLAB_GATEWAY_OPERATOR_ROOT`.
 The default operator root is `$HOME/.config/mprlab-gateway`.
 
-Run each command when its lifecycle phase is authorized:
+Run the complete application pipeline with this command:
 
 ```bash
-make release
-make publish
 make deploy
 ```
 
 Each Make wrapper passes the application Git root through `--app-root`.
-Release prepares artifacts. Publication exposes those artifacts. Deployment activates the published artifacts.
+The wrappers call the installed `release`, `publish`, and `deploy` commands with their matching names.
+`make deploy` completes missing preparation and publication before deployment and verification.
+Use `make release` to stop after preparation. Use `make publish` to stop after publication.
+
 Gateway owns release sealing, immutable publication, deployment convergence, and retry verification.
 The manifest enables `make ci`, which requires the Go and Node.js development tools described in [setup](setup.md#development-tools).
 
@@ -47,7 +48,8 @@ Deployment verifies the published image and repeats the convergent Gateway trans
 
 Use `make test-installed-gateway` to verify the Make wrappers.
 Use `make test-gateway-plan` to plan the tracked source through the installed Gateway.
-The planner check commits a disposable Git fixture. It does not publish or deploy the application.
+The planner test uses a disposable Git fixture, synthetic environment inputs, and an isolated operator root.
+It validates the tracked manifest through the installed runtime without publication or deployment.
 
 ## Selected manifest
 
