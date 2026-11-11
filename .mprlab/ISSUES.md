@@ -172,6 +172,23 @@ Format: `- [ ] [B042] (P1) {I007} Title`
   - Final `make ci` passed.
 
 
+- [x] [B011] (P1) Use the current installed Gateway lifecycle commands.
+  Goal: The application Make wrappers call the installed lifecycle pipeline.
+  Evidence:
+  - Gateway v9.2.1 with lifecycle contract 4 rejected the removed `app-deploy` command.
+  - The public wrapper regression rejected the obsolete command before the fix.
+  Resolution:
+  - The wrappers now call `release`, `publish`, and `deploy` with `--app-root`.
+  - The planner fixture supplies synthetic environment inputs and an isolated operator root.
+  - The existing versionless manifest passed the installed Gateway planner without schema changes.
+  Validation:
+  - `make test-installed-gateway` passed after the fix.
+  - `make test-gateway-plan` passed with Gateway v9.2.1.
+  - `CI=1 GOTOOLCHAIN=go1.26.5 make ci` passed with 100 percent Go coverage and eight browser scenarios.
+  - Independent source review found no blocking issues.
+  - Governor passed application structure checks and reported existing drift in nine unchanged managed files.
+  - Release, publication, and production deployment were not run.
+
 ## Improvements
 
 - [x] [I030] (P1) Use the explicit shared theme control contract
