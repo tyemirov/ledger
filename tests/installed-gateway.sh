@@ -20,9 +20,16 @@ ln -s "$(command -v dirname)" "$tools_bin/dirname"
 cat > "$fixture_root/gateway.c" <<'C'
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 int main(int argc, char **argv) {
+    if (argc != 4 ||
+        (strcmp(argv[1], "release") && strcmp(argv[1], "publish") && strcmp(argv[1], "deploy")) ||
+        strcmp(argv[2], "--app-root")) {
+        fprintf(stderr, "unsupported Gateway lifecycle command\n");
+        return 64;
+    }
     char directory[4096];
     if (getcwd(directory, sizeof(directory)) == NULL) return 1;
     printf("cwd=%s\n", directory);
@@ -41,7 +48,7 @@ unset MPRLAB_GATEWAY_EXECUTABLE MAKEFLAGS MFLAGS TEST_GATEWAY_FAILURE
 export MPRLAB_GATEWAY_OPERATOR_ROOT="$fixture_root/operator with spaces"
 
 for operation in release publish deploy; do
-  expected="$(printf 'cwd=%s\narg=app-%s\narg=--app-root\narg=%s\noperator=%s' \
+  expected="$(printf 'cwd=%s\narg=%s\narg=--app-root\narg=%s\noperator=%s' \
     "$application_root" "$operation" "$application_root" "$MPRLAB_GATEWAY_OPERATOR_ROOT")"
   for selection in path explicit; do
     arguments=()
