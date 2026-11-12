@@ -1,0 +1,19 @@
+environments:
+  - description: "Ledger"
+    origins:
+      - "https://ledger.mprlab.com"
+    auth:
+      tauthUrl: "https://ledger-api.mprlab.com"
+      tenantId: "ledger"
+      logoutPath: "/auth/logout"
+      sessionPath: "/auth/session"
+      providers:
+        google:
+          enabled: true
+          clientId: "611549676198-d8800qv64voofseor1qod1euto5duivu.apps.googleusercontent.com"
+          loginPath: "/auth/google"
+          noncePath: "/auth/nonce"
+        apple:
+          enabled: false
+        password:
+          enabled: false

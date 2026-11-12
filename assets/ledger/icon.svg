@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<defs>
+<linearGradient id="brand-field" x2="0" y2="1"><stop stop-color="#0063b9"/><stop offset="1" stop-color="#009bd5"/></linearGradient>
+<filter id="brand-ink" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB"><feFlood flood-color="#ffd369"/><feComposite in2="SourceGraphic" operator="in"/></filter>
+</defs>
+<rect width="512" height="512" fill="url(#brand-field)"/>
+<g filter="url(#brand-ink)"><svg width="512" height="512" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Ledger interlocking balance logo</title>
+  <path fill="#000" fill-rule="evenodd" d="m38 78 102-58v62l39-22 39 23v95l-102 58v-62l-39 22-39-23ZM84 105v17h88v-17Zm0 33v17h88v-17Z"/>
+</svg>
+</g>
+</svg>
