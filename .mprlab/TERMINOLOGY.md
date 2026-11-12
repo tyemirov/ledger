@@ -95,6 +95,9 @@ Give each term one meaning. Use the same term for the same concept in all docume
 
 ## Repository Technical Nouns
 
+- `execution policy`: The declared timeouts and retry settings for a Gateway operation.
+- `configuration policy`: The execution policy that controls configuration of a shared service.
+
 Add repository-specific technical nouns below this line.
 
 - `control plane`: The HTTP API that manages UserAccount and Ledger tenant resources.

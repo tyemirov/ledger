@@ -146,6 +146,10 @@ test-shared-ui: frontend-dependencies prepare-shared-ui prepare-browser-server
 test-installed-gateway:
 	bash tests/installed-gateway.sh
 
+.PHONY: test-deployment-policy
+test-deployment-policy:
+	go test ./tests/lifecyclecontract -run '^TestAPIRouteUsesSharedCaddyExecutionPolicy$$' -count=1
+
 .PHONY: test-gateway-plan
 test-gateway-plan:
 	bash tests/gateway-plan.sh

@@ -13,6 +13,24 @@ Format: `- [ ] [B042] (P1) {I007} Title`
 
 ## BugFixes
 
+- [x] [B012] (P0) Declare shared Caddy execution policy on the API route.
+  Goal: Deploy the selected Ledger release through the declared shared Caddy service.
+  Evidence: The installed Gateway v9.2.2 planner reproduced `deployment_graph.configuration_policy_conflict` before runtime activation.
+  Ledger inherited application settings for its route. The deployed Caddy declaration uses different timeouts and retry settings.
+  Requirements:
+  - Scope the published Caddy configuration policy to the `api` route.
+  - Keep application settings in their existing runtime and lifecycle scopes.
+  - Add a contract test against the published provider policy.
+  Validation: Confirm the failing contract test before the manifest correction. Verify the installed manifest planner and complete CI.
+  Results:
+  - The contract test rejected the missing route policy before the correction.
+  - The scoped contract test and installed Gateway manifest planner passed.
+  - The Gateway v9.2.2 policy API confirmed agreement with deployed Caddy and a separate application policy.
+  - `CI=1 GOTOOLCHAIN=go1.26.5 make ci` passed with 100 percent production Go coverage and eight browser scenarios.
+  - Governor passed application structure checks and reported existing drift in nine unchanged managed files.
+  Delivery: Source correction and production deployment remain separate operations.
+
+
 - [-] [B010] (P0) Stop the browser fixture server after its tests.
   Goal:
   The browser fixture stops its Ledger server before the test command exits.

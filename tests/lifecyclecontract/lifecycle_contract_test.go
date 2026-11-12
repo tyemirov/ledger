@@ -91,6 +91,10 @@ cardinality: one`)
 - id: api
   hostname: ledger-api.mprlab.com
   listener: https
+  operations:
+  - name: app-deploy
+    timeouts: {startup: 1m, completion: 30m, readiness: 5m, request: 30s, shutdown: 30s}
+    polling: {initial: 1s, maximum: 10s, increment: 1s, multiplier: 2, attempt_limit: 200}
   tls: {mode: automatic}
   handlers:
   - {id: authentication, path_prefix: /auth, upstream: tauth.http}

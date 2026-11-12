@@ -63,6 +63,22 @@ It publishes the frontend to the `gh-pages` branch in `tyemirov/ledger`.
 The service uses one placement in the `gateway` group and the retained `ledger-data` volume.
 The manifest retires `mprlab-nginx-gateway/ledger-api`. The declaration leaves the old volume untouched.
 
+### Shared Caddy execution policy
+
+The `api` route declares an `app-deploy` execution policy for shared Caddy configuration.
+It matches the [published Caddy declaration in iRoom v1.0.39](https://github.com/MarcoPoloResearchLab/iRoom/blob/v1.0.39/.mprlab/deploy/resources.yml).
+Gateway requires the route and shared service to use the same configuration policy.
+The comparison includes effective timeouts and retry settings.
+
+The route uses a 30-second request timeout and a five-minute readiness timeout.
+Ledger runtime and other lifecycle scopes continue to use their application settings.
+A `deployment_graph.configuration_policy_conflict` stops planning before runtime changes when these shared configuration settings differ.
+
+Use the published service manifest and current deployed graph to update the route policy.
+Update the route override and `tests/lifecyclecontract/testdata/shared-caddy-policy.yml` together.
+Run `make test-deployment-policy` to verify the pinned provider contract.
+Run `make test-gateway-plan` to validate the manifest through the installed Gateway.
+
 ### Environment inputs
 
 The selected manifest declares `environment.source: .mprlab/deploy/.env`.

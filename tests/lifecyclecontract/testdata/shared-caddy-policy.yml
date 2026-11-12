@@ -1,0 +1,16 @@
+source: https://github.com/MarcoPoloResearchLab/iRoom/blob/v1.0.39/.mprlab/deploy/resources.yml
+release: v1.0.39
+service: caddy
+execution:
+  timeouts:
+    startup: 1m
+    completion: 30m
+    readiness: 5m
+    request: 30s
+    shutdown: 30s
+  polling:
+    initial: 1s
+    maximum: 10s
+    increment: 1s
+    multiplier: 2
+    attempt_limit: 200
