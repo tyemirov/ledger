@@ -40,7 +40,7 @@ All rules for validation, error handling, invariants, and “confident programmi
 - Use the repository `Makefile` for local automation. Invoke `make test`, `make lint`, `make ci`, or other documented targets instead of running ad-hoc tool commands.
 - `make test` runs the canonical test suite for the active stack.
 - `make lint` enforces linting rules before code review.
-- `make ci` mirrors the GitHub Actions workflow and should pass locally before opening a PR.
+- `make ci` mirrors the GitHub Actions workflow. Use the final validation gate in `.mprlab/POLICY.md`, including equivalent pull-request CI.
 
 ### Retry-Safe Release Lifecycle
 
@@ -96,6 +96,9 @@ Read each selected guide in full before its first applicable action.
 
 - Before edits: `.mprlab/PLANNING.md`.
 - For technical prose: `.mprlab/AGENTS.DOCS.md` and `.mprlab/TERMINOLOGY.md`.
+- For explicitly required ASD-STE100 compliance: `.mprlab/AGENTS.STE.md`.
+- For application onboarding or user-interface behavior: `.mprlab/AGENTS.PRODUCT.md`.
+- For deployment manifests, release, publication, deployment, or native preparation: `.mprlab/AGENTS.DEPLOYMENT.md`.
 - For issue work: the selected issue and its dependencies in `.mprlab/ISSUES.md`.
 - For tracker edits: `.mprlab/issues-md-format.md`.
 - For Git operations: `.mprlab/AGENTS.GIT.md`.
