@@ -2,9 +2,9 @@
 
 This file contains the approved technical nouns and technical verbs for repository documentation.
 
-Use this file with `.mprlab/AGENTS.DOCS.md` and ASD-STE100 Simplified Technical English, Issue 9.
+Use this file with `.mprlab/AGENTS.DOCS.md`. Apply the ASD-STE100 dictionary only within explicitly selected formal STE scope.
 
-Do not add a general dictionary word to this file. Use the ASD-STE100 dictionary for general words.
+Keep this glossary focused on technical terms. For formal STE scope, use the ASD-STE100 dictionary for general words.
 
 Give each term one meaning. Use the same term for the same concept in all documents.
 
